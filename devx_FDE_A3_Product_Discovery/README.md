@@ -14,11 +14,18 @@ From a clean checkout, in this directory:
 
 ```bash
 uv sync                                    # 1. install dependencies
-./run.sh test                              # 2. 590 tests, offline, no model
+./run.sh test                              # 2. 682 tests, offline, no model
 ./run.sh serve                             # 3. the app on http://127.0.0.1:8001
 ./run.sh eval                              # 4. the recorded evaluation set
 ./run.sh diff                              # 5. snapshot vs previous snapshot
+./run.sh verify-refresh                    # 6. prove the refresh path works (~55s)
 ```
+
+A sixth command sits outside the five because it is a verification step rather
+than part of the demo path. `verify-refresh` mutates a git-ignored copy of the
+site, ingests it into a throwaway snapshot, and checks that every change it
+declared in advance is reported under the correct kind. It needs no server and
+no network beyond loopback.
 
 That is the whole demo. The catalog snapshot (`data/catalog.duckdb`) is
 committed, so step 3 works without crawling anything.
@@ -32,13 +39,18 @@ baseline.
 site has to be served first:
 
 ```bash
-(cd .. && python3 -m http.server 8000)     # serve the catalog site
+python3 -m http.server 8000                # serve the catalog site, from THIS dir
 ./run.sh ingest --base-url http://localhost:8000/paperlane/
 ```
 
 `ingest` crawls 103 pages at one request per second — about two minutes — then
 swaps the new snapshot into place atomically. Re-running it against an unchanged
 site reports `no_change: true` and commits nothing.
+
+Serve from **this** directory, not its parent. The site lives at
+`./paperlane/`, so the base URL is `/paperlane/`; serving the parent directory
+puts the site at `/devx_FDE_A3_Product_Discovery/paperlane/` and the ingest fails
+with `HTTP 404` on `index.html`.
 
 **Two ports, and they are not interchangeable.** 8000 serves the *catalog site*
 the crawler reads; 8001 serves the *assistant*. Binding the assistant to 8000
@@ -285,15 +297,15 @@ interpretation, the four assistant outcomes, the JSON API, and the evaluation
 harness with its results. Everything in sections 1–7 above. **Complete** — 80 of
 86 tasks closed, and every open task is Tier 2.
 
-**Tier 2 — extras, each independently droppable.** Six were planned. Three are
-built, because they were cheap once the core existed; three are not:
+**Tier 2 — extras, each independently droppable.** Six were planned. Four are
+built; two are not:
 
 | Item | State |
 |---|---|
 | Multi-item basket quoting | Built — `POST /api/quote/lines`, evaluation cases 16 and 27 |
 | Single-page interface | Built — `ui.py`, all four outcomes rendered |
 | Snapshot diff as a demo artefact | Built — `GET /api/diff`, `./run.sh diff` |
-| Mutated-site refresh demonstration | **Not built** — the diff works, but there is no self-built faulty site to prove it against |
+| Mutated-site refresh demonstration | Built — `./run.sh verify-refresh` mutates a copy of the site, ingests it, and verifies all 12 injected changes are reported under the correct kind |
 | Hybrid semantic tiebreak | **Not built** — search is hard filtering plus deterministic ranking, with no embedding layer |
 | Structured logging and the five metrics | **Not built** — no logging or metrics module |
 

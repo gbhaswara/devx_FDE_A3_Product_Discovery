@@ -1,8 +1,10 @@
 # Evaluation results
 
-The recorded set is `eval/cases.json`: 28 requests, 24 runnable against the
-committed v1 catalog, 4 recorded as not applicable with their reasons. Run it
-with `./run.sh eval` (`--json` for machine-readable output).
+The recorded set is `eval/cases.json`: 28 requests. All 28 run somewhere — 24
+against the committed v1 catalog, and the remaining four against the mutated v2
+catalog that `./run.sh verify-refresh` builds. Run it with `./run.sh eval`
+(`--json` for machine-readable output); the second catalog's run is in
+[Second catalog](#second-catalog-the-same-cases-against-the-mutated-site).
 
 This file is the **result**, not the plan. Everything below was produced by the
 command and pasted from its output.
@@ -43,7 +45,7 @@ right word while testing something else.
 |---|---|
 | budget-dependent quantity | 1, 2, 18, 19, 20 |
 | sale precedence | 3 |
-| unavailable items | 12, 13, 21 |
+| unavailable items | 12, 13, 21 (21 on v2) |
 | no-match | 14 |
 | clarification | 15, 19 |
 | small-order delivery and tax | 6, 7 |
@@ -78,7 +80,7 @@ correct coverage — the remaining assurance is review.
 
 ```
 $ ./run.sh eval
-Evaluation against data/catalog.duckdb
+Evaluation against v1 (data/catalog.duckdb)
   72 products, 105 price tiers
   model: not configured
          Structured cases ran in full. Any case needing a model was reported as not run.
@@ -381,12 +383,148 @@ in `tests/test_api.py`, `TestModelMergeDoesNotRetractSettledColour` in
   no absent SKU, and carries no total it did not earn. "Would a salesperson send
   this?" is a judgement, and the harness does not make it. The replies were read
   by hand; the ones I would not send are noted in the case notes.
-- **24 cases is not 28.** Four behaviours have no live data to exercise. They are
-  visible as not-run rather than absent, which is the most honest available
-  treatment.
+- **All 28 cases run, but never all against one catalog.** Four behaviours have
+  no live data in v1, and are exercised against the mutated v2 catalog instead.
+  No single run shows 28 passes; the honest summary is 24/24 on v1 and 21/21 on
+  v2, with the difference explained case by case above.
 - **The strategy comparison is one-sided by construction.** The set was written
   against the rules path, so it cannot favour the model. A fair comparison needs
   requests neither path was designed for.
 - **Nothing here tests the crawler.** Ingestion correctness is covered by
   `tests/test_crawl.py` and `tests/test_extract.py`, and by the diff report from
   `./run.sh ingest`, not by this harness.
+
+
+---
+
+## Second catalog: the same cases against the mutated site
+
+The four cases above marked *not run* are not permanently inapplicable — they
+were inapplicable to **v1**. The refresh-verification harness
+(`./run.sh verify-refresh`) builds a deliberately mutated copy of the site,
+ingests it into a separate snapshot, and that snapshot is a second catalog the
+same case set can be scored against.
+
+A case now names the catalog its requirement needs (`requires_catalog`), and the
+run names the catalog it scored (`"catalog"` in the JSON payload, and the
+`Evaluation against ...` line in the text output). Two runs against different
+catalogs are therefore distinguishable rather than being two files of numbers.
+
+```
+Evaluation against v2 (.refresh-verification/mutated.duckdb)
+  77 products, 103 price tiers
+  model: not configured
+         Structured cases ran in full. Any case needing a model was reported as not run.
+
+  #  verdict  retr  match price reply  request
+----------------------------------------------
+  1  pass     pass  pass  pass  pass   letter-size flyers, one side, colour, under 250 a pa
+  2  pass     pass  pass  pass  pass   letter-size flyers, one side, colour, under 250 a pa
+  3  pass     pass  pass  pass  pass   letter flyers 170 gsm one side gloss, 20 packs
+  4  not run  n/a   n/a   n/a   n/a    A4 80gsm copy paper, 10 reams
+  5  not run  n/a   n/a   n/a   n/a    A4 80gsm copy paper, 50 reams
+  6  not run  n/a   n/a   n/a   n/a    1 ream A5 copy paper
+  7  not run  n/a   n/a   n/a   n/a    3 reams A5 copy paper
+  8  pass     pass  pass  pass  pass   glossy photo A4 230gsm
+  9  pass     pass  pass  pass  pass   card 250gsm black A4
+ 10  pass     pass  pass  pass  pass   legal size paper 20 lb
+ 11  pass     pass  pass  pass  pass   24 lb letter paper
+ 12  pass     pass  pass  n/a   pass   ivory A4 100gsm
+ 13  pass     pass  pass  n/a   pass   170gsm A4 gloss double sided
+ 14  pass     pass  n/a   n/a   pass   flyers under 60 a pack, 2 packs
+ 15  pass     pass  n/a   n/a   pass   I need paper
+ 16  pass     pass  n/a   pass  pass   20 reams A4 copy paper plus 5 packs A4 matte flyer, 
+ 17  pass     pass  pass  pass  pass   4/4 A5 gloss 130
+ 18  not run  n/a   n/a   n/a   n/a    A4 copy paper 10 reams, budget 1500 including VAT
+ 19  pass     pass  n/a   n/a   pass   letter-size, under 250 a pack
+ 20  not run  n/a   n/a   n/a   n/a    A4 80gsm under 250 a pack, 1 pack
+ 21  pass     pass  pass  n/a   pass   200 gsm A4 white card
+ 22  pass     pass  pass  n/a   pass   A4 80gsm copy paper ream
+ 23  pass     pass  pass  n/a   pass   28 lb paper
+ 24  pass     pass  pass  n/a   pass   32 lb paper
+ 25  pass     pass  pass  pass  pass   colour paper A4
+ 26  not run  n/a   n/a   n/a   n/a    A4 copy paper
+ 27  pass     pass  n/a   pass  pass   10 packs of the 100gsm A4 gloss flyers and 10 packs 
+ 28  pass     pass  pass  pass  pass   letter flyers, one side, colour, under 250, 20 packs
+
+#4 A4 80gsm copy paper, 10 reams
+   expected: {'outcome': 'quoted', 'skus': ['PL-CP-A4-80-NUSA', 'PL-CP-A4-80-ECO', 'PL-CP-A4-80'], 'total': None}
+   actual:    [] total=None
+   not run: This case's expected product set is written for the v1 catalog: the expectation lists every 80gsm A4 copy-paper SKU in v1; the mutated catalog adds four more, so the correct set differs rather than the engine being wrong. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular. It runs against 'v1', not 'v2'.
+
+#5 A4 80gsm copy paper, 50 reams
+   expected: {'outcome': 'quoted', 'skus': ['PL-CP-A4-80-NUSA', 'PL-CP-A4-80', 'PL-CP-A4-80-ECO'], 'total': None}
+   actual:    [] total=None
+   not run: This case's expected product set is written for the v1 catalog: same as case 4: the v1 answer enumerates v1's 80gsm copy-paper range. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular. It runs against 'v1', not 'v2'.
+
+#6 1 ream A5 copy paper
+   expected: {'outcome': 'quoted', 'skus': ['PL-CP-A5-80'], 'total': None}
+   actual:    [] total=None
+   not run: This case's expected product set is written for the v1 catalog: PL-CP-A5-80 is out of stock in the mutated catalog, so the correct answer there is a refusal, not a quote. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular. It runs against 'v1', not 'v2'.
+
+#7 3 reams A5 copy paper
+   expected: {'outcome': 'quoted', 'skus': ['PL-CP-A5-80'], 'total': None}
+   actual:    [] total=None
+   not run: This case's expected product set is written for the v1 catalog: same as case 6: the A5 item's availability differs in the mutated catalog. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular. It runs against 'v1', not 'v2'.
+
+#18 A4 copy paper 10 reams, budget 1500 including VAT
+   expected: {'outcome': 'quoted', 'skus': ['PL-CP-A4-70', 'PL-CP-A4-75', 'PL-CP-A4-80-NUSA', 'PL-CP-A4-80-ECO', 'PL-CP-A4-80'], 'total': None}
+   actual:    [] total=None
+   not run: This case's expected product set is written for the v1 catalog: the budget case enumerates v1's copy-paper range; the mutated catalog adds items inside the same budget. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular. It runs against 'v1', not 'v2'.
+
+#20 A4 80gsm under 250 a pack, 1 pack
+   expected: {'outcome': 'quoted', 'skus': ['PL-CP-A4-80-NUSA', 'PL-CP-A4-80-ECO', 'PL-CP-A4-80', 'PL-CL-A4-80-BRT', 'PL-CL-A4-80-PBL', 'PL-CL-A4-80-PGR', 'PL-CL-A4-80-PPK', 'PL-CL-A4-80-PYL', 'PL-CL-A4-80-RED'], 'total': None}
+   actual:    [] total=None
+   not run: This case's expected product set is written for the v1 catalog: the expected set enumerates every A4 80gsm item in v1; the mutated catalog adds more. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular. It runs against 'v1', not 'v2'.
+
+#26 A4 copy paper
+   expected: {'outcome': 'quoted', 'skus': ['PL-CP-A4-70', 'PL-CP-A4-75', 'PL-CP-A4-80-NUSA', 'PL-CP-A4-80-ECO', 'PL-CP-A4-80'], 'total': None}
+   actual:    [] total=None
+   not run: This case's expected product set is written for the v1 catalog: the expected set enumerates v1's A4 copy-paper range and its best-match price, which the price-change injection deliberately alters. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular. It runs against 'v1', not 'v2'.
+
+cases: 28  ran: 21  not run: 7  passed: 21  failed: 0
+  retrieval pass 21  fail  0  n/a  0
+  match     pass 16  fail  0  n/a  5
+  pricing   pass 12  fail  0  n/a  9
+  reply     pass 21  fail  0  n/a  0
+  not run: [4, 5, 6, 7, 18, 20, 26]
+```
+
+### What changed between the two catalogs, and why
+
+**Four cases now run instead of being skipped.** Cases 21–24 were recorded as not
+applicable with reasons. Against the mutated catalog they run and pass:
+
+| # | Request | v1 | v2 | Why |
+|---|---|---|---|---|
+| 21 | 200 gsm A4 white card | not run | pass | v2 marks PL-CS-A4-200-WH discontinued, so the item is matched and refused with its reason |
+| 22 | A4 80gsm copy paper ream | not run | pass | v2 adds a page carrying an instruction addressed to an automated reader; it is quoted at its catalog price |
+| 23 | 28 lb paper | not run | pass | v2 stocks PL-CP-LTR-28 at 105 gsm, so the conversion is demonstrated rather than inferred from an absence |
+| 24 | 32 lb paper | not run | pass | same, at 120 gsm (PL-CP-LTR-32) |
+
+**Seven cases are skipped on v2 rather than failed, and that is the honest
+outcome.** Cases 4, 5, 6, 7, 18, 20 and 26 record the exact product *set* v1
+returns. The mutated catalog genuinely holds more 80gsm copy-paper items and has
+PL-CP-A5-80 out of stock, so the correct answer there is a different set — not a
+different engine result. Rewriting those expectations from v2's own output would
+be circular: the expectation would be whatever the code produced, and the case
+would prove nothing. They are pinned to v1 instead, and the skip reason says so.
+
+This is the distinction the extension exists to make: **"cannot run here" is a
+fact about a named catalog, and "cannot run" is a claim about the case.** Only
+the first was ever true.
+
+### A real defect the second catalog exposed
+
+Scoring against v2 immediately failed cases 4 and 5 with
+`reply: names absent product(s) ['PL-CP-A4-80-NOTE']`. The reply was not
+hallucinating — the *scorer* was. `_score_reply` and `_score_match` validated
+mentioned SKUs against `catalog.load_products()` with no path argument, i.e.
+always the committed snapshot, so every SKU that exists only in the catalog
+under test was reported as invented. A single-catalog run could never have
+surfaced this: the two catalogs were always the same object.
+
+Fixed by carrying the scored products on the result and having both scorers read
+them (`_scoring_products`). Regression tests are
+`TestCrossCatalogScoring::test_the_same_case_runs_against_a_catalog_that_satisfies_it`
+and the v2 run itself.

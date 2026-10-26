@@ -55,6 +55,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("diff", help="Compare the current snapshot with the previous")
 
+    refresh = sub.add_parser(
+        "verify-refresh",
+        help="Mutate a copy of the site, refresh against it, and verify the diff",
+    )
+    refresh.add_argument(
+        "--rate",
+        type=float,
+        default=2.0,
+        help=(
+            "Requests per second. Capped at 2 by the crawler itself, which "
+            "enforces the site's published limit regardless of who is serving."
+        ),
+    )
+    refresh.add_argument(
+        "--drop-entry",
+        default=None,
+        metavar="SKU",
+        help="Suppress one declared change to prove the verification can fail",
+    )
+    refresh.add_argument(
+        "--keep",
+        action="store_true",
+        help="Keep the generated site and snapshot after the run",
+    )
+
     return parser
 
 
@@ -85,6 +110,12 @@ def main(argv: list[str] | None = None) -> int:
         from .catalog import run_diff
 
         return run_diff()
+    if args.command == "verify-refresh":
+        from .refresh_cli import run_verify_refresh
+
+        return run_verify_refresh(
+            drop_entry=args.drop_entry, rate=args.rate, keep=args.keep
+        )
 
     parser.error(f"unknown command {args.command!r}")
     return 2

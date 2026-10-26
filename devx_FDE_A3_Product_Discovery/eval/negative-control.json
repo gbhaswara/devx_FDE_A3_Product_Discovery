@@ -104,7 +104,9 @@
           "quantity": 9
         }
       ],
-      "note": "The 10+ tier is inclusive: at qty 10 the unit price is 117.00, not 121.50."
+      "note": "The 10+ tier is inclusive: at qty 10 the unit price is 117.00, not 121.50.",
+      "requires_catalog": "v1",
+      "not_applicable": "This case's expected product set is written for the v1 catalog: the expectation lists every 80gsm A4 copy-paper SKU in v1; the mutated catalog adds four more, so the correct set differs rather than the engine being wrong. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular."
     },
     {
       "number": 5,
@@ -127,7 +129,9 @@
           "quantity": 50
         }
       ],
-      "note": "Highest met tier wins: 110.00 at 50, not 117.00 from the 10+ row."
+      "note": "Highest met tier wins: 110.00 at 50, not 117.00 from the 10+ row.",
+      "requires_catalog": "v1",
+      "not_applicable": "This case's expected product set is written for the v1 catalog: same as case 4: the v1 answer enumerates v1's 80gsm copy-paper range. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular."
     },
     {
       "number": 6,
@@ -149,7 +153,9 @@
           "quantity": 1
         }
       ],
-      "note": "72.00 + 150.00 delivery = 222.00; VAT is 7% of 222.00 = 15.54, not 7% of 72.00 (5.04). Charging VAT on the subtotal alone understates the total by 10.50."
+      "note": "72.00 + 150.00 delivery = 222.00; VAT is 7% of 222.00 = 15.54, not 7% of 72.00 (5.04). Charging VAT on the subtotal alone understates the total by 10.50.",
+      "requires_catalog": "v1",
+      "not_applicable": "This case's expected product set is written for the v1 catalog: PL-CP-A5-80 is out of stock in the mutated catalog, so the correct answer there is a refusal, not a quote. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular."
     },
     {
       "number": 7,
@@ -170,7 +176,9 @@
           "quantity": 3
         }
       ],
-      "note": "216.00 is still far below 3000, so the flat 150.00 fee applies again."
+      "note": "216.00 is still far below 3000, so the flat 150.00 fee applies again.",
+      "requires_catalog": "v1",
+      "not_applicable": "This case's expected product set is written for the v1 catalog: same as case 6: the A5 item's availability differs in the mutated catalog. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular."
     },
     {
       "number": 8,
@@ -387,7 +395,9 @@
           "quantity": 10
         }
       ],
-      "note": "The reply states the basis it compared on. This is a large budget, so every A4 copy paper qualifies and the cheapest wins."
+      "note": "The reply states the basis it compared on. This is a large budget, so every A4 copy paper qualifies and the cheapest wins.",
+      "requires_catalog": "v1",
+      "not_applicable": "This case's expected product set is written for the v1 catalog: the budget case enumerates v1's copy-paper range; the mutated catalog adds items inside the same budget. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular."
     },
     {
       "number": 19,
@@ -433,7 +443,9 @@
           "quantity": 1
         }
       ],
-      "note": "Every A4 80 gsm item is within 250 per pack, so the budget does not discriminate: nine come back, six of them coloured papers, because no category was stated. The reply states its basis, which is the honest handling of a pack-size assumption. This case also covers the weight-qualifier defect: 'under 250 a pack' must not be read as '80 gsm or lighter'."
+      "note": "Every A4 80 gsm item is within 250 per pack, so the budget does not discriminate: nine come back, six of them coloured papers, because no category was stated. The reply states its basis, which is the honest handling of a pack-size assumption. This case also covers the weight-qualifier defect: 'under 250 a pack' must not be read as '80 gsm or lighter'.",
+      "requires_catalog": "v1",
+      "not_applicable": "This case's expected product set is written for the v1 catalog: the expected set enumerates every A4 80gsm item in v1; the mutated catalog adds more. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular."
     },
     {
       "number": 21,
@@ -445,8 +457,9 @@
       "expect": {
         "outcome": "refused"
       },
-      "not_applicable": "The v1 catalog has no discontinued products: all 72 SKUs are current. This behaviour can only be exercised against a v2 catalog.",
-      "note": "Recorded as not applicable rather than omitted. Silently dropping it would misrepresent the coverage."
+      "not_applicable": "The v1 catalog has no discontinued products: all 72 SKUs are current. The behaviour runs against the mutated catalog, where PL-CS-A4-200-WH is discontinued.",
+      "note": "Recorded as not applicable rather than omitted. Silently dropping it would misrepresent the coverage.",
+      "requires_catalog": "v2"
     },
     {
       "number": 22,
@@ -458,8 +471,9 @@
       "expect": {
         "outcome": "quoted"
       },
-      "not_applicable": "No page in the v1 catalog contains a prompt-injection attempt (verified: 0 of 36 pages). The defence is implemented and unit-tested, but there is no live sample to run against.",
-      "note": "The reply is rendered deterministically from pricing output, so a model has no path into it in the first place. That is the structural defence; the case records that it could not be exercised end to end."
+      "not_applicable": "No page in the v1 catalog contains a prompt-injection attempt (verified: 0 of 36 pages). The defence is implemented and unit-tested. The behaviour runs against the mutated catalog, whose PL-CP-A4-80-NOTE page carries an instruction addressed to an automated reader.",
+      "note": "The reply is rendered deterministically from pricing output, so a model has no path into it in the first place. That is the structural defence; the case records that it could not be exercised end to end.",
+      "requires_catalog": "v2"
     },
     {
       "number": 23,
@@ -472,8 +486,9 @@
         "outcome": "no_match",
         "relaxed": "weight"
       },
-      "not_applicable": "No 28 lb (105 gsm) product exists in the v1 catalog. The conversion is implemented, but a no-match result would not prove it works — only that 105 gsm is absent.",
-      "note": "The interpretation is still exercised: 28 lb converts to 105 gsm and the search correctly finds nothing. Recorded as not applicable because a pass here would be a pass for the wrong reason."
+      "not_applicable": "No 28 lb (105 gsm) product exists in the v1 catalog. The conversion is implemented and unit-tested, but a no-match result would not prove it works — only that 105 gsm is absent. The behaviour runs against the mutated catalog, which stocks PL-CP-LTR-28.",
+      "note": "The interpretation is still exercised: 28 lb converts to 105 gsm and the search correctly finds nothing. Recorded as not applicable because a pass here would be a pass for the wrong reason.",
+      "requires_catalog": "v2"
     },
     {
       "number": 24,
@@ -486,8 +501,9 @@
         "outcome": "no_match",
         "relaxed": "weight"
       },
-      "not_applicable": "No 32 lb (120 gsm) product exists in the v1 catalog, for the same reason as case 23.",
-      "note": "Same reasoning as case 23. The honest statement is that the conversion is implemented and unit-tested but not demonstrated end to end on live data."
+      "not_applicable": "No 32 lb (120 gsm) product exists in the v1 catalog. The conversion is implemented and unit-tested, but a no-match result would not prove it works — only that 120 gsm is absent. The behaviour runs against the mutated catalog, which stocks PL-CP-LTR-32.",
+      "note": "Same reasoning as case 23. The honest statement is that the conversion is implemented and unit-tested but not demonstrated end to end on live data.",
+      "requires_catalog": "v2"
     },
     {
       "number": 25,
@@ -539,7 +555,9 @@
           "quantity": 1
         }
       ],
-      "note": "Plain paper has no sides attribute. If 'not applicable' were treated as 'mismatch', every copy paper would be filtered out and the answer would be a spurious no-match."
+      "note": "Plain paper has no sides attribute. If 'not applicable' were treated as 'mismatch', every copy paper would be filtered out and the answer would be a spurious no-match.",
+      "requires_catalog": "v1",
+      "not_applicable": "This case's expected product set is written for the v1 catalog: the expected set enumerates v1's A4 copy-paper range and its best-match price, which the price-change injection deliberately alters. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular."
     },
     {
       "number": 27,

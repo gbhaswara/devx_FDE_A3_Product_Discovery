@@ -25,11 +25,14 @@ from paperlane.evaluate import (
     NA,
     PASS,
     Case,
+    CaseResult,
+    _load_facts,
     _score_pricing,
     _score_reply,
     _score_retrieval,
     load_cases,
     recompute_totals,
+    reset_cache,
     run_case,
     run_eval,
     self_check,
@@ -604,12 +607,15 @@ class TestNegativeControl:
         corrupted = {4, 6, 14}
 
         for number, case in control.items():
-            result = run_case(case, products=products, facts=facts)
+            result = run_case(case, products=products, facts=facts,
+                              catalog_name="v1")
             if number in corrupted:
                 assert result.verdict == "fail", (
                     f"case {number} is corrupted in the fixture but passed"
                 )
-            elif case.not_applicable:
+            elif case.skipped_for("v1"):
+                # Inapplicability is now relative to a named catalog, so the
+                # check asks the case rather than reading the raw field.
                 assert result.verdict == "not run", number
             else:
                 assert result.verdict == "pass", (
@@ -648,3 +654,163 @@ class TestNegativeControl:
         code = run_eval(cases_path=self.CONTROL, out=buffer)
         assert code == 1, "a failing case must produce a non-zero exit"
         assert "failed: 3" in buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Second-catalog evaluation
+# ---------------------------------------------------------------------------
+
+
+class TestCaseFormatExtension:
+    """Inapplicability names a catalog, rather than being a permanent verdict."""
+
+    def test_the_committed_cases_still_load(self):
+        cases = load_cases()
+        assert len(cases) == 28
+        assert [c.number for c in cases] == list(range(1, 29))
+
+    def test_the_four_previously_inapplicable_cases_name_their_catalog(self):
+        cases = {c.number: c for c in load_cases()}
+        for number in (21, 22, 23, 24):
+            assert cases[number].requires_catalog == "v2", number
+            assert cases[number].not_applicable, number
+
+    def test_a_case_with_no_requirement_applies_everywhere(self):
+        case = Case(number=1, request="x", proves="y", expect_outcome="quoted")
+        assert case.applies_to("v1")
+        assert case.applies_to("v2")
+        assert case.skipped_for("v1") is None
+
+    def test_a_required_catalog_skip_names_the_catalog_that_can_run_it(self):
+        case = Case(number=1, request="x", proves="y", expect_outcome="quoted",
+                    requires_catalog="v2")
+        reason = case.skipped_for("v1")
+        assert reason is not None
+        assert "'v2'" in reason and "'v1'" in reason
+
+    def test_per_catalog_expectation_overrides_the_base(self):
+        case = Case(
+            number=23, request="28 lb paper", proves="conversion",
+            expect_outcome="no_match", expect_relaxed="weight",
+            requires_catalog="v2",
+            expect_by_catalog={"v2": {"outcome": "quoted", "skus": ["PL-CP-LTR-28"]}},
+        )
+        assert case.effective_expectation("v2")["outcome"] == "quoted"
+        assert case.effective_expectation("v2")["skus"] == ["PL-CP-LTR-28"]
+
+    def test_without_an_override_the_recorded_expectation_stands(self):
+        case = Case(number=1, request="x", proves="y", expect_outcome="quoted",
+                    expect_skus=("PL-A",))
+        assert case.effective_expectation("v1")["outcome"] == "quoted"
+
+
+class TestCrossCatalogScoring:
+    def test_a_v2_case_is_skipped_on_v1(self, products, facts):
+        cases = {c.number: c for c in load_cases()}
+        result = run_case(cases[23], products=products, facts=facts,
+                          catalog_name="v1")
+        assert result.verdict == "not run"
+        assert "v2" in result.skipped_reason
+
+    def test_the_same_case_runs_against_a_catalog_that_satisfies_it(self):
+        """The behaviour that made the case inapplicable is now demonstrable."""
+        pytest.importorskip("duckdb")
+        mutated = Path(__file__).resolve().parents[1] / ".refresh-verification" / "mutated.duckdb"
+        if not mutated.exists():
+            pytest.skip("run ./run.sh verify-refresh to build the mutated catalog")
+
+        reset_cache()
+        products = catalog.load_products(mutated)
+        facts = _load_facts(mutated)
+        cases = {c.number: c for c in load_cases()}
+
+        result = run_case(cases[23], products=products, facts=facts,
+                          catalog_name="v2")
+        assert result.verdict == "pass", (result.axes, result.notes)
+        assert result.outcome == "quoted"
+        assert result.actual_skus[0] == "PL-CP-LTR-28"
+        reset_cache()
+
+    def test_a_case_pinned_to_v1_is_skipped_on_v2(self, products, facts):
+        cases = {c.number: c for c in load_cases()}
+        result = run_case(cases[4], products=products, facts=facts,
+                          catalog_name="v2")
+        assert result.verdict == "not run"
+        assert "v1" in result.skipped_reason
+
+
+class TestCatalogRecordedInResults:
+    def test_the_run_names_its_catalog(self):
+        buffer = io.StringIO()
+        run_eval(out=buffer)
+        assert "Evaluation against v1" in buffer.getvalue()
+
+    def test_two_catalogs_are_distinguishable_in_the_output(self):
+        first, second = io.StringIO(), io.StringIO()
+        run_eval(out=first)
+        run_eval(out=second, catalog_name="v2")
+        assert "v1" in first.getvalue()
+        assert "v2" in second.getvalue()
+        assert first.getvalue() != second.getvalue()
+
+    def test_the_payload_records_the_catalog(self):
+        buffer = io.StringIO()
+        run_eval(as_json=True, out=buffer)
+        payload = json.loads(buffer.getvalue())
+        assert payload["catalog"] == "v1"
+
+    def test_the_summary_separates_other_catalog_skips(self):
+        buffer = io.StringIO()
+        run_eval(as_json=True, out=buffer)
+        summary = json.loads(buffer.getvalue())["summary"]
+        assert summary["requires_other_catalog"] == {
+            "21": "v2", "22": "v2", "23": "v2", "24": "v2",
+        }
+
+
+class TestScorersUseTheCatalogUnderTest:
+    """The regression guard for the defect the second catalog exposed.
+
+    `_score_reply` and `_score_match` used to validate against
+    `catalog.load_products()` with no argument — always the committed snapshot.
+    Any SKU existing only in the catalog under test was then reported as
+    "invented", i.e. a correct reply was scored as a hallucination.
+
+    Asserted with a synthetic second catalog rather than the real mutated one, so
+    the guard runs in a clean checkout instead of skipping when the scratch
+    directory is absent.
+    """
+
+    def _second_catalog(self):
+        return [{
+            "sku": "PL-ZZ-ONLY-IN-V2",
+            "category": "Copy paper",
+            "stock_status": "in_stock",
+            "weight_gsm": 80,
+            "size_code": "A4",
+            "colour_name": "White",
+            "colour_mode": None,
+            "list_price_satang": 12_900,
+            "sale_price_satang": None,
+            "unit_word": "ream of 500 sheets",
+            "has_volume_pricing": False,
+        }]
+
+    def test_a_sku_only_in_the_catalog_under_test_is_not_invented(self):
+        case = Case(number=900, request="x", proves="y", expect_outcome="quoted")
+        result = CaseResult(case=case)
+        result.outcome = "quoted"
+        result.reply_text = "Best match — something (PL-ZZ-ONLY-IN-V2)"
+        result.products = self._second_catalog()
+
+        assert _score_reply(case, result) == PASS, result.notes
+
+    def test_the_same_reply_fails_when_judged_against_the_committed_catalog(self):
+        """Proves the assertion above is not vacuous."""
+        case = Case(number=901, request="x", proves="y", expect_outcome="quoted")
+        result = CaseResult(case=case)
+        result.outcome = "quoted"
+        result.reply_text = "Best match — something (PL-ZZ-ONLY-IN-V2)"
+        result.products = None  # falls back to the committed snapshot
+
+        assert _score_reply(case, result) == FAIL

@@ -18,16 +18,19 @@ So the strategy has two rules that are not negotiable:
 
 ## Test layers
 
-Four layers, each answering a different question. They are deliberately separate, because a failure in one should not be attributable to another.
+Five layers, each answering a different question. They are deliberately separate, because a failure in one should not be attributable to another.
 
 | Layer | Question it answers | Runs without network | Runs without model |
 |---|---|---|---|
 | 1. Unit | Does this function compute what the specification says? | yes | yes |
 | 2. Extraction | Does this markup produce these fields? | yes (fixtures) | yes |
 | 3. Integration | Does the whole path produce this quote? | yes (fixtures) | yes for `/quote` |
-| 4. Evaluation | Does the system answer these 28 real requests correctly? | no (needs model for `/chat` cases) | partially |
+| 4. Refresh verification | Does a declared mutation of the site get reported correctly? | loopback only | yes |
+| 5. Evaluation | Does the system answer these 28 real requests correctly? | no (needs model for `/chat` cases) | partially |
 
-Of the 28 recorded cases, **24 run against v1** and **4 are v2-only** — cases 21 (discontinued), 22 (injected instruction), 23 (`28 lb`) and 24 (`32 lb`). Those four are marked not-applicable until the mutated v2 site exists: v1 has zero discontinued items (T4), no prompt injection, and no `28 lb` or `32 lb` product (T7). The brief asks for at least 10 cases; 24 executable is well clear, and the four deferred ones are recorded as deferred rather than silently dropped or counted as passing.
+Of the 28 recorded cases, **24 run against v1** and **4 run against v2** — cases 21 (discontinued), 22 (injected instruction), 23 (`28 lb`) and 24 (`32 lb`). v1 has zero discontinued items (T4), no prompt injection, and no `28 lb` or `32 lb` product (T7); the mutated v2 catalog that `./run.sh verify-refresh` builds has all four, so those cases now **run and pass** there rather than being marked inapplicable.
+
+Inapplicability is therefore a fact about a *named catalog*, not a permanent verdict on a case: each case declares `requires_catalog`, and a run declares which catalog it scored. Seven cases are pinned to v1 (their expected product *sets* enumerate v1's exact offering, which v2 genuinely extends); rewriting those from v2's own output would make the expectation circular. The full picture is in `eval/results.md`.
 
 ### Layer 1 — Unit tests
 
@@ -98,9 +101,32 @@ Whole-path tests through the API, no network, no model.
 - `/diff` with no previous snapshot reports that rather than failing
 - A failed ingest leaves the serving catalog readable and unchanged
 
-### Layer 4 — Evaluation harness
+### Layer 4 — Refresh verification
 
-28 recorded requests against the running system. This is the layer the brief explicitly asks for.
+`tests/test_mutate.py`, plus the `./run.sh verify-refresh` command. No network
+beyond loopback.
+
+The generator is test tooling, and its only job is to be trustworthy: if the
+fixture is wrong, every assertion built on it is worthless. So these tests are
+about the generator's own honesty.
+
+- The copy is byte-identical to the source, and the source is unchanged afterwards (every file hashed)
+- Two generations are byte-identical, so a failure cannot be blamed on fixture drift
+- An unknown change `kind`, an unknown assertion, or a missing SKU is rejected at construction
+- Each injection lands where it claims: the page exists and extracts, the card links it, the tier document is untouched where it should be
+- **Every injected page is reachable by the crawler's own selectors** — an added page no category links to is never crawled, and the verification would then fail for the wrong reason
+- Verification detects a missed change, a misattributed change and a spurious change, each producing a **distinct named failure**
+- A parse failure must be reported as a parse failure and must **not** also be reported as withdrawn
+- "Page never crawled" produces a different failure from "page crawled but misreported"
+- The scratch directory is git-ignored, so derived HTML cannot be committed by accident
+
+The four loopback-bound tests skip when loopback is unreachable (they do not
+fail), so the suite still passes under `unshare -rn`. The behaviour they cover is
+exercised by `./run.sh verify-refresh`, which runs in the normal environment.
+
+### Layer 5 — Evaluation harness
+
+28 recorded requests against the running system. This is the layer the brief explicitly asks for. All 28 run, but not all against one catalog: 24 against the committed v1 snapshot and 4 against the mutated v2 snapshot that `verify-refresh` builds. A case names the catalog its requirement needs, and a run names the catalog it scored.
 
 **Four axes, scored separately.** The reason for separating them: a case can have perfect prices and the wrong products, and a single pass/fail would hide that.
 
@@ -167,8 +193,15 @@ reply       would a salesperson send this?
 | No invented products | | | ● | ● |
 | Stated figures match computed | | | ● | ● |
 | Snapshot swap and diff | | | ● | ● |
+| Diff change kinds, all six | | | ● | |
+| Parse failure vs withdrawal | | ● | ● | |
+| Discontinued item refusal | | ● | ● | ● |
+| Untrusted text / injected instruction | | ● | ● | ● |
+| Pound conversions for 28/32 lb | ● | ● | | ● |
+| Budget and delivery boundaries | ● | ● | | ● |
 | Four-outcome enum, error contract | | | ● | ● |
 | Untrusted text | | ● | ● | ● |
+| Mutated-site refresh verification | | | ● | |
 
 ## Deliberately not tested
 
@@ -177,14 +210,15 @@ reply       would a salesperson send this?
 | The site's own HTML validity | Not our code. A malformed page becomes a review row. |
 | Model output quality | The model is not in the correctness path. Its fallback rate is measured instead. |
 | Load and concurrency beyond read-only serving | Single local user. One test asserts concurrent reads succeed against a consistent snapshot. |
-| Live network availability during unit tests | Tests must pass offline. Network is exercised only by a real ingest. |
+| Live network availability during unit tests | Tests must pass offline. Network is exercised only by a real ingest, and loopback-only by `verify-refresh` (whose loopback tests skip when loopback is down). |
 | Browser rendering | The reply is plain text by design (see `DESIGN.md`). |
 
 ## Running the tests
 
 ```
-./run.sh test     # unit + extraction + integration; offline, no model required
-./run.sh eval     # 28 recorded cases against a loaded snapshot
+./run.sh test             # 682 tests: unit + extraction + integration; offline, no model
+./run.sh eval             # 28 recorded cases against the committed snapshot
+./run.sh verify-refresh   # mutate a copy of the site, refresh against it, verify (~55s)
 ```
 
 The unit and integration layers must pass with the network disconnected and no credentials present. If a test needs either, it belongs in the evaluation layer instead.

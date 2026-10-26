@@ -14,7 +14,7 @@ From the project root, with the site being served at `http://localhost:8000/`:
 
 ```bash
 uv sync
-(cd .. && python3 -m http.server 8000 &)     # serve the site itself, on 8000
+(python3 -m http.server 8000 &)              # serve the site itself, on 8000
 ./run.sh ingest --base-url http://localhost:8000/paperlane/
 ./run.sh diff
 ./run.sh serve                               # the assistant, on 8001

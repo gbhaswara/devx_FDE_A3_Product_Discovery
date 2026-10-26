@@ -44,11 +44,13 @@ Two items, both with perfectly valid prices: `PL-PR-A4-GL-170-44`, `PL-CL-A4-100
 
 **Guard:** stock state is a filter, not a display field; PR8 refusal tested for both.
 
-### T4 — `discontinued` is in the brief but absent from the site · OPEN (by design)
+**Now also exercised as a transition.** The v1 catalog is a *state*, never a change: an item is out of stock and always was. `./run.sh verify-refresh` marks `PL-CP-A5-80` out of stock with a restock date, so the diff reports an availability change against a real prior snapshot rather than only the state being readable. Evaluation cases 6 and 7 are pinned to v1 precisely because that transition changes their correct answer.
 
-PR8 names discontinued items; v1 has **zero**. The code path is unexercised by the real data, so it will first run during the demo round on an updated site.
+### T4 — `discontinued` is in the brief but absent from the site · CLOSED
 
-**Guard:** the self-built mutated site (Tier 2) must include a discontinued item. Until then this path is untested against real markup.
+PR8 names discontinued items; v1 has **zero**. The code path had no live data.
+
+**Guard, now in place:** `./run.sh verify-refresh` marks `PL-CS-A4-200-WH` discontinued in the mutated site, and the resulting snapshot is a second catalog the evaluation set runs against. Evaluation case 21 matches that item and refuses it with its reason, against real markup rather than a synthetic fixture. The parse path (`extract`) and the refusal path (`assistant`) are both exercised end to end.
 
 ### T5 — Pack size makes "under 250 a pack" ambiguous · MITIGATED
 
@@ -62,16 +64,16 @@ Packs are 50, 100, 250 or 500 sheets. A price is per pack, so a budget per pack 
 
 **Guard:** never infer attributes from the SKU; parse the table columns.
 
-### T7 — The brief specifies four pound conversions; the site contains two · OPEN (by design)
+### T7 — The brief specifies four pound conversions; the site contains two · CLOSED
 
 ```
 20 lb = 75 gsm   PRESENT     24 lb = 90 gsm   PRESENT
 28 lb = 105 gsm  ABSENT      32 lb = 120 gsm  ABSENT
 ```
 
-No `28 lb`, no `32 lb`, no `105 gsm`, no `120 gsm` anywhere in v1. Two rows of the conversion table are unverifiable against the sample and are prime candidates for the updated site.
+No `28 lb`, no `32 lb`, no `105 gsm`, no `120 gsm` anywhere in v1. Two rows of the conversion table had no live data.
 
-**Guard:** all four implemented from the agreed table; unlisted values raise; the two unverified rows are stated as unverified in the README; the mutated site must include both.
+**Guard, now in place:** `./run.sh verify-refresh` adds `PL-CP-LTR-28` (105 gsm) and `PL-CP-LTR-32` (120 gsm) to the mutated site. Evaluation cases 23 and 24 run against that catalog and pass: each pound request converts, matches, and quotes. All four conversion rows are now demonstrated against real markup, not just unit-tested.
 
 ### T8 — Weight is written four ways, and 10 of 36 pages state it only in prose · MITIGATED
 
@@ -169,12 +171,17 @@ Two related facts worth stating, because both were checked across all 72 SKUs:
 
 **Guard:** read the list price from the page's price box, never from the tier document; read tiers from the tier document, never from the page. A fixture asserts `PL-CP-A4-80` yields list 129.00 *and* tiers 10+/50+, which catches the substitution.
 
-### T15 — The budget boundary is unreachable, but the delivery boundary is not · PARTLY OPEN
+### T15 — The budget boundary is unreachable, but the delivery boundary is not · CLOSED
 
-- **Budget boundary — unreachable.** No v1 unit price is exactly 250.00 or 300.00 at any real quantity, so `<` versus `<=` on a maximum price cannot be distinguished from the real data.
+- **Budget boundary — unreachable in v1.** No v1 unit price is exactly 250.00 or 300.00 at any real quantity, so `<` versus `<=` on a maximum price cannot be distinguished from the v1 data. (It is reachable in the mutated catalog; see the guard below.)
 - **Delivery boundary — reachable.** `PL-CP-A4-80-ECO` lists at 125.00 with a 10+ tier of 120.00, so **25 packs × 120.00 = 3,000.00 exactly**. PR4 says free delivery at "3,000 or more", so this order must pay **no** delivery. A `>` instead of `>=` charges 150.00 here.
 
-**Guard:** unit tests on synthetic values for the budget edge; an evaluation case on 25 packs of `PL-CP-A4-80-ECO` asserting delivery is zero; the mutated site adds an item priced exactly at the budget boundary.
+**Guard:** an evaluation case on 25 packs of `PL-CP-A4-80-ECO` asserting delivery is zero, and the mutated site now makes **both** boundaries reachable:
+
+- `PL-CP-A4-80-EXACT` lists at exactly **250.00**, so a budget of "250 a pack" is met exactly and an exclusive `<` excludes it wrongly. Asserted in `TestBoundaryItems::test_budget_bound_is_inclusive`.
+- `PL-CP-A4-80-THRIFT` lists at **1500.00**, so two units subtotal exactly 3000.00 and pay no delivery, while one satang below is charged. Asserted in `TestBoundaryItems::test_delivery_is_zero_exactly_at_the_threshold` and `..._one_satang_below_the_threshold`.
+
+Status: **CLOSED**. Both boundaries are now exercised against real extracted prices rather than synthetic `Money` values.
 
 ---
 
@@ -239,7 +246,7 @@ These are the conditions that indicate the system is degrading rather than faili
 | Rising rule-based fallback share | model degraded, or credentials expired | model reachability in `/health` |
 | Rising zero-result share | parsing defect, or a genuine catalog gap | run a known-good request through `/quote` |
 | Review set grew after a refresh | the site changed markup shape | inspect the recorded excerpt for the failing page |
-| Catalog shrank between snapshots | a parser silently stopped matching | `/diff` — withdrawn items without a review entry |
+| Catalog shrank between snapshots | a parser silently stopped matching | `/diff` — withdrawn items without a review entry. This path is now exercised: `./run.sh verify-refresh` withdraws `PL-CP-A4-75` and the diff reports exactly one withdrawal |
 | p95 latency climbing | model latency, not pricing (pricing is local) | per-stage timings in the request record |
 | Stated total ≠ computed total | reply prose is paraphrasing a figure instead of inserting it | this should be structurally impossible; any occurrence is a code defect |
 | A quote includes an item that does not exist | the no-invented-products assertion failed to fire | this should be structurally impossible; treat as a P0 |

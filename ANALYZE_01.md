@@ -1183,10 +1183,10 @@ The brief requires *"a test set of at least 10 requests with **expected products
 | 18 | "budget 3000 including VAT" | PR7 assumption stated explicitly |
 | 19 | "letter-size, under 250 a pack" (no qty) | clarify qty, since it *changes the answer* |
 | 20 | "under 250 a pack" on a 50-sheet pack | pack-size mismatch — Trap 5 |
-| 21 | discontinued item (v2) | PR8 — Trap 4 |
-| 22 | injection attempt in description (v2) | untrusted-text defence |
-| 23 | "28 lb paper" (v2 only) | **Trap 7 — untestable on v1** |
-| 24 | "32 lb paper" (v2 only) | **Trap 7 — untestable on v1** |
+| 21 | "200 gsm A4 white card" — **runs on v2** | PR8 — Trap 4 |
+| 22 | "A4 80gsm copy paper ream" — **runs on v2** | untrusted-text defence |
+| 23 | "28 lb paper" — **runs on v2** | **Trap 7** — matched and quoted against `PL-CP-LTR-28` (105 gsm) |
+| 24 | "32 lb paper" — **runs on v2** | **Trap 7** — matched and quoted against `PL-CP-LTR-32` (120 gsm) |
 | 25 | "colour paper A4" | **F2** — colour_name, not colour_mode |
 | 26 | "A4 copy paper" (no sides mentioned) | **F1** — sides is NULL, must not filter out paper |
 | 27 | "10 packs of the 100gsm A4 gloss" + "10 of the 130gsm" | **F3** — tiers are per SKU, no 20+ tier reached |
@@ -1202,7 +1202,20 @@ Cases 25-27 are the filter-semantics cases from §4.5. Without them, F1 and F2 p
 - **Case 6/7 named the wrong product class.** The old expected total `287.83` came from `PL-PR-A5-MT-100-10` (a flyer, 119.00), not A5 copy paper (72.00). Both are now pinned to explicit SKUs with recomputed totals.
 - **Case 16 computed no total at all.** It said "one delivery line" and stopped. It now carries the exact expected total, so the per-line bug is detectable rather than merely describable.
 
-Cases 23-24 exist because v1 has no 28 lb or 32 lb product. They can only pass once your own v2 site (§6) includes one. Recording them as `N/A on v1` in the results is the honest move; silently omitting them is not.
+### Which catalog each case runs in
+
+Cases 21-24 exist because v1 has no discontinued product, no injection sample, and no 28 lb or 32 lb item. **Each now runs**, but not on v1 — they run on the mutated v2 catalog built by `./run.sh verify-refresh` (§6), which has all four. Recorded as deferred originally; now demonstrated.
+
+Inapplicability is recorded as a fact about a **named catalog**, not a permanent verdict on a case. Each case declares `requires_catalog` in `eval/cases.json`, and each run declares which catalog it scored (`catalog` in the JSON payload, and the `Evaluation against ...` line in the text output):
+
+| Catalog | Cases that run | Result |
+|---|---|---|
+| **v1** (committed snapshot) | 1-20, 25-28 (24 cases) | 24/24 pass |
+| **v2** (mutated site) | 1-3, 8-17, 19, 21-25, 27, 28 (21 cases) | 21/21 pass |
+
+Cases 21, 22, 23 and 24 are **not run** on v1 and **pass** on v2. The other side of the ledger matters just as much: cases 4, 5, 6, 7, 18, 20 and 26 are pinned to **v1**, because their expected product *sets* enumerate v1's exact offering and the mutated catalog genuinely holds more 80gsm copy-paper items and has `PL-CP-A5-80` out of stock. Rewriting those expectations from v2's own output would be circular — the expectation would be whatever the code produced — so they are scored against v1 and skipped elsewhere with that reason stated.
+
+Neither catalog alone shows 28 passes, and saying otherwise would be false. The honest summary is 24/24 on v1, 21/21 on v2, and seven cases excluded from the second catalog for a stated reason. Full output in `devx_FDE_A3_Product_Discovery/eval/results.md`.
 
 ### 7.1 Results table shape
 

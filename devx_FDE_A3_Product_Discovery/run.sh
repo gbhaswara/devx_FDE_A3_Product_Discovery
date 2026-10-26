@@ -29,6 +29,7 @@ Commands:
   test     Run unit, extraction and integration tests (offline, no model)
   eval     Run the recorded evaluation cases against a loaded snapshot
   diff     Compare the current snapshot with the previous one
+  verify-refresh  Mutate a copy of the site, refresh against it, verify the diff
 
 Examples:
   ./run.sh ingest --base-url http://localhost:8000/paperlane/
@@ -51,6 +52,7 @@ case "$cmd" in
     test)   exec $PY -m pytest tests -q "$@" ;;
     eval)   exec $PY -m paperlane.cli eval   "$@" ;;
     diff)   exec $PY -m paperlane.cli diff   "$@" ;;
+    verify-refresh) exec $PY -m paperlane.cli verify-refresh "$@" ;;
     -h|--help|help) usage; exit 0 ;;
     *)
         echo "run.sh: unknown command '$cmd'" >&2

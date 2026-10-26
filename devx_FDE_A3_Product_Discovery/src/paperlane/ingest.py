@@ -22,6 +22,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import urljoin, urlparse
 
@@ -148,9 +149,21 @@ def _advertised_skus(html: str) -> set[str]:
     return skus
 
 
-def run_ingest(base_url: str, rate: float = 1.0) -> int:
-    """Crawl, extract, cross-check, build, and swap. Returns a process code."""
+def run_ingest(
+    base_url: str,
+    rate: float = 1.0,
+    *,
+    db_path: Path | None = None,
+) -> int:
+    """Crawl, extract, cross-check, build, and swap. Returns a process code.
+
+    ``db_path`` names the snapshot to build. It exists so the refresh-verification
+    harness can ingest a mutated copy of the site into a throwaway snapshot
+    instead of overwriting the committed catalog — a demonstration that mutates
+    the artefact under review is not a demonstration.
+    """
     result = IngestResult()
+    target_db = Path(db_path) if db_path is not None else catalog.DEFAULT_DB_PATH
 
     try:
         crawler = Crawler(base_url, rate_per_second=rate)
@@ -294,10 +307,11 @@ def run_ingest(base_url: str, rate: float = 1.0) -> int:
         tier_docs_found=result.tier_docs_found,
         # An unresolved item from the previous snapshot is carried forward
         # unless this run reports it again, so the backlog cannot vanish.
-        carry_reviews_from=catalog.DEFAULT_DB_PATH,
+        carry_reviews_from=target_db,
+        target=target_db.with_suffix(".tmp.duckdb"),
     )
-    catalog.swap_into_place(staged)
-    print(f"snapshot: {catalog.DEFAULT_DB_PATH}")
+    catalog.swap_into_place(staged, target_db)
+    print(f"snapshot: {target_db}")
     return 0
 
 

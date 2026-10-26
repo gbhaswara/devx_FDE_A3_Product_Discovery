@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import sys
+import dataclasses
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -55,6 +56,13 @@ from .pricing import (
 #: and adding one so a data file can be typed with colons instead of commas is a
 #: poor trade for a submission that must run from a clean checkout.
 DEFAULT_CASES_PATH = Path(__file__).resolve().parents[2] / "eval" / "cases.json"
+
+#: Catalog identifiers. ``V1`` is the committed snapshot. ``V2`` is the catalog
+#: the refresh harness produces from a mutated copy of the site. Naming them lets
+#: a case state *which* catalog it applies to instead of being marked
+#: permanently inapplicable, which conflates "cannot run here" with "cannot run".
+V1 = "v1"
+V2 = "v2"
 
 #: The four axes. Reported separately, always in this order.
 AXES = ("retrieval", "match", "pricing", "reply")
@@ -162,15 +170,21 @@ def recompute_totals(lines: Sequence[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-_FACTS_CACHE: dict[str, PriceFacts] | None = None
+_FACTS_CACHE: tuple[str, dict[str, PriceFacts]] | None = None
 
 
-def _load_facts() -> dict[str, PriceFacts]:
-    """Price facts from the committed snapshot, loaded once per process."""
+def _load_facts(db_path: Path | None = None) -> dict[str, PriceFacts]:
+    """Price facts from a snapshot, cached per path.
+
+    Cached per path rather than once per process: a run against the mutated
+    catalog must not be served facts from the committed one, which would make
+    every second-catalog case silently score against the wrong prices.
+    """
     global _FACTS_CACHE
-    if _FACTS_CACHE is None:
-        _FACTS_CACHE = catalog.load_price_facts()
-    return _FACTS_CACHE
+    key = str(Path(db_path) if db_path is not None else catalog.DEFAULT_DB_PATH)
+    if _FACTS_CACHE is None or _FACTS_CACHE[0] != key:
+        _FACTS_CACHE = (key, catalog.load_price_facts(db_path))
+    return _FACTS_CACHE[1]
 
 
 def reset_cache() -> None:
@@ -209,6 +223,22 @@ class Case:
     expect_relaxed: str | None = None
     #: Why this case cannot run on the current catalog, if it cannot.
     not_applicable: str | None = None
+    #: Which catalog this case's expectation is written for. ``"v1"`` is the
+    #: committed catalog; any other name (``"v2"``) is a catalog produced by the
+    #: refresh harness. A case whose requirement the running catalog does not
+    #: satisfy is skipped *and says which catalog would satisfy it*, so
+    #: "inapplicable" is a fact about a named catalog rather than a permanent
+    #: verdict on the case.
+    catalog: str = V1
+    #: The catalog that *does* satisfy this case's requirement, when the default
+    #: expectation is written for one that does not. ``None`` means the case is
+    #: meaningful wherever it runs.
+    requires_catalog: str | None = None
+    #: Expectation overrides keyed by catalog. A case whose correct answer differs
+    #: between catalogs states both rather than being pinned to whichever one was
+    #: convenient: "28 lb paper" must find nothing on v1 and find the 105 gsm item
+    #: on v2, and those are two different correct answers.
+    expect_by_catalog: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: Does answering require a model? Only then is a model-absent run partial.
     needs_model: bool = False
     #: Free-text note recorded alongside the result.
@@ -220,6 +250,47 @@ class Case:
         if not self.expect_lines:
             return None
         return recompute_totals(list(self.expect_lines))
+
+    def applies_to(self, catalog_name: str) -> bool:
+        """Whether this case's requirement is satisfiable by ``catalog_name``.
+
+        A case that names a required catalog does not apply anywhere else — that
+        is the whole point of naming it. A case with no requirement applies
+        wherever it runs.
+        """
+        return self.requires_catalog is None or self.requires_catalog == catalog_name
+
+    def skipped_for(self, catalog_name: str) -> str | None:
+        """Why this case cannot run here, phrased against the named catalog.
+
+        Returns ``None`` when it can run. The reason names the catalog that would
+        satisfy it, so a reader learns where the behaviour *is* demonstrated
+        rather than only that it was not demonstrated here.
+        """
+        if self.applies_to(catalog_name):
+            return None
+        base = self.not_applicable or (
+            f"This case requires the {self.requires_catalog!r} catalog."
+        )
+        return f"{base} It runs against {self.requires_catalog!r}, not {catalog_name!r}."
+
+    def effective_expectation(self, catalog_name: str) -> dict[str, Any]:
+        """The expectation to score against on ``catalog_name``.
+
+        Per-catalog overrides win. Without one, the recorded expectation is used
+        — which is correct only because :meth:`skipped_for` has already excluded
+        the cases that would need an override.
+        """
+        override = self.expect_by_catalog.get(catalog_name)
+        base: dict[str, Any] = {
+            "outcome": self.expect_outcome,
+            "skus": self.expect_skus,
+            "questions": self.expect_questions,
+            "relaxed": self.expect_relaxed,
+        }
+        if override:
+            base.update(override)
+        return base
 
 
 def load_cases(path: Path | None = None) -> list[Case]:
@@ -239,6 +310,9 @@ def load_cases(path: Path | None = None) -> list[Case]:
             expect_lines=tuple(entry.get("lines", ())),
             expect_relaxed=entry["expect"].get("relaxed"),
             not_applicable=entry.get("not_applicable"),
+            catalog=entry.get("catalog", V1),
+            requires_catalog=entry.get("requires_catalog"),
+            expect_by_catalog=dict(entry.get("expect_by_catalog", {})),
             needs_model=bool(entry.get("needs_model", False)),
             note=entry.get("note", ""),
             quantity=entry.get("quantity"),
@@ -267,6 +341,9 @@ class CaseResult:
     axes: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     skipped_reason: str | None = None
+    #: The catalog rows this case was scored against, so the scorers judge
+    #: against the catalog under test rather than whichever one is committed.
+    products: list[dict[str, Any]] | None = None
 
     @property
     def ran(self) -> bool:
@@ -283,6 +360,16 @@ class CaseResult:
     @property
     def failures(self) -> list[str]:
         return [axis for axis in AXES if self.axes.get(axis) == FAIL]
+
+
+def _scoring_products(result: "CaseResult") -> list[dict[str, Any]]:
+    """The catalog rows this case was run against.
+
+    Scorers must judge against the catalog under test, not the committed one.
+    Using the default here would call every SKU that exists only in the mutated
+    catalog "invented" — a false failure that looks like a hallucinated reply.
+    """
+    return result.products if result.products is not None else catalog.load_products()
 
 
 def _score_retrieval(case: Case, result: CaseResult) -> str:
@@ -319,7 +406,7 @@ def _score_match(case: Case, result: CaseResult) -> str:
     """
     if result.outcome not in ("quoted", "refused"):
         return NA
-    products = {p["sku"]: p for p in catalog.load_products()}
+    products = {p["sku"]: p for p in _scoring_products(result)}
 
     # Attribute name -> the product column it must agree with.
     column = {
@@ -401,7 +488,7 @@ def _score_reply(case: Case, result: CaseResult) -> str:
         result.notes.append("reply: empty")
         return FAIL
 
-    known = {p["sku"] for p in catalog.load_products()}
+    known = {p["sku"] for p in _scoring_products(result)}
     import re
 
     mentioned = set(re.findall(r"\bPL-[A-Z]{2}-[A-Z0-9-]+\b", result.reply_text))
@@ -423,18 +510,53 @@ def _score_reply(case: Case, result: CaseResult) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _resolved_case(case: Case, catalog_name: str) -> Case:
+    """A copy of ``case`` whose expectation is the one for ``catalog_name``."""
+    effective = case.effective_expectation(catalog_name)
+    if (
+        effective["outcome"] == case.expect_outcome
+        and tuple(effective["skus"]) == case.expect_skus
+        and tuple(effective["questions"]) == case.expect_questions
+        and effective["relaxed"] == case.expect_relaxed
+    ):
+        return case
+    return dataclasses.replace(
+        case,
+        expect_outcome=effective["outcome"],
+        expect_skus=tuple(effective["skus"]),
+        expect_questions=tuple(effective["questions"]),
+        expect_relaxed=effective["relaxed"],
+    )
+
+
 def run_case(case: Case, *, products=None, facts=None, strategy: str = "rules",
-             model_client=None) -> CaseResult:
-    """Run one case and score it on all four axes."""
+             model_client=None, catalog_name: str = V1) -> CaseResult:
+    """Run one case and score it on all four axes.
+
+    ``catalog_name`` names the catalog the products and facts came from. The case
+    is resolved against it first, so a case whose correct answer differs between
+    catalogs is scored against the expectation written for *this* one, and a case
+    whose requirement this catalog cannot satisfy is skipped with a reason that
+    names the catalog that can.
+    """
     result = CaseResult(case=case)
 
-    if case.not_applicable:
-        result.skipped_reason = case.not_applicable
+    skip_reason = case.skipped_for(catalog_name)
+    if skip_reason:
+        result.skipped_reason = skip_reason
         result.axes = {axis: NA for axis in AXES}
         return result
 
+    # Resolve per-catalog expectation once, by deriving a case whose plain
+    # expectation fields are the effective ones. Everything downstream — the four
+    # scorers and the result dict — then reads one consistent set of values
+    # without each of them needing to know about catalogs.
+    case = _resolved_case(case, catalog_name)
+    result.case = case
+
     products = products if products is not None else catalog.load_products()
     facts = facts if facts is not None else _load_facts()
+    result.products = products
 
     # --- multi-line orders are priced directly, not through the assistant ---
     # The assistant answers one SKU at a time; a basket is priced by the
@@ -563,37 +685,51 @@ def run_eval(
     model_client=None,
     compare_strategies: bool = True,
     out: Any = None,
+    db_path: Path | None = None,
+    catalog_name: str = V1,
 ) -> int:
     """Run the recorded set and report the results.
 
     One command, no manual steps. Returns 0 when every runnable case passed, 1
     when any failed — so the harness can gate a release.
+
+    ``db_path`` and ``catalog_name`` select the catalog to score against. The
+    name is recorded in the output, because two runs against different catalogs
+    produce different results for the same cases and an unlabelled result file
+    would make them indistinguishable.
     """
     out = out if out is not None else sys.stdout
     cases = load_cases(cases_path)
 
-    if not catalog.snapshot_exists():
+    snapshot_path = Path(db_path) if db_path is not None else catalog.DEFAULT_DB_PATH
+    if not catalog.snapshot_exists(snapshot_path):
         print(
-            f"No catalog snapshot at {catalog.DEFAULT_DB_PATH}.\n"
+            f"No catalog snapshot at {snapshot_path}.\n"
             f"Build one with: ./run.sh ingest --base-url "
             f"http://localhost:8000/paperlane/",
             file=out,
         )
         return 1
 
-    products = catalog.load_products()
-    facts = _load_facts()
+    products = catalog.load_products(snapshot_path)
+    facts = _load_facts(snapshot_path)
 
-    results = [run_case(case, products=products, facts=facts) for case in cases]
+    results = [
+        run_case(case, products=products, facts=facts, catalog_name=catalog_name)
+        for case in cases
+    ]
 
     # --- the interpretation-strategy comparison (8.6) ------------------
     strategy_rows: list[dict[str, Any]] = []
     if compare_strategies:
-        strategy_rows = _compare_strategies(cases, products, facts, model_client)
+        strategy_rows = _compare_strategies(
+            cases, products, facts, model_client, catalog_name=catalog_name
+        )
 
     payload = {
+        "catalog": catalog_name,
         "snapshot": {
-            "path": str(catalog.DEFAULT_DB_PATH),
+            "path": str(snapshot_path),
             "products": len(products),
             "price_tiers": sum(len(f.tiers) for f in facts.values()),
         },
@@ -612,7 +748,8 @@ def run_eval(
     return 0 if payload["summary"]["failed"] == 0 else 1
 
 
-def _compare_strategies(cases, products, facts, model_client) -> list[dict[str, Any]]:
+def _compare_strategies(cases, products, facts, model_client,
+                        catalog_name: str = V1) -> list[dict[str, Any]]:
     """Apply both interpretation strategies to the same requests.
 
     Rules-only and model-assisted are run over an identical case list and their
@@ -622,11 +759,12 @@ def _compare_strategies(cases, products, facts, model_client) -> list[dict[str, 
     """
     rows: list[dict[str, Any]] = []
     for case in cases:
-        if case.not_applicable:
+        if case.skipped_for(catalog_name):
             continue
         row: dict[str, Any] = {"number": case.number, "request": case.request}
 
-        rules = run_case(case, products=products, facts=facts, strategy="rules")
+        rules = run_case(case, products=products, facts=facts, strategy="rules",
+                         catalog_name=catalog_name)
         row["rules"] = {
             "criteria": rules.criteria,
             "outcome": rules.outcome,
@@ -639,7 +777,8 @@ def _compare_strategies(cases, products, facts, model_client) -> list[dict[str, 
             row["model"] = {"outcome": "not run", "reason": "no model client configured"}
         else:
             model = run_case(case, products=products, facts=facts,
-                             strategy="model", model_client=model_client)
+                             strategy="model", model_client=model_client,
+                             catalog_name=catalog_name)
             row["model"] = {
                 "criteria": model.criteria,
                 "outcome": model.outcome,
@@ -671,6 +810,7 @@ def _result_dict(result: CaseResult) -> dict[str, Any]:
         "verdict": result.verdict,
         "notes": result.notes,
         "skipped_reason": result.skipped_reason,
+        "requires_catalog": result.case.requires_catalog,
     }
 
 
@@ -686,6 +826,14 @@ def _summary(results: Sequence[CaseResult]) -> dict[str, Any]:
         "failed": len(failed),
         "failed_numbers": [r.case.number for r in failed],
         "not_run_numbers": [r.case.number for r in skipped],
+        # Cases skipped because the running catalog cannot satisfy their
+        # requirement, with the catalog that can. Separated from other skips so
+        # "not applicable here" is not confused with "could not run at all".
+        "requires_other_catalog": {
+            str(r.case.number): r.case.requires_catalog
+            for r in skipped
+            if r.case.requires_catalog is not None
+        },
         "by_axis": {
             axis: {
                 PASS: sum(1 for r in ran if r.axes.get(axis) == PASS),
@@ -700,7 +848,7 @@ def _summary(results: Sequence[CaseResult]) -> dict[str, Any]:
 def _render_text(payload: dict[str, Any], *, out: Any = None) -> None:
     out = out if out is not None else sys.stdout
     snap = payload["snapshot"]
-    print(f"Evaluation against {snap['path']}", file=out)
+    print(f"Evaluation against {payload.get('catalog', V1)} ({snap['path']})", file=out)
     print(f"  {snap['products']} products, {snap['price_tiers']} price tiers", file=out)
     if payload["model_available"]:
         print("  model: available", file=out)

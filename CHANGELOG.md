@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.5.0 shipped — Tier 1 complete.** 80 of 86 tasks closed; the 6 open items are all Tier 2 and are named in §"Not yet started" with the reason each is open. 590 tests pass offline, the 24 runnable evaluation cases pass, and the negative control fails as designed. See `openspec/changes/add-paperlane-product-discovery/tasks.md`.
+Current status: **0.5.0 shipped — Tier 1 complete, plus the first of three Tier 2 changes.** 83 of 86 tasks closed; the 3 open items belong to the other two Tier 2 changes and are named in §"Not yet started". 682 tests pass offline, the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), and the negative control fails as designed. See `openspec/changes/add-paperlane-product-discovery/tasks.md`.
 
 ---
 
@@ -74,6 +74,67 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Added — 2026-10-26 · `add-mutated-site-refresh-harness` (Tier 2, first of three)
+
+Closes tasks 10.4, 11.4 and 10.3 — 83 of 86 now closed. The remaining three
+(10.5, 10.6, 10.7) belong to the other two Tier 2 changes.
+
+**The problem.** `./run.sh diff` reports six change kinds, and on the committed
+catalog all six are empty. An empty report is equally consistent with a correct
+diff, a diff that reads nothing, and a diff that reads the wrong thing. The v1
+catalog contains no adversity — every page parses, nothing is discontinued, no
+page carries an injected instruction, no price has ever changed — so the refresh
+path could not be exercised, and "the diff works" rested on reading the code.
+
+**What was built.**
+
+- `src/paperlane/mutate.py` — copies the site, injects **twelve declared
+  changes** across all six kinds plus the parse-failure kind, and emits a
+  manifest of exactly what it injected. Generation is deterministic (two runs
+  produce byte-identical trees); the source site is never written to.
+- `src/paperlane/refresh.py` — serves the mutated copy over loopback, ingests it
+  into a throwaway snapshot, diffs that against the committed baseline, and
+  verifies the report against the manifest **in both directions**.
+- `src/paperlane/refresh_cli.py`, `./run.sh verify-refresh` — the command, with
+  distinct exit codes: 0 verified, 1 discrepancy, 2 could not run. About 55s.
+- `tests/test_mutate.py` — 77 tests. The generator is test tooling whose only job
+  is to be trustworthy, so the tests are about its honesty: faithful copy, source
+  untouched, determinism, every injected page reachable by the crawler's own
+  selectors, and six **distinctly named** verification failures.
+
+**What the injections make demonstrable for the first time:** a discontinued item,
+an injected instruction, 28 lb and 32 lb conversions, a budget met exactly, a
+subtotal exactly at the delivery threshold, an unparseable page reaching the
+review floor, and a catalog that shrinks.
+
+**Second-catalog evaluation.** The mutated snapshot is a second catalog the
+evaluation set runs against. Cases 21–24 (discontinued, injection, 28 lb, 32 lb)
+were recorded as not applicable; they now **run and pass** on it. Inapplicability
+became a fact about a *named* catalog (`requires_catalog`) rather than a
+permanent verdict, and a run now records which catalog it scored. Seven cases are
+pinned to v1, because their expected product sets enumerate v1's exact offering
+and rewriting them from v2's output would make the expectation circular.
+
+**A real defect this exposed.** Scoring against v2 immediately failed cases 4 and
+5 with `reply: names absent product(s)`. The reply was not hallucinating — the
+*scorer* was: `_score_reply` and `_score_match` validated mentioned SKUs against
+the committed snapshot regardless of which catalog was under test, so every
+v2-only SKU looked invented. A single-catalog run could never have found it,
+because the two catalogs were always the same object.
+
+**A documentation defect found while verifying the doc.** `README.md` and
+`docs/refresh.md` said to serve the site with `(cd .. && python3 -m
+http.server 8000)`. That serves the parent directory, so `/paperlane/` returns
+404 and ingest fails. Both corrected; verified by running the command as written.
+
+**Verification.** 682 tests pass offline (4 tests skip under
+`unshare -rn`); eval 24/24 on v1 and 21/21 on v2; `--self-check` exit 0;
+negative control exit 1; `verify-refresh` exit 0 with all 12 changes verified;
+`--drop-entry` exit 1 with the discrepancy named. A re-ingest of the real
+site reproduces the committed snapshot's contents exactly — 72 products, 105 tier
+rows, identical `meta`, 0 review items — with the file's bytes differing only in
+the crawl timestamps recorded in provenance columns.
 
 ### Added — 2026-10-26 · Planning
 
@@ -286,9 +347,19 @@ The honest summary is that the three shipped items were built because the core m
 
 ## Not yet started
 
-Six `tasks.md` items, all Tier 2, all named rather than omitted. Their reasons are tabulated under 1.0.0 above; the short version is one unbuilt artefact (the mutated site), one unbuilt layer (semantic tiebreak), and one unbuilt module (logging and metrics), plus the three verification tasks that depend on them.
+Three `tasks.md` items remain, all Tier 2, all named rather than omitted:
 
-Nothing in Tier 1 is open. The task that was annotated as partly open — 10.3 — is a Tier 2 demo item whose report half works and whose verification half is blocked by 10.4.
+| Task | Item | Belongs to |
+|---|---|---|
+| 10.5 | Hybrid semantic tiebreak (Ollama `bge-m3`, optional by construction) | `add-semantic-tiebreak` |
+| 10.6 | Structured logging and the five metrics | `add-observability` |
+| 10.7 | Verify credentials and unbounded conversation text are absent from the logs | `add-observability` |
+
+**Nothing in Tier 1 is open.** Tasks 10.3, 10.4 and 11.4 were closed by
+`add-mutated-site-refresh-harness`: the diff now renders all six change kinds
+against a mutated site, and a re-ingest reports every injected change with no
+page disappearing without appearing in review. The earlier annotation calling
+10.3 "partly open" no longer applies.
 
 ---
 
