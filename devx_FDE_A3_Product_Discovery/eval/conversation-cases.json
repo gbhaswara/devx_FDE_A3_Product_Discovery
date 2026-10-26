@@ -233,6 +233,55 @@
         }
       ],
       "note": "The bare number is a quantity the merge must read, and 500,000 is out of range. Validation refuses it, so nothing is priced and the harness records an error rather than a quote. The alternative — quoting 20 because the refinement was unusable — would answer a question the customer did not ask."
+    },
+    {
+      "number": 9,
+      "name": "a quantity-only first turn is continued",
+      "proves": "a first turn whose only requirement is commercial is still a basis (BUG.md A12)",
+      "turns": [
+        {
+          "request": "20 reams",
+          "expect": {
+            "outcome": "clarified",
+            "criteria": {"quantity": 20},
+            "absent": ["category", "size"]
+          }
+        },
+        {
+          "request": "make it 50",
+          "expect": {
+            "outcome": "clarified",
+            "criteria": {"quantity": 50},
+            "not_carried": ["quantity"]
+          }
+        }
+      ],
+      "note": "A quantity does not filter the catalog, so has_any_constraint() is False for turn 1. Gating the earlier criteria on that predicate discarded the conversation, and turn 2 asked again from nothing."
+    },
+    {
+      "number": 10,
+      "name": "a budget-only first turn is continued",
+      "proves": "a budget stated first survives into the turn that fixes the subject",
+      "turns": [
+        {
+          "request": "under 200 a pack",
+          "expect": {
+            "outcome": "clarified",
+            "criteria": {"budget_per_unit": "200.00"},
+            "absent": ["category", "size", "quantity"]
+          }
+        },
+        {
+          "request": "20 reams",
+          "expect": {
+            "outcome": "clarified",
+            "criteria": {"quantity": 20, "budget_per_unit": "200.00"},
+            "carried": ["budget_per_unit"],
+            "reply_contains": ["200.00"]
+          }
+        }
+      ],
+      "note": "The budget is carried and the reply says so, because carrying a budget silently is the constraint most likely to be a one-off. The same defect as case 9 from the other side: a budget is commercial-only too."
     }
   ]
 }

@@ -169,7 +169,7 @@ def is_continuation(previous: Criteria | None, current: Criteria) -> tuple[bool,
     previous question, which looks exactly like the assistant ignoring what was
     just said.
     """
-    if previous is None or not previous.has_any_constraint():
+    if previous is None or not _states_something(previous):
         return False, "no earlier requirements to continue"
 
     for name in SUBJECT_FIELDS:
@@ -182,6 +182,18 @@ def is_continuation(previous: Criteria | None, current: Criteria) -> tuple[bool,
         return True, "the turn restates the quantity"
 
     return True, "the turn refines the earlier requirements"
+
+
+def continuation_basis(conversation: Conversation) -> Criteria | None:
+    """The stored criteria a new turn merges onto, or ``None`` if there is none.
+
+    Exists so the "is there anything to continue" question is asked in exactly
+    one place. It was previously asked at every call site with
+    ``criteria.has_any_constraint()``, which is False for a turn whose only
+    requirement was a quantity or a budget — so such a conversation was thrown
+    away and the next turn started over (BUG.md A12).
+    """
+    return conversation.criteria if _states_something(conversation.criteria) else None
 
 
 #: Every field that can carry forward. ``raw_text`` is excluded on purpose: the

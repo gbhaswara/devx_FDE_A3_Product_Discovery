@@ -311,3 +311,20 @@ class TestConversation:
         ask(QUOTED)
         assert not (tmp_path / "conversations.jsonl").exists()
         assert "turn_index" not in _records()[-1]
+
+    def test_a_commercial_only_first_turn_is_continued(self, ask, tmp_path):
+        """BUG.md A12 reached the CLI too, through the same narrow predicate."""
+        ask("under 200 a pack", conversation_id="c1")
+        code, second = ask("20 reams", conversation_id="c1")
+        assert code == 0
+
+        stored = [
+            json.loads(line)
+            for line in (tmp_path / "conversations.jsonl").read_text().splitlines()
+            if line.strip()
+        ]
+        # The newest state for c1 must hold both the budget and the quantity.
+        assert stored[-1]["criteria"]["budget_per_unit"] == 20000
+        assert stored[-1]["criteria"]["quantity"] == 20
+        assert _records()[-1]["turn_index"] == 2
+        assert "200.00" in second, "the budget is still in force, so it is stated"

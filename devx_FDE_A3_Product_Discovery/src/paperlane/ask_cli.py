@@ -188,7 +188,7 @@ def run_ask(
         except conversation.ConversationInvalid as exc:
             print(f"ask: {exc}")
             return 2
-        previous = existing.criteria if existing.criteria.has_any_constraint() else None
+        previous = conversation.continuation_basis(existing)
         merge = conversation.merge_turn(previous, criteria)
         criteria = merge.criteria
         carried_fields = sorted(merge.carried)

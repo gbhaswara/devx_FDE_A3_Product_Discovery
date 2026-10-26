@@ -86,6 +86,40 @@ class TestContinuation:
 # Disclosure
 # ---------------------------------------------------------------------------
 
+class TestCommercialOnlyFirstTurn:
+    """BUG.md A12 at the wiring, where the defect actually lived.
+
+    The unit test proves the predicate; this proves the callers pass the stored
+    criteria instead of `None`. Four call sites shared the narrow test, so a
+    fix to `is_continuation` alone would leave the API, the page and the CLI
+    still starting over.
+    """
+
+    def test_a_quantity_only_first_turn_is_continued(self, client):
+        first = ask(client, "20 reams", "c1").json()
+        assert first["criteria"].get("quantity") == 20
+
+        second = ask(client, "make it 50", "c1").json()
+        assert second["criteria"].get("quantity") == 50
+        assert second["conversation"]["turn"] == 2
+
+    def test_a_budget_only_first_turn_is_continued(self, client):
+        first = ask(client, "under 200 a pack", "c1").json()
+        assert first["criteria"].get("budget_per_unit") == "200.00"
+
+        second = ask(client, "20 reams", "c1").json()
+        assert second["criteria"].get("budget_per_unit") == "200.00"
+        assert second["criteria"].get("quantity") == 20
+        assert "budget_per_unit" in second["conversation"]["carried"]
+
+    def test_a_named_subject_still_starts_fresh(self, client):
+        """A12 must not weaken D3: naming a subject still discards the rest."""
+        ask(client, "20 reams", "c1")
+        second = ask(client, "A4 copy paper", "c1").json()
+        assert second["criteria"].get("quantity") is None
+        assert second["criteria"].get("size") == "A4"
+
+
 class TestDisclosure:
     def test_the_reply_names_what_it_remembered(self, client):
         ask(client, "A4 80gsm copy paper, 20 reams", "c1")

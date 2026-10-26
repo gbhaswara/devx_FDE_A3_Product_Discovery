@@ -204,9 +204,14 @@ link back to `/`, so abandoning a conversation needs no request.
 ./run.sh eval --cases eval/conversation-cases.json
 ```
 
-Eight recorded conversations, seventeen turns, each asserting the merged criteria
+Ten recorded conversations, twenty-one turns, each asserting the merged criteria
 a human would have understood, what the reply disclosed, and — where it matters —
 that a fresh turn quotes the same total as the same request run standalone.
+
+Cases 9 and 10 are regressions from `BUG.md` A12: a first turn whose only
+requirement is a quantity, or only a budget. For those turns
+`has_any_constraint()` is False, and gating the *earlier* criteria on it threw the
+conversation away. Both cases fail if the narrow predicate is restored.
 
 The harness is shown able to fail:
 

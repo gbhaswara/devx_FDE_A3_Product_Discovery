@@ -115,6 +115,49 @@ class TestContinuationRule:
         assert continued
 
 
+class TestContinuationFromACommercialOnlyTurn:
+    """BUG.md A12 — a first turn may state only a quantity or only a budget.
+
+    A quantity and a budget do not filter the catalog, so
+    ``Criteria.has_any_constraint()`` says False for both. Gating the
+    *earlier* criteria on that predicate threw away a conversation whose only
+    requirement was commercial, and the customer's next sentence started over.
+    The broader question — did this turn state *anything* — is the one that
+    decides whether there is something to continue.
+    """
+
+    def test_a_quantity_only_first_turn_can_be_continued(self):
+        previous = criteria(quantity=20)
+        continued, _ = is_continuation(previous, criteria(quantity=50))
+        assert continued, "20 packs is a statement, so turn two has a basis"
+
+    def test_a_budget_only_first_turn_can_be_continued(self):
+        previous = criteria(budget_per_unit=Money(20_000))
+        continued, _ = is_continuation(previous, criteria(quantity=20))
+        assert continued
+
+    def test_a_named_subject_is_still_fresh(self):
+        """A12 must not weaken D3: a size names a new subject."""
+        previous = criteria(budget_per_unit=Money(20_000))
+        continued, reason = is_continuation(previous, criteria(size_code="A4"))
+        assert not continued
+        assert "size_code" in reason
+
+    def test_a_commercial_only_turn_is_merged_not_replaced(self):
+        previous = criteria(quantity=20)
+        current = criteria(budget_per_unit=Money(20_000))
+        result = merge_turn(previous, current)
+        assert result.continued
+        assert result.criteria.quantity == 20
+        assert result.criteria.budget_per_unit == Money(20_000)
+
+    def test_an_empty_turn_is_still_not_a_basis(self):
+        """The broader predicate must not also revive the empty turn."""
+        continued, reason = is_continuation(criteria(), criteria(quantity=5))
+        assert not continued
+        assert "no earlier" in reason
+
+
 class TestBareQuantity:
     """"Make it 50" — a refinement whose quantity has no unit word.
 

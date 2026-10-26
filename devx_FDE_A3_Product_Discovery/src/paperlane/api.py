@@ -750,7 +750,7 @@ def create_app(
             existing = store.get(conversation_id) or conversation.Conversation(
                 id=conversation_id
             )
-            previous = existing.criteria if existing.criteria.has_any_constraint() else None
+            previous = conversation.continuation_basis(existing)
             merge = conversation.merge_turn(previous, criteria)
             criteria = merge.criteria
             carried_fields = sorted(merge.carried)
@@ -1033,9 +1033,7 @@ def create_app(
                 existing = conversation_store.get(conversation_key) or (
                     conversation.Conversation(id=conversation_key)
                 )
-                previous = (
-                    existing.criteria if existing.criteria.has_any_constraint() else None
-                )
+                previous = conversation.continuation_basis(existing)
                 merge = conversation.merge_turn(previous, criteria)
                 criteria = merge.criteria
                 carried_fields = sorted(merge.carried)

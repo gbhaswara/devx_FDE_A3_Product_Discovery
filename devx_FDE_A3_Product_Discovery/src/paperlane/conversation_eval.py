@@ -28,7 +28,7 @@ from typing import Any, Sequence
 
 from . import catalog
 from .assistant import answer
-from .conversation import Conversation, merge_turn, record_turn
+from .conversation import Conversation, continuation_basis, merge_turn, record_turn
 from .evaluate import AXES, FAIL, NA, PASS, load_cases, run_case
 from .interpret import interpret_rules, validate
 
@@ -240,7 +240,7 @@ def run_conversation(
         result.turns.append(turn)
 
         parsed = interpret_rules(expectation.request)
-        previous = conversation.criteria if conversation.criteria.has_any_constraint() else None
+        previous = continuation_basis(conversation)
         merge = merge_turn(previous, parsed)
         criteria = merge.criteria
         turn.carried = tuple(sorted(merge.carried))
