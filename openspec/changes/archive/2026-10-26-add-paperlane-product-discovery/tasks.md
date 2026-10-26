@@ -107,11 +107,11 @@ Ordering follows design.md Decision 12: the deterministic core lands and is prov
 
 - [x] 10.1 Add multi-item basket quoting and verify a test asserts delivery is charged once against the combined pre-tax subtotal and that a mixed order crossing the threshold only in aggregate pays no delivery
 - [x] 10.2 Add the single-page interface and verify every outcome renders, including clarification, no-match and refusal, driven by the same endpoints as the evaluation harness
-- [ ] 10.3 Add the diff report as a demo artefact and verify it renders each change kind against a mutated site
-  - Diff report: **done** — `GET /api/diff`, `./run.sh diff`, `diff_snapshots()` with all six change kinds.
-  - Each change kind is verified against synthetic snapshots in `tests/test_catalog.py::TestDiff`, not against a mutated site.
-  - **Open because the verification names a mutated site, and no mutated site exists** (that is task 10.4). The code path is tested; the end-to-end demonstration is not.
-- [ ] 10.4 Build a mutated copy of the site covering added and withdrawn items, price and tier changes, an unknown markup shape, both missing weight conversions, an exact budget boundary, an exact delivery threshold, and an embedded instruction, and verify a refresh against it reports every injected change
+- [x] 10.3 Add the diff report as a demo artefact and verify it renders each change kind against a mutated site
+  - Diff report: `GET /api/diff`, `./run.sh diff`, `diff_snapshots()` with all six change kinds.
+  - **Closed by `add-mutated-site-refresh-harness`**: `./run.sh verify-refresh` ingests a mutated copy of the site and the diff reports all six kinds — 6 added, 1 withdrawn, 1 price changed, 2 availability changed, 1 tier changed, 1 parse failed — each verified against a manifest declared in advance. See `docs/refresh-verification.md`.
+- [x] 10.4 Build a mutated copy of the site covering added and withdrawn items, price and tier changes, an unknown markup shape, both missing weight conversions, an exact budget boundary, an exact delivery threshold, and an embedded instruction, and verify a refresh against it reports every injected change
+  - **Closed by `add-mutated-site-refresh-harness`**: `src/paperlane/mutate.py` injects all twelve changes, `src/paperlane/refresh.py` serves and ingests the copy, and `verify()` checks the report against the manifest in both directions. Every injected change is reported under the correct kind.
 - [ ] 10.5 Add the hybrid semantic tiebreak and verify it only reorders results that already satisfy every hard constraint, with a test asserting it cannot introduce or exclude an item
 - [ ] 10.6 Add structured logging and the five metrics and verify each metric is derivable from the records and that the disagreement metric reads zero on the evaluation run
 - [ ] 10.7 Verify credentials and unbounded conversation text are absent from the logs and records
@@ -125,7 +125,8 @@ Ordering follows design.md Decision 12: the deterministic core lands and is prov
   - Verified: ingest (103 requests, 72 SKUs, 59 tier docs, 0 review items) → serve (`GET /` 200, `/api/health` 72 products / 105 tiers) → `POST /api/ask` on the brief's own example returned 4,237.20 → `./run.sh eval` reproduced 24/24 passing.
 - [x] 11.3 Re-ingest an unchanged site and verify the diff reports no change
   - Verified: second ingest reported `no_change: true` with all six change lists empty.
-- [ ] 11.4 Re-ingest the mutated site and verify every injected change is reported and no page disappears without appearing in review
+- [x] 11.4 Re-ingest the mutated site and verify every injected change is reported and no page disappears without appearing in review
+  - **Closed by `add-mutated-site-refresh-harness`**: the verification asserts all twelve changes appear under their declared kind, and that `PL-CP-A4-88-ODD` (unparseable markup) is reported as a parse failure and **not** as a withdrawal — the check that a page cannot disappear silently. The real site re-ingest still yields 72 SKUs and 0 review items.
 - [x] 11.5 Verify the five-command README path from a clean checkout reproduces a working service
   - Verified against a pristine copy (no `.venv`, no `*.previous.duckdb`, only the committed snapshot): `uv sync` → 590 tests pass → `serve` returns 200 with 72 products → `eval` 24/24 → `diff`.
   - `diff` reports `comparable: false` there, which is correct: a fresh checkout has no baseline until it has refreshed once. The README now says so.
