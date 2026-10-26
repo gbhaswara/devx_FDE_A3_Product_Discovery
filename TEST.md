@@ -1,6 +1,6 @@
 # TEST.md — testing and evaluation strategy
 
-How correctness is established for the A3 submission. Requirements are in `openspec/changes/add-paperlane-product-discovery/specs/`; each task in `tasks.md` names its own verification.
+How correctness is established for the A3 submission. Requirements are in the ten main specs under `openspec/specs/`; each task in the archived changes' `tasks.md` names its own verification.
 
 ## The problem this strategy solves
 

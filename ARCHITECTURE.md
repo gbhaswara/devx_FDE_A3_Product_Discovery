@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — PaperLane Product Discovery
 
-Architecture overview for the A3 submission. Requirements live in `openspec/changes/add-paperlane-product-discovery/specs/`; the reasoning behind each technical choice is in that change's `design.md`.
+Architecture overview for the A3 submission. Requirements live in the ten main specs under `openspec/specs/`; the reasoning behind each technical choice is in the `design.md` of the change that introduced it, under `openspec/changes/archive/`.
 
 ## What the system does
 

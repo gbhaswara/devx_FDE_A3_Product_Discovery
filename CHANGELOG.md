@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.7.0 — all three Tier 2 changes complete.** 86 of 86 tasks closed across the Tier 1 change and its three Tier 2 successors. 937 tests pass offline, the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), and the negative control fails as designed. See `openspec/changes/add-paperlane-product-discovery/tasks.md` (archived), `add-mutated-site-refresh-harness/tasks.md`, `add-semantic-tiebreak/tasks.md` and `add-observability/tasks.md`.
+Current status: **0.7.0 — all three Tier 2 changes complete and archived.** 86 of 86 tasks closed across the Tier 1 change and its three Tier 2 successors (167 tasks in total, none open). 937 tests pass offline, the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), and the negative control fails as designed. Requirements now live in the ten main specs under `openspec/specs/`; the four changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
