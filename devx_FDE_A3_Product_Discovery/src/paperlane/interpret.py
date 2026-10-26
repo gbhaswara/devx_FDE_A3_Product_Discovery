@@ -386,6 +386,25 @@ class Interpretation:
         return self.path in ("model", "mixed")
 
 
+def fallback_reason(interpretation, client) -> str | None:
+    """Why the rule path served this request, when a model was available.
+
+    ``None`` when no model was available to this request — that is not a
+    fallback, it is a deployment without a model, and counting it as degradation
+    would make the metric permanently alarming. The distinction is what keeps
+    ``fallback_rate`` meaningful.
+
+    Lives here, beside the interpreter, so every entry point that writes a
+    request record computes it the same way. Two copies of this rule is how the
+    API and the CLI end up disagreeing about what counts as degradation.
+    """
+    if client is None:
+        return None
+    if interpretation.path != "rules":
+        return None
+    return interpretation.detail or "the rule path served the request"
+
+
 def interpret(text: str, client=None) -> Interpretation:
     """Interpret a request, preferring the model and falling back to rules.
 

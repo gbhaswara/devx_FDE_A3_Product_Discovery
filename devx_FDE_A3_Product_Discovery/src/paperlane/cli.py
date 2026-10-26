@@ -55,6 +55,36 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("diff", help="Compare the current snapshot with the previous")
 
+    ask = sub.add_parser(
+        "ask",
+        help="Ask one question and print the answer (no server required)",
+    )
+    ask.add_argument(
+        "request",
+        help="The customer's sentence, e.g. \"A4 80gsm copy paper, 20 reams\"",
+    )
+    ask.add_argument(
+        "--quantity",
+        type=int,
+        default=None,
+        help="Override the quantity the request implies",
+    )
+    ask.add_argument(
+        "--json",
+        action="store_true",
+        help="Machine-readable output, the same shape as POST /api/ask",
+    )
+    ask.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Also print how the request was interpreted",
+    )
+    ask.add_argument(
+        "--no-model",
+        action="store_true",
+        help="Use the rule interpreter only, even when a model is configured",
+    )
+
     similarity = sub.add_parser(
         "similarity",
         help="Measure the semantic tiebreak against the recorded cases",
@@ -146,6 +176,16 @@ def main(argv: list[str] | None = None) -> int:
         from .catalog import run_diff
 
         return run_diff()
+    if args.command == "ask":
+        from .ask_cli import run_ask
+
+        return run_ask(
+            args.request,
+            quantity=args.quantity,
+            use_model=not args.no_model,
+            as_json=args.json,
+            verbose=args.verbose,
+        )
     if args.command == "similarity":
         from pathlib import Path
 

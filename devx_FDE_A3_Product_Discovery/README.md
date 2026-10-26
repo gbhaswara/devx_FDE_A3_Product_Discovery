@@ -14,15 +14,17 @@ From a clean checkout, in this directory:
 
 ```bash
 uv sync                                    # 1. install dependencies
-./run.sh test                              # 2. 937 tests, offline, no model
+./run.sh test                              # 2. the full suite, offline, no model
 ./run.sh serve                             # 3. the app on http://127.0.0.1:8001
 ./run.sh eval                              # 4. the recorded evaluation set
-./run.sh diff                              # 5. snapshot vs previous snapshot
+./run.sh ask "A4 80gsm copy paper, 20 reams"   # 5. one question, no server needed
 ```
 
-Those five are the demo path. Three further commands exist to *prove* something
+Those five are the demo path. Four further commands exist to *prove* something
 rather than demonstrate it, and none is needed to see the system work:
 
+- `./run.sh diff` compares the current snapshot with the previous one. It reports
+  `comparable: false` on a fresh checkout — see below for why that is correct.
 - `./run.sh verify-refresh` (~55s) mutates a git-ignored copy of the site,
   ingests it into a throwaway snapshot, and checks that every change it declared
   in advance is reported under the correct kind. It needs no server and no
@@ -44,12 +46,18 @@ term is *omitted* from the ranking rather than set to a constant, so the orderin
 is the pre-semantic one by construction.
 
 That is the whole demo. The catalog snapshot (`data/catalog.duckdb`) is
-committed, so step 3 works without crawling anything.
+committed, so steps 3 and 5 work without crawling anything or starting a server.
 
-Step 5 reports `comparable: false` on a fresh checkout, and that is correct
-rather than broken: there is no previous snapshot to compare against until you
-have refreshed at least once. Run `ingest` twice and the second diff has a
-baseline.
+Step 5 is the shortest honest demo: it asks one question through the same
+interpreter, search, pricing and rendering the HTTP service uses, and prints the
+reply. `--json` gives the identical shape `POST /api/ask` returns; `--verbose`
+adds how the request was read. It also writes a request record, so
+`./run.sh metrics` afterwards counts it.
+
+`./run.sh diff` reports `comparable: false` on a fresh checkout, and that is
+correct rather than broken: there is no previous snapshot to compare against
+until you have refreshed at least once. Run `ingest` twice and the second diff
+has a baseline.
 
 **Rebuilding the catalog from the site** takes two more commands, because the
 site has to be served first:

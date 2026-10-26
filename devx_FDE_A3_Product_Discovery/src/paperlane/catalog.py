@@ -176,6 +176,28 @@ def snapshot_exists(db_path: Path | None = None) -> bool:
     return path.exists()
 
 
+def snapshot_meta(db_path: Path | None = None) -> dict[str, Any]:
+    """A compact statement of what an answer was computed against.
+
+    Lives here rather than in the HTTP layer because every entry point that
+    writes a request record needs it — the API, the CLI, and the evaluation
+    harness. A per-caller copy is how one of them ends up naming the committed
+    snapshot while serving from a temporary one, which points an investigation
+    at the wrong file.
+
+    Takes the snapshot path so an injected database is named correctly.
+    """
+    info = health(db_path)
+    last = info.get("last_ingest") or {}
+    return {
+        "path": info.get("path"),
+        "products": info.get("products"),
+        "price_tiers": info.get("price_tiers"),
+        "built_at": last.get("finished_at"),
+        "base_url": last.get("base_url"),
+    }
+
+
 def health(db_path: Path | None = None) -> dict[str, Any]:
     """Counts and provenance for the health endpoint."""
     path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH

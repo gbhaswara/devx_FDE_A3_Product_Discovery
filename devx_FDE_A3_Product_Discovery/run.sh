@@ -26,6 +26,7 @@ Usage: ./run.sh <command> [args...]
 Commands:
   ingest   Crawl the catalog over HTTP into a new snapshot, then swap it in
   serve    Run the HTTP API and the single page
+  ask      Ask one question and print the answer (no server required)
   test     Run unit, extraction and integration tests (offline, no model)
   eval     Run the recorded evaluation cases against a loaded snapshot
   diff     Compare the current snapshot with the previous one
@@ -36,6 +37,7 @@ Commands:
 Examples:
   ./run.sh ingest --base-url http://localhost:8000/paperlane/
   ./run.sh serve
+  ./run.sh ask "A4 80gsm copy paper, 20 reams"
   ./run.sh test
   ./run.sh metrics
   ./run.sh metrics --eval      # the most recent evaluation run's records
@@ -55,6 +57,7 @@ shift
 case "$cmd" in
     ingest) exec $PY -m paperlane.cli ingest "$@" ;;
     serve)  exec $PY -m paperlane.cli serve  "$@" ;;
+    ask)    exec $PY -m paperlane.cli ask    "$@" ;;
     test)   exec $PY -m pytest tests -q "$@" ;;
     eval)   exec $PY -m paperlane.cli eval   "$@" ;;
     diff)   exec $PY -m paperlane.cli diff   "$@" ;;

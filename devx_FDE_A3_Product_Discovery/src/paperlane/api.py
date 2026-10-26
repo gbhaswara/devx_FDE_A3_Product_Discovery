@@ -41,7 +41,13 @@ from .assistant import (
     answer,
 )
 from .criteria import Criteria
-from .interpret import CriteriaInvalid, interpret, interpret_rules, validate
+from .interpret import (
+    CriteriaInvalid,
+    fallback_reason,
+    interpret,
+    interpret_rules,
+    validate,
+)
 from .model import ModelClient, ModelConfig, ModelUnavailable
 from .money import Money
 from .pricing import LineRequest, PriceFacts, quote
@@ -176,34 +182,21 @@ def _meta(*, started: float, interpretation: str, snapshot: dict) -> dict[str, A
 def _fallback_reason(interpretation, client) -> str | None:
     """Why the rule path served this request, when a model was available.
 
-    ``None`` when no model was available to this request — that is not a
-    fallback, it is a deployment without a model, and counting it as degradation
-    would make the metric permanently alarming. The distinction is what keeps
-    ``fallback_rate`` meaningful.
+    Delegates to :func:`interpret.fallback_reason`, so the CLI and the API apply
+    the same rule about what counts as degradation. See that function for why a
+    missing model is not a fallback.
     """
-    if client is None:
-        return None
-    if interpretation.path != "rules":
-        return None
-    return interpretation.detail or "the rule path served the request"
+    return fallback_reason(interpretation, client)
 
 
 def _snapshot_meta(db_path=None) -> dict[str, Any]:
     """A compact statement of what the answer was computed against.
 
-    Takes the snapshot path so a record written against an injected database
-    names *that* database. A record that names the committed snapshot while the
-    request was served from a temporary one is worse than no record: it points an
-    investigation at the wrong file.
+    Delegates to :func:`catalog.snapshot_meta`, which lives in the store so the
+    CLI and the harness record the same facts as this service. A second copy
+    here is how the API and the CLI start describing different snapshots.
     """
-    info = catalog.health(db_path)
-    return {
-        "path": info.get("path"),
-        "products": info.get("products"),
-        "price_tiers": info.get("price_tiers"),
-        "built_at": (info.get("last_ingest") or {}).get("finished_at"),
-        "base_url": (info.get("last_ingest") or {}).get("base_url"),
-    }
+    return catalog.snapshot_meta(db_path)
 
 
 def _record_basket(
