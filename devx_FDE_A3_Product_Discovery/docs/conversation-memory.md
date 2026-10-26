@@ -251,6 +251,10 @@ a total.
   store is the change a deployment needs, and the interface already allows it.
 - **There is no expiry.** Bounds cap how much is held; nothing ages out a
   conversation that is merely old.
+- **A turn that understands nothing currently forgets the conversation**
+  (`BUG.md` A13, OPEN). D3 says such a turn is answered fresh; the code also
+  discards the retained criteria, so the next turn cannot continue either. This
+  is a defect, not a design choice — it is listed here until it is resolved.
 
 ---
 

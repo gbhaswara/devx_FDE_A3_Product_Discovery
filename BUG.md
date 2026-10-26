@@ -253,9 +253,9 @@ What shipped instead: `request_chars` (a length) and `request_digest` (16 hex ch
 
 ---
 
-## Part 2b — Defects found in the shipped code · OPEN
+## Part 2b — Defects found in the shipped code
 
-Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. All three are in conversation memory. Registered before being fixed, per the rule at the end of this file.
+Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. All three are in conversation memory. Registered before being fixed, per the rule at the end of this file. **A12 and A14 are FIXED; A13 is OPEN and needs a decision** (it is D3 working as written, so fixing it means amending a recorded decision).
 
 ### A12 — A first turn that states only a quantity or a budget cannot be continued
 
@@ -277,7 +277,16 @@ Both the 20 and the 50 are lost. The reply asks a fresh question as if nothing h
 
 **Guard:** an evaluation conversation starting `"20 packs"` and one starting `"under 200 a pack"`, each continued by a turn that must carry the first; and a unit test `is_continuation(Criteria(quantity=20), Criteria(quantity=50))` is `True`.
 
-**Status: OPEN.**
+**Status: FIXED.** The broader predicate is now the only one:
+`is_continuation` gates on `_states_something(previous)`, and a new
+`conversation.continuation_basis(conversation)` replaces the narrow test at all
+four call sites, so the question "is there anything to continue" is asked in one
+place. Cases 9 and 10 were added to `eval/conversation-cases.json` and **proven
+falsifiable**: restoring the old predicate makes exactly those two fail and the
+run exit 1. `tests/test_conversation.py::TestContinuationFromACommercialOnlyTurn`,
+`tests/test_conversation_api.py::TestCommercialOnlyFirstTurn` and
+`tests/test_ask_cli.py::TestConversations::test_a_commercial_only_first_turn_is_continued`
+pin it at the unit, HTTP and CLI layers.
 
 ### A13 — One unparseable turn permanently forgets the conversation
 
@@ -307,7 +316,15 @@ Low severity — no answer is affected, and the cap is deliberate — but it is 
 
 **Guard:** a test asserting that 25 turns produce strictly increasing `turn_index`.
 
-**Status: OPEN.**
+**Status: FIXED.** `Conversation` carries `turns_seen`, incremented by
+`record_turn` and persisted by the JSONL store, and `turn_index` is
+`max(turns_seen, len(turns)) + 1` — the retained list is a floor, not the source,
+so a conversation read from a file written before the counter existed still
+numbers correctly. `tests/test_conversation.py::TestTurnNumbering` pins the
+counter past the cap, its strict monotonicity, and its survival across a restart;
+`tests/test_conversation_api.py::TestRecords::test_the_recorded_turn_number_keeps_advancing`
+pins the number that reaches the record. Verified against the running service:
+25 turns now write `1…25` where they wrote `… 20, 21, 21, 21`.
 
 ---
 
