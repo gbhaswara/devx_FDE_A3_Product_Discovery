@@ -18,6 +18,14 @@ Free-text requests SHALL be interpreted into a structured set of requirements, a
 - **WHEN** the interpretation fails validation
 - **THEN** the system does not proceed to pricing, and instead asks for clarification
 
+#### Scenario: A refinement is converted using the earlier requirements
+- **WHEN** a customer refines an earlier request in the same conversation
+- **THEN** the requirements used for pricing include the earlier requirements the refinement did not contradict
+
+#### Scenario: A refinement is validated as a whole
+- **WHEN** requirements are combined from more than one turn
+- **THEN** the combined set is validated in full before anything is priced
+
 ### Requirement: Criteria parsing falls back to rules when the model is unavailable
 
 Interpretation SHALL NOT depend on a single external service. When the language model cannot be reached or does not return usable output, a rule-based interpretation SHALL take over for requests it can handle.
@@ -46,6 +54,10 @@ A successful reply SHALL present the matching products together with a per-produ
 - **WHEN** a volume tier or sale price determined the unit price
 - **THEN** the breakdown identifies which one applied, so the customer can see why that figure was used
 
+#### Scenario: Remembered requirements are distinguished from current ones
+- **WHEN** a reply is produced from requirements that include earlier turns
+- **THEN** it states which requirements came from earlier turns
+
 ### Requirement: The assistant asks rather than guesses when a missing detail changes the answer
 
 When a requirement is needed to answer correctly, is absent from the request, cannot be inferred from the catalog, and would change the result, the assistant SHALL ask for it. It SHALL NOT ask about details that do not affect the answer.
@@ -73,6 +85,10 @@ Every product referenced in a reply SHALL exist in the catalog snapshot in use. 
 #### Scenario: Unknown reference is caught before the reply is sent
 - **WHEN** a reply would reference a product absent from the current snapshot
 - **THEN** that reference is removed, the event is logged, and the reply is not sent as if valid
+
+#### Scenario: Merging does not invent a product
+- **WHEN** a reply is produced from requirements combined across turns
+- **THEN** every product it presents exists in the catalog snapshot in use
 
 ### Requirement: Unavailable products are refused, not offered
 

@@ -30,6 +30,14 @@ Every handled request SHALL produce exactly one structured record capturing how 
 - **WHEN** records are written
 - **THEN** each is a single structured entry suitable for aggregation, not free-form prose
 
+#### Scenario: A multi-turn request is distinguishable from a single-turn one
+- **WHEN** a request is handled as part of a conversation
+- **THEN** its record states the turn's position in that conversation and which requirements were carried from earlier turns
+
+#### Scenario: A single-turn request carries no conversation fields
+- **WHEN** a request names no conversation
+- **THEN** its record carries no turn position and no carried requirements, so single-turn traffic stays separable from multi-turn traffic
+
 ### Requirement: Metrics that reveal silent degradation are derivable
 
 The system SHALL expose measures that distinguish a working system from one quietly answering worse, and each SHALL be derivable from the records rather than maintained by a separate counter.
