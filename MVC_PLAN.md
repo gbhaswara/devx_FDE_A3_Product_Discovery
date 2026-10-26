@@ -41,7 +41,7 @@ ceiling, not a target.
 
 | Layer | Choice | Est. size |
 |---|---|---|
-| Crawl | `httpx` + `selectolax` (`LexborHTMLParser`), 2 req/s, 103 requests ≈ 52 s | ~150 lines |
+| Crawl | `httpx` + `selectolax` (`LexborHTMLParser`), 2 req/s, 103 requests ≈ 52 s floor; measured 102.6 s at the default 1 req/s | ~150 lines |
 | Store | One DuckDB file, three tables: `products`, `price_tiers`, `review_items` | ~120 lines |
 | Pricing | Integer satang + `Decimal` with `ROUND_HALF_UP` | ~200 lines |
 | Interpret | Rules parser first; model as an optional upgrade behind env vars | ~250 + 150 lines |
@@ -58,7 +58,7 @@ The brief asks for "how to run it in 5 commands or fewer". Five, exactly:
 
 ```bash
 uv sync                       # 1. dependencies
-./run.sh ingest               # 2. crawl the site into a snapshot (~52s)
+./run.sh ingest               # 2. crawl the site into a snapshot (~100s at 1 req/s)
 ./run.sh ask "letter-size flyers, one side, colour, under 250 a pack, 20 packs"
                               # 3. the brief's own example, answered
 ./run.sh eval                 # 4. the 12 recorded cases
@@ -513,7 +513,7 @@ whole point of the section:
 | Tier documents | 59 | `find paperlane -path '*api/pricing*' -name '*.json'` |
 | Crawl decomposition | 1 index + 7 category + 36 product + 59 tier = 103 | matches `ingest_runs.pages_fetched` |
 | Crawl requests | 103 | `ingest_runs.pages_fetched` |
-| Crawl duration | ≈52 s floor (103 ÷ 2 req/s) | arithmetic, given the enforced cap — **not** corroborated by the snapshot; see below |
+| Crawl duration | 102.6 s, measured (1.0 req/s) | `ingest_runs` after the timing fix — see below |
 | Products / tier rows | 72 / 105 | `catalog.duckdb` |
 | Markup shapes | 4 | `count(distinct source_shape)` |
 | Out of stock / on sale / discontinued | 2 / 1 / 0 | `catalog.duckdb` |
@@ -555,23 +555,31 @@ That is the real scope decision, and it is a bigger one than any item in §3.
 
 ### A note on the crawl timing
 
-The committed snapshot's `ingest_runs` row shows `started_at` and `finished_at` 0.37
+*Historical, and since fixed. Kept because the reasoning is the point.*
+
+The snapshot at the time of writing showed `started_at` and `finished_at` 0.37
 seconds apart for 103 pages — an implied 280 req/s, which the crawler refuses to
-exceed (`rate_per_second > 2.0` raises). The row is not evidence of a fast crawl; it
-is evidence that `started_at` is stamped **after** the crawl, inside the snapshot
-build. `catalog.py` sets `started = datetime.now(...)` at the top of the build
-function, so the pair measures database construction, not fetching.
+exceed (`rate_per_second > 2.0` raises). The row was not evidence of a fast crawl;
+it was evidence that `started_at` was stamped **after** the crawl, inside the
+snapshot build. `catalog.py` set `started = datetime.now(...)` at the top of the
+build function, so the pair measured database construction, not fetching.
 
-Two consequences for this plan, both worth carrying over:
+Both consequences are now resolved:
 
-- **The ~52 second floor is arithmetic, not measurement.** 103 requests at the
-  enforced 2 req/s cannot take less. Use it as a budget figure and say it is derived.
-- **If a crawl duration is wanted, it must be stamped at crawl start.** That is a
-  one-line change and a genuine improvement: it turns "the ingest took about a
-  minute" into a number, and it makes a slow crawl visible instead of invisible.
+- **The crawl duration is measured, not derived.** `ingest.py` stamps the start
+  before the first request and passes it into `build_snapshot` as
+  `crawl_started_at`. The committed row now reads **102.6 s for 103 requests —
+  1.0 req/s**, which agrees with the configured rate instead of contradicting it.
+  Three tests in `tests/test_catalog.py::TestIngestRunTiming` pin it, one of which
+  asserts that a start an hour in the past yields a duration of at least an hour.
+- **The ~52 second floor was arithmetic.** At the enforced 2 req/s the crawl
+  cannot take less; the measured run went at the default 1 req/s and took twice
+  that. The floor was right about the cap and wrong as a budget figure.
 
-This is the same class of error §4 warns about — a plausible figure nobody recomputed
-— caught here only because the arithmetic refused to agree.
+This is the same class of error §4 warns about — a plausible figure nobody
+recomputed — caught here only because the arithmetic refused to agree. It was
+also caught *again* by this document, which is the argument for writing the
+rejected subtraction down.
 
 The hour budget in §4 is likewise a prediction, and the one documented attempt at
 predicting this work was off by 8×. The ordering is trustworthy; the clock is not.
