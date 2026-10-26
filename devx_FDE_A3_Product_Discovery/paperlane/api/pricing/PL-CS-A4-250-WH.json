@@ -1,0 +1,13 @@
+{
+ "sku": "PL-CS-A4-250-WH",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 5,
+   "unit_price": 216.0
+  }
+ ],
+ "updated": "2026-10-01"
+}

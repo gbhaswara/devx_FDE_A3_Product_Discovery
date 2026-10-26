@@ -1,0 +1,20 @@
+
+:root{--ink:#1d2433;--muted:#5b6475;--rule:#e2e5ea;--accent:#b5462a;--tint:#f6f4f1}
+*{box-sizing:border-box}body{margin:0;font-family:Georgia,'Times New Roman',serif;color:var(--ink);background:#fff;line-height:1.5}
+a{color:var(--accent)}header{border-bottom:1px solid var(--rule);padding:14px 24px;display:flex;gap:24px;align-items:center;flex-wrap:wrap}
+header .logo{font-size:22px;font-weight:bold;color:var(--ink);text-decoration:none}header nav a{margin-right:16px;font-family:Arial,sans-serif;font-size:14px}
+.banner{background:var(--tint);padding:8px 24px;font-family:Arial,sans-serif;font-size:13px;color:var(--muted)}
+main{max-width:1040px;margin:0 auto;padding:24px 16px}h1{font-size:28px;margin:8px 0 12px}h2{font-size:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.card{border:1px solid var(--rule);border-radius:6px;padding:14px;background:#fff}.card h3{font-size:16px;margin:0 0 6px}
+.card .price{font-family:Arial,sans-serif;font-weight:bold}.muted{color:var(--muted);font-size:13px;font-family:Arial,sans-serif}
+.pager{margin:20px 0;font-family:Arial,sans-serif}.pager a,.pager span{margin-right:10px}
+table{border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:14px}th,td{border-bottom:1px solid var(--rule);padding:8px;text-align:left;vertical-align:top}
+th{background:var(--tint)}dl.specs{display:grid;grid-template-columns:180px 1fr;gap:6px 16px;font-family:Arial,sans-serif;font-size:14px}
+dl.specs dt{color:var(--muted)}.pricebox{border:1px solid var(--rule);padding:14px;border-radius:6px;margin:16px 0;font-family:Arial,sans-serif}
+.pricebox .big{font-size:24px;font-weight:bold}.stock-in{color:#2d7a3e}.stock-out{color:#b00020}del{color:var(--muted)}
+.sale{background:#b5462a;color:#fff;padding:1px 6px;border-radius:3px;font-size:12px;margin-left:6px}
+.notes{font-size:12px;color:var(--muted);border-top:1px dashed var(--rule);margin-top:24px;padding-top:8px}
+button{padding:8px 14px;border:1px solid var(--ink);background:#fff;font-family:Arial,sans-serif;cursor:not-allowed}
+footer{border-top:1px solid var(--rule);padding:16px 24px;font-family:Arial,sans-serif;font-size:12px;color:var(--muted);margin-top:40px}
+@media (max-width:600px){dl.specs{grid-template-columns:1fr}header{padding:12px 16px}}

@@ -1,0 +1,17 @@
+{
+ "sku": "PL-PR-A5-MT-100-11",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 5,
+   "unit_price": 93.06
+  },
+  {
+   "min_qty": 20,
+   "unit_price": 87.12
+  }
+ ],
+ "updated": "2026-10-01"
+}

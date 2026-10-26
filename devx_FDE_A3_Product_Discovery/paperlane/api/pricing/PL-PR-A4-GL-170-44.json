@@ -1,0 +1,17 @@
+{
+ "sku": "PL-PR-A4-GL-170-44",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 5,
+   "unit_price": 361.9
+  },
+  {
+   "min_qty": 20,
+   "unit_price": 338.8
+  }
+ ],
+ "updated": "2026-10-01"
+}

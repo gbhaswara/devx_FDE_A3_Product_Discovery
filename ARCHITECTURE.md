@@ -1,0 +1,261 @@
+# ARCHITECTURE.md — PaperLane Product Discovery
+
+Architecture overview for the A3 submission. Requirements live in `openspec/changes/add-paperlane-product-discovery/specs/`; the reasoning behind each technical choice is in that change's `design.md`.
+
+## What the system does
+
+A sales assistant over PaperLane's paper catalog. A customer sends a chat message such as *"We need letter-size flyers, one side, colour, under 250 a pack, 20 packs."* The system reads the live catalog, finds matching products, explains why each matches, and returns a complete price breakdown — with every figure computed in deterministic code.
+
+## Component view
+
+```
+                    PaperLane site (localhost:8000)
+                    36 product pages | 59 pricing docs | 7 category pages
+                                    |
+                                    |  HTTP only, 1 req/s (site permits 2)
+                                    v
+                    +-----------------------------------+
+                    |  CRAWLER                          |
+                    |  discovery: pages + variant rows  |
+                    |  provenance on every fetch        |
+                    +-----------------------------------+
+                                    |
+                                    v
+                    +-----------------------------------+
+                    |  EXTRACTION LADDER                |
+                    |  1 variant table                  |
+                    |  2 <table class='specs'>          |
+                    |  3 <dl class='specs'>             |
+                    |  4 prose regexes                  |
+                    |  5 structured model extraction    |
+                    |  floor: NEEDS_REVIEW row          |
+                    +-----------------------------------+
+                                    |
+                                    v
+                    +-----------------------------------+
+                    |  NORMALISER                       |
+                    |  size -> code + dimensions        |
+                    |  weight: 4 forms -> grammage      |
+                    |  shade vs print colour mode       |
+                    |  pack sheets, not unit word       |
+                    |  money -> integer satang          |
+                    +-----------------------------------+
+                                    |
+                                    v
+                    +-----------------------------------+
+                    |  CATALOG STORE (DuckDB)           |
+                    |  build new file -> atomic swap    |
+                    |  provenance on every row          |
+                    +-----------------------------------+
+                          |                       |
+        +-----------------+                       +------------------+
+        v                                                          v
++---------------------+                              +----------------------+
+|  PRICING ENGINE     |                              |  SEARCH              |
+|  pure, deterministic|                              |  hard filters        |
+|  no I/O, no model   |                              |  + absent-attr rules |
+|  tiers -> sale ->   |                              |  + alias layer       |
+|  subtotal -> deliv  |                              |  + deterministic rank|
+|  -> VAT (half-up)   |                              |  + match_reasons     |
++---------------------+                              +----------------------+
+        |                                                          |
+        +----------------------+-----------------------------------+
+                               v
+                    +-----------------------------------+
+                    |  ASSISTANT                        |
+                    |  model: intent -> criteria only   |
+                    |  rules: fallback interpretation   |
+                    |  code: products + prices + reasons|
+                    |  assertions: no invented product  |
+                    |              stated == computed   |
+                    +-----------------------------------+
+                               |
+                               v
+                    +-----------------------------------+
+                    |  HTTP API (FastAPI)               |
+                    |  POST /chat   POST /quote         |
+                    |  GET  /products /health /diff     |
+                    |  + one server-rendered page       |
+                    +-----------------------------------+
+```
+
+## The load-bearing design decisions
+
+Four properties carry most of the score. Each is structural — enforced by the shape of the code, not by a convention.
+
+### 1. Prices cannot come from the model
+
+The model's only output is structured search criteria. Product selection, pricing and justification happen in deterministic code. A post-generation assertion rejects any reply referencing a SKU absent from the current snapshot.
+
+This matters because the guarantee is *structural* rather than *behavioural*. The model is not instructed to avoid inventing products; it has no channel through which to introduce one.
+
+### 2. One pricing path, shared by every caller
+
+`POST /quote` (structured criteria) and `POST /chat` (free text) both call the same pure pricing function. The evaluation harness calls it too.
+
+Consequence: a pricing bug cannot appear in one entry point and not another, and most of the evaluation set runs with no model and no network.
+
+### 3. A page cannot silently disappear
+
+The extraction ladder ends in a review row, never an exception and never a skip. A refresh that loses products reports the loss.
+
+Consequence: the demo round's updated site can introduce a fifth markup shape without the catalog quietly shrinking.
+
+### 4. Absent is not negative
+
+Printing attributes (`sides`, colour mode) do not apply to plain paper. They are stored as not-applicable, and a constraint on them does not exclude those products.
+
+Consequence: the naive `WHERE sides = 'single'` — which returns *zero* paper products — cannot be written.
+
+## Data model
+
+```
+products
+  sku                      primary key, leaf SKU (variant rows are their own SKU)
+  name, brand, category
+  size_code                A3 | A4 | A5 | LTR | LGL
+  width_mm, height_mm      integers
+  weight_gsm               normalised grammage
+  weight_raw               original string, e.g. "20 lb bond (75 gsm)"
+  weight_form              gsm | g_per_m2 | lb_only | lb_with_gsm
+  colour_name              paper shade: White, Cream, Pastel pink, ...
+  colour_mode              print: cmyk | mono | not-applicable
+  sides                    single | double | not-applicable
+  finish                   Gloss | Matte | Smooth | Uncoated | ...
+  pack_sheets              integer — the authoritative quantity basis
+  unit_word                "ream" | "pack" — display text only, never filtered on
+  list_price_satang        integer
+  sale_price_satang        integer or null
+  stock_status             in_stock | out_of_stock | discontinued
+  back_in_stock_date       nullable
+  source_url, source_shape, crawled_at, snapshot_id
+
+price_tiers
+  sku, min_qty, unit_price_satang, source_url, snapshot_id
+  primary key (sku, min_qty)          -- tiers are per leaf SKU, not per product page
+
+product_aliases
+  sku, alias, alias_type, confidence  -- "letter", "8.5x11", "4/4", "cmyk", "duplex"
+
+snapshots
+  snapshot_id, started_at, finished_at, base_url, page_count, sku_count
+
+page_reviews
+  url, snapshot_id, reason, raw_excerpt, created_at, resolved_at
+```
+
+`pack_sheets` is separate from price because "under 250 a pack" is unanswerable without it. `weight_raw` is kept alongside `weight_gsm` because the source states weight four different ways, and a conversion must be defensible in the interview.
+
+## Pricing pipeline
+
+```
+unit_price(sku, qty):
+    if sale_price:  return sale_price                  # PR3: sale beats list and tiers
+    best = list_price                                  # MUST initialise here, not None
+    for tier in tiers sorted by min_qty:
+        if qty >= tier.min_qty: best = tier.unit_price  # PR2: highest met tier
+    return best
+
+quote(lines):
+    subtotal = sum(unit_price(sku, qty) * qty)          # PR4
+    delivery = 0 if subtotal >= 3_000_00 else 150_00    # PR4: per ORDER, not per line
+    vat      = round_half_up((subtotal + delivery) * 7 / 100)   # PR5
+    total    = subtotal + delivery + vat
+```
+
+Three lines in that pseudocode are where the errors live, so each has a named test:
+
+| Line | Failure if wrong | Detection |
+|---|---|---|
+| `best = list_price` | Items with a 5+ or 10+ tier return nothing at qty 1–4 | unit test at qty below the lowest tier |
+| `delivery` on the summed subtotal | A mixed order pays delivery twice | multi-item case where neither line crosses the threshold alone |
+| VAT on `subtotal + delivery` | Total understated | small-order case; VAT-on-subtotal-only differs by a fixed amount |
+
+## API surface
+
+| Endpoint | Purpose | Calls the model |
+|---|---|---|
+| `POST /chat` | Free text in, reply + criteria + candidates out | yes (with rule fallback) |
+| `POST /quote` | Structured criteria in, candidates + prices out | **no** |
+| `GET /products` | Inspect the normalised catalog | no |
+| `GET /health` | Snapshot id, product count, store readable, model reachable | no |
+| `GET /diff` | Current snapshot vs previous | no |
+
+Every response declares exactly one outcome:
+
+| Outcome | Meaning | Required fields |
+|---|---|---|
+| `ok` | Candidates satisfy all hard constraints | `candidates[]` |
+| `clarify` | A needed detail is missing and would change the answer | `clarification` |
+| `no_match` | Constraints are complete but nothing satisfies them | `alternatives[]` |
+| `refused` | The suitable item is out of stock or discontinued | reason + product |
+
+The four-outcome enum is what makes the must-haves testable. "Clarifying questions when ambiguous" and "a clear no exact match" are assertions on `status`, not judgements about prose.
+
+## Refresh and snapshot lifecycle
+
+```
+ingest  ->  build catalog.<snapshot_id>.duckdb    (fresh file, never mutated)
+        ->  validate
+        ->  os.replace() over catalog.duckdb      (atomic swap; readers unaffected)
+diff    ->  attach old + new read-only, full outer join, group changes
+serve   ->  open catalog.duckdb read-only, one connection per request
+```
+
+A single-writer store would normally be a limitation. Rebuild-and-swap removes it rather than working around it, and gives a failed ingest nowhere to damage a working catalog. A committed snapshot means the service starts without crawling.
+
+## Deployment
+
+One process, one command, same origin. No build step, no separate frontend, no cross-origin configuration — the submission requires running in five commands or fewer.
+
+```
+uv sync
+./run.sh ingest --base-url http://localhost:8000/paperlane/
+./run.sh serve
+```
+
+## Verified site facts
+
+Measured against `paperlane/` during analysis; see `ANALYZE_01.md` §12 for the full log.
+
+| Fact | Value |
+|---|---|
+| Product pages | 36 |
+| Leaf SKUs | 72 (30 single-SKU pages + 42 flyer variant rows) |
+| Volume-pricing documents | 59, all belonging to SKUs that advertise them; zero orphans |
+| Category pages | 7 (4 category index pages + 3 `page-2.html` continuation pages) |
+| Markup shapes | 4: variant table (6), `<table>` (10), `<dl>` (10), prose-only (10) |
+| Weight input forms | 4: grammage, grams-per-square-metre, pounds-with-grammage, pounds-alone |
+| Out of stock | 2 — `PL-PR-A4-GL-170-44`, `PL-CL-A4-100-IVY` |
+| On sale | 1 — `PL-PR-LTR-GL-170-40`, 299.00 → 259.00, volume pricing suppressed |
+| Discontinued | 0 in v1 (PR8 names it, so expect it in the updated site) |
+| `robots.txt` | `Allow: /`, `Crawl-delay: 1` |
+| Full crawl | 105 requests ≈ 105 seconds at 1 req/s (36 product + 59 pricing + 7 category + 3 root) |
+
+### How the four shapes name the same field
+
+The ladder does not just handle different *structure* — the four shapes use different *labels*, and one of them splits a field in two. This is the mapping the normaliser has to implement, verified against every page.
+
+| Concept | `table` (10) | `dl` (10) | `variant-table` (6) | prose (10) |
+|---|---|---|---|---|
+| SKU | `Item code` | `SKU` | `Item code` (column) | `Item code: ...` in text |
+| Brand | `Brand` | `Manufacturer` | — | in prose |
+| Size | `Size` = `A4 (210 × 297 mm)` | **`Paper size` = `A5` + `Dimensions` = `148 × 210 mm`** | fixed per page | in prose |
+| Weight | `Weight` | `Basis weight` | `Paper weight` (per row) | `weighs N gsm.` |
+| Shade | `Colour` | `Shade` | — | in prose |
+| Print colour | — | — | `Colour` = `Full colour (CMYK)` | — |
+| Finish | `Finish` | `Surface` | — | in prose |
+| Pack size | `Sheets per pack` | `Pack contents` | fixed: "pack of 100" | in prose |
+
+Two consequences worth naming, because both are silent:
+
+- **`Colour` means a different thing in `table` and `variant-table`.** In `table` it is the paper shade (`White`); in `variant-table` it is the print mode (`Full colour (CMYK)`). Same label, two fields (T9).
+- **`dl` splits size into code and dimensions**, while `table` concatenates them into one string. A normaliser that assumes one field per concept will lose the dimensions on every `dl` page — or, worse, store `A5` as a display string and never derive a `size_code`.
+
+## Known architectural limitations
+
+- **Single-turn.** No conversation memory. A correction starts a new request. Deliberate: an explicit clarification step is more reliable than half-built memory.
+- **Semantic search is a tiebreak only.** A purely descriptive request with no structured terms can miss. The structured path covers the request shapes the brief describes.
+- **Rule interpretation is narrower than the model.** Paraphrases the model handles may fall back to a clarification. The fallback rate is measured so the degradation is visible.
+- **No authentication, no rate limiting beyond the crawler.** This is a local demonstration service.
+- **One site, one layout family.** The extraction ladder covers this site's four shapes plus a structured fallback; onboarding a different supplier would need a parser profile per site.

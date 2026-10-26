@@ -1,0 +1,22 @@
+# Credentials — never commit these.
+# Copy to .env and fill in locally; .env is git-ignored.
+.env
+.env.*
+
+# DuckDB runtime artefacts (the snapshot itself IS committed)
+*.duckdb.wal
+*.duckdb.tmp
+*.tmp.duckdb
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.uv/
+
+# Build output
+dist/
+build/

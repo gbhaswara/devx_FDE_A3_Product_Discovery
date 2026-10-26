@@ -1,0 +1,13 @@
+{
+ "sku": "PL-CP-A4-80-ECO",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 10,
+   "unit_price": 120.0
+  }
+ ],
+ "updated": "2026-10-01"
+}

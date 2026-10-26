@@ -1,0 +1,17 @@
+{
+ "sku": "PL-PR-LTR-MT-100-44",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 5,
+   "unit_price": 290.46
+  },
+  {
+   "min_qty": 20,
+   "unit_price": 271.92
+  }
+ ],
+ "updated": "2026-10-01"
+}

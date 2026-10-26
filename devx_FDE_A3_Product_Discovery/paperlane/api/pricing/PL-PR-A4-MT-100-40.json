@@ -1,0 +1,17 @@
+{
+ "sku": "PL-PR-A4-MT-100-40",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 5,
+   "unit_price": 192.7
+  },
+  {
+   "min_qty": 20,
+   "unit_price": 180.4
+  }
+ ],
+ "updated": "2026-10-01"
+}

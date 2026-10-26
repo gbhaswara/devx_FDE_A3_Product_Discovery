@@ -1,0 +1,17 @@
+{
+ "sku": "PL-PR-LTR-GL-170-44",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 5,
+   "unit_price": 375.06
+  },
+  {
+   "min_qty": 20,
+   "unit_price": 351.12
+  }
+ ],
+ "updated": "2026-10-01"
+}

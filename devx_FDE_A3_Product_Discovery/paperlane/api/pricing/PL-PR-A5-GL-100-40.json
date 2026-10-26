@@ -1,0 +1,17 @@
+{
+ "sku": "PL-PR-A5-GL-100-40",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 5,
+   "unit_price": 126.9
+  },
+  {
+   "min_qty": 20,
+   "unit_price": 118.8
+  }
+ ],
+ "updated": "2026-10-01"
+}

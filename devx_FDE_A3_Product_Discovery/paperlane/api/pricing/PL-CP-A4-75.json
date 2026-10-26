@@ -1,0 +1,17 @@
+{
+ "sku": "PL-CP-A4-75",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 10,
+   "unit_price": 112.1
+  },
+  {
+   "min_qty": 50,
+   "unit_price": 105.02
+  }
+ ],
+ "updated": "2026-10-01"
+}

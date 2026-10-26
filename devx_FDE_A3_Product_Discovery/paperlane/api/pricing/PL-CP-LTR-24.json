@@ -1,0 +1,17 @@
+{
+ "sku": "PL-CP-LTR-24",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 10,
+   "unit_price": 152.0
+  },
+  {
+   "min_qty": 50,
+   "unit_price": 142.8
+  }
+ ],
+ "updated": "2026-10-01"
+}

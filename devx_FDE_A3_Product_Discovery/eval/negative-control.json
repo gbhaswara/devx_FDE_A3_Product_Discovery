@@ -1,0 +1,597 @@
+{
+  "_comment": [
+    "Negative control: the recorded set with three deliberate corruptions, one per",
+    "checkable axis, used to show that the harness actually fails when it should.",
+    "Run with: ./run.sh eval --cases eval/negative-control.json",
+    "",
+    "  case  4 - expected quantity moved off the 10+ tier boundary (10 -> 9)",
+    "  case  6 - expected product set given an extra SKU (right price, wrong set)",
+    "  case 14 - expected outcome flipped from no_match to quoted",
+    "",
+    "These are not real defects. They are a fixture proving the scoring detects",
+    "them, and they are kept in the repository so the claim is reproducible."
+  ],
+  "version": 1,
+  "catalog": "data/catalog.duckdb",
+  "cases": [
+    {
+      "number": 1,
+      "request": "letter-size flyers, one side, colour, under 250 a pack, 20 packs",
+      "proves": "budget compared at the requested quantity (PR6); the brief's own example",
+      "behaviour": [
+        "budget-dependent quantity"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-PR-LTR-MT-100-40",
+          "PL-PR-LTR-GL-100-40",
+          "PL-PR-LTR-MT-130-40",
+          "PL-PR-LTR-GL-130-40",
+          "PL-PR-LTR-MT-170-40"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-PR-LTR-MT-100-40",
+          "quantity": 20
+        }
+      ],
+      "note": "20+ tier applies at qty 20: 198.00, not the 225.00 list price. Subtotal clears the 3000 threshold, so delivery is 0.00."
+    },
+    {
+      "number": 2,
+      "request": "letter-size flyers, one side, colour, under 250 a pack, 4 packs",
+      "proves": "the same request at a low quantity: fewer items qualify and delivery is charged",
+      "behaviour": [
+        "budget-dependent quantity"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-PR-LTR-MT-100-40",
+          "PL-PR-LTR-GL-100-40",
+          "PL-PR-LTR-MT-130-40"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-PR-LTR-MT-100-40",
+          "quantity": 4
+        }
+      ],
+      "note": "At qty 4 the 5+ tier is not reached, so the list price 225.00 applies and two of the five items fall outside the 250 budget. Delivery is charged because 900.00 is below 3000."
+    },
+    {
+      "number": 3,
+      "request": "letter flyers 170 gsm one side gloss, 20 packs",
+      "proves": "sale precedence (PR3): the sale price replaces list AND every tier",
+      "behaviour": [
+        "sale precedence"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-PR-LTR-GL-170-40"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-PR-LTR-GL-170-40",
+          "quantity": 20
+        }
+      ],
+      "note": "PL-PR-LTR-GL-170-40 is on sale at 259.00 against a 299.00 list. The sale price wins at qty 20 even though a volume tier would otherwise apply — the two cannot be combined."
+    },
+    {
+      "number": 4,
+      "request": "A4 80gsm copy paper, 10 reams",
+      "proves": "tier boundary: exactly 10 reaches the 10+ tier",
+      "behaviour": [
+        "tier boundary"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CP-A4-80-NUSA",
+          "PL-CP-A4-80-ECO",
+          "PL-CP-A4-80"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-A4-80-NUSA",
+          "quantity": 9
+        }
+      ],
+      "note": "The 10+ tier is inclusive: at qty 10 the unit price is 117.00, not 121.50."
+    },
+    {
+      "number": 5,
+      "request": "A4 80gsm copy paper, 50 reams",
+      "proves": "tier boundary: 50 reaches the 50+ tier, which is a different row from 10+",
+      "behaviour": [
+        "tier boundary"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CP-A4-80-NUSA",
+          "PL-CP-A4-80",
+          "PL-CP-A4-80-ECO"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-A4-80-NUSA",
+          "quantity": 50
+        }
+      ],
+      "note": "Highest met tier wins: 110.00 at 50, not 117.00 from the 10+ row."
+    },
+    {
+      "number": 6,
+      "request": "1 ream A5 copy paper",
+      "proves": "small-order delivery and VAT charged on goods plus delivery (PR4, PR5)",
+      "behaviour": [
+        "small-order delivery and tax"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CP-A5-80",
+          "PL-CP-A4-70"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-A5-80",
+          "quantity": 1
+        }
+      ],
+      "note": "72.00 + 150.00 delivery = 222.00; VAT is 7% of 222.00 = 15.54, not 7% of 72.00 (5.04). Charging VAT on the subtotal alone understates the total by 10.50."
+    },
+    {
+      "number": 7,
+      "request": "3 reams A5 copy paper",
+      "proves": "delivery still applies below the 3000 threshold",
+      "behaviour": [
+        "small-order delivery and tax"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CP-A5-80"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-A5-80",
+          "quantity": 3
+        }
+      ],
+      "note": "216.00 is still far below 3000, so the flat 150.00 fee applies again."
+    },
+    {
+      "number": 8,
+      "request": "glossy photo A4 230gsm",
+      "proves": "prose-only product page (extraction shape C) parses to a priceable SKU",
+      "behaviour": [
+        "extraction shape"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-PH-A4-230-GL"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-PH-A4-230-GL",
+          "quantity": 1
+        }
+      ],
+      "note": "The 230 gsm gloss photo paper is the only item matching weight, finish and size; its page carries no price table."
+    },
+    {
+      "number": 9,
+      "request": "card 250gsm black A4",
+      "proves": "definition-list product page (extraction shape B) parses, and paper shade filters correctly",
+      "behaviour": [
+        "extraction shape",
+        "filter semantics for inapplicable attributes"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CS-A4-250-BLK"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CS-A4-250-BLK",
+          "quantity": 1
+        }
+      ],
+      "note": "Two 250 gsm A4 cards exist; only one is black. The shade is a hard constraint."
+    },
+    {
+      "number": 10,
+      "request": "legal size paper 20 lb",
+      "proves": "pound-to-gsm normalisation on an lb-only source page",
+      "behaviour": [
+        "synonym and notation handling"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CP-LGL-20"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-LGL-20",
+          "quantity": 1
+        }
+      ],
+      "note": "The Legal page states its weight only in pounds. 20 lb converts to 75 gsm, which is what the snapshot stores."
+    },
+    {
+      "number": 11,
+      "request": "24 lb letter paper",
+      "proves": "pound normalisation across several LTR SKUs that state weight differently",
+      "behaviour": [
+        "synonym and notation handling"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CP-LTR-90-NUSA",
+          "PL-CP-LTR-24",
+          "PL-CL-LTR-24-BRT"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-LTR-90-NUSA",
+          "quantity": 1
+        }
+      ],
+      "note": "24 lb = 90 gsm. Three LTR items are 90 gsm: two copy papers and one coloured paper. The coloured one is included because no category was stated."
+    },
+    {
+      "number": 12,
+      "request": "ivory A4 100gsm",
+      "proves": "an out-of-stock item that matches is refused, not quoted (PR8)",
+      "behaviour": [
+        "unavailable items"
+      ],
+      "expect": {
+        "outcome": "refused",
+        "skus": [
+          "PL-CL-A4-100-IVY"
+        ]
+      },
+      "note": "PL-CL-A4-100-IVY matches every requirement but is out of stock until 20 November 2026. A refusal is not a non-match: the product exists and matches, it just cannot be ordered. No total is given."
+    },
+    {
+      "number": 13,
+      "request": "170gsm A4 gloss double sided",
+      "proves": "refusal on a flyer variant, where the sibling variant is in stock",
+      "behaviour": [
+        "unavailable items"
+      ],
+      "expect": {
+        "outcome": "refused",
+        "skus": [
+          "PL-PR-A4-GL-170-44"
+        ]
+      },
+      "note": "The double-sided 170 gsm gloss A4 flyer is out of stock while the single-sided sibling is available. Variants are separate SKUs with separate stock."
+    },
+    {
+      "number": 14,
+      "request": "flyers under 60 a pack, 2 packs",
+      "proves": "no match returns labelled alternatives rather than an empty answer",
+      "behaviour": [
+        "no-match"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "relaxed": "budget"
+      },
+      "note": "The cheapest flyer is 79.00, so nothing is under 60. The alternatives are presented as non-matches with an empty match_reasons list, and no total is given. This case was originally written as 'under 200', which returned 15 products and could never fail."
+    },
+    {
+      "number": 15,
+      "request": "I need paper",
+      "proves": "a clarification is asked when nothing usable was understood",
+      "behaviour": [
+        "clarification"
+      ],
+      "expect": {
+        "outcome": "clarified",
+        "questions": [
+          "requirements"
+        ]
+      },
+      "note": "No size, weight, category or quantity was stated. Asking is correct; guessing a default and quoting it would not be."
+    },
+    {
+      "number": 16,
+      "request": "20 reams A4 copy paper plus 5 packs A4 matte flyer, single sided",
+      "proves": "PR4 delivery is charged once per order, against the summed subtotal",
+      "behaviour": [
+        "multi-item orders"
+      ],
+      "expect": {
+        "outcome": "multi_line",
+        "skus": [
+          "PL-CP-A4-80",
+          "PL-PR-A4-MT-100-10"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-A4-80",
+          "quantity": 20
+        },
+        {
+          "sku": "PL-PR-A4-MT-100-10",
+          "quantity": 5
+        }
+      ],
+      "note": "Neither line alone clears 3000 (2,451.00 and 559.30), but the combined 3,010.30 does, so delivery is 0.00. Charging delivery per line was measured at 321.00 too high on this exact basket. This case is priced through the multi-line endpoint because the assistant quotes one SKU at a time."
+    },
+    {
+      "number": 17,
+      "request": "4/4 A5 gloss 130",
+      "proves": "trade notation resolves to the same product as its plain-word spelling",
+      "behaviour": [
+        "synonym and notation handling"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-PR-A5-GL-130-44"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-PR-A5-GL-130-44",
+          "quantity": 1
+        }
+      ],
+      "note": "4/4 means double-sided full colour. The same product must be reachable as 'two-sided full colour A5 130gsm gloss', and a regression test asserts the two spellings agree."
+    },
+    {
+      "number": 18,
+      "request": "A4 copy paper 10 reams, budget 1500 including VAT",
+      "proves": "the budget basis is stated explicitly when the customer names one (PR7)",
+      "behaviour": [
+        "budget-dependent quantity"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CP-A4-70",
+          "PL-CP-A4-75",
+          "PL-CP-A4-80-NUSA",
+          "PL-CP-A4-80-ECO",
+          "PL-CP-A4-80"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-A4-70",
+          "quantity": 10
+        }
+      ],
+      "note": "The reply states the basis it compared on. This is a large budget, so every A4 copy paper qualifies and the cheapest wins."
+    },
+    {
+      "number": 19,
+      "request": "letter-size, under 250 a pack",
+      "proves": "quantity is asked for when it would change the answer, and only then",
+      "behaviour": [
+        "clarification",
+        "budget-dependent quantity"
+      ],
+      "expect": {
+        "outcome": "clarified",
+        "questions": [
+          "quantity"
+        ]
+      },
+      "note": "A budget with no quantity. Some LTR items are over 250 at qty 1 and under it at a volume tier, so the qualifying set differs by quantity and the question is worth asking."
+    },
+    {
+      "number": 20,
+      "request": "A4 80gsm under 250 a pack, 1 pack",
+      "proves": "pack-size ambiguity is surfaced, not silently resolved (Trap 5)",
+      "behaviour": [
+        "budget-dependent quantity",
+        "filter semantics for inapplicable attributes"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CP-A4-80-NUSA",
+          "PL-CP-A4-80-ECO",
+          "PL-CP-A4-80",
+          "PL-CL-A4-80-BRT",
+          "PL-CL-A4-80-PBL",
+          "PL-CL-A4-80-PGR",
+          "PL-CL-A4-80-PPK",
+          "PL-CL-A4-80-PYL",
+          "PL-CL-A4-80-RED"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-A4-80-NUSA",
+          "quantity": 1
+        }
+      ],
+      "note": "Every A4 80 gsm item is within 250 per pack, so the budget does not discriminate: nine come back, six of them coloured papers, because no category was stated. The reply states its basis, which is the honest handling of a pack-size assumption. This case also covers the weight-qualifier defect: 'under 250 a pack' must not be read as '80 gsm or lighter'."
+    },
+    {
+      "number": 21,
+      "request": "a discontinued product from the v2 catalog",
+      "proves": "PR8 discontinued handling",
+      "behaviour": [
+        "unavailable items"
+      ],
+      "expect": {
+        "outcome": "refused"
+      },
+      "not_applicable": "The v1 catalog has no discontinued products: all 72 SKUs are current. This behaviour can only be exercised against a v2 catalog.",
+      "note": "Recorded as not applicable rather than omitted. Silently dropping it would misrepresent the coverage."
+    },
+    {
+      "number": 22,
+      "request": "a product description carrying an injected instruction",
+      "proves": "crawled text is treated as data, never as instruction",
+      "behaviour": [
+        "synonym and notation handling"
+      ],
+      "expect": {
+        "outcome": "quoted"
+      },
+      "not_applicable": "No page in the v1 catalog contains a prompt-injection attempt (verified: 0 of 36 pages). The defence is implemented and unit-tested, but there is no live sample to run against.",
+      "note": "The reply is rendered deterministically from pricing output, so a model has no path into it in the first place. That is the structural defence; the case records that it could not be exercised end to end."
+    },
+    {
+      "number": 23,
+      "request": "28 lb paper",
+      "proves": "pound-to-gsm conversion for a value the catalog does not stock (Trap 7)",
+      "behaviour": [
+        "synonym and notation handling"
+      ],
+      "expect": {
+        "outcome": "no_match",
+        "relaxed": "weight"
+      },
+      "not_applicable": "No 28 lb (105 gsm) product exists in the v1 catalog. The conversion is implemented, but a no-match result would not prove it works — only that 105 gsm is absent.",
+      "note": "The interpretation is still exercised: 28 lb converts to 105 gsm and the search correctly finds nothing. Recorded as not applicable because a pass here would be a pass for the wrong reason."
+    },
+    {
+      "number": 24,
+      "request": "32 lb paper",
+      "proves": "pound-to-gsm conversion for a second unstocked value (Trap 7)",
+      "behaviour": [
+        "synonym and notation handling"
+      ],
+      "expect": {
+        "outcome": "no_match",
+        "relaxed": "weight"
+      },
+      "not_applicable": "No 32 lb (120 gsm) product exists in the v1 catalog, for the same reason as case 23.",
+      "note": "Same reasoning as case 23. The honest statement is that the conversion is implemented and unit-tested but not demonstrated end to end on live data."
+    },
+    {
+      "number": 25,
+      "request": "colour paper A4",
+      "proves": "filter semantics: 'colour' means paper shade here, never print mode",
+      "behaviour": [
+        "filter semantics for inapplicable attributes"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CL-A4-80-BRT",
+          "PL-CL-A4-90-CRM",
+          "PL-CL-A4-80-PBL",
+          "PL-CL-A4-80-PGR",
+          "PL-CL-A4-80-PPK",
+          "PL-CL-A4-80-PYL",
+          "PL-CL-A4-80-RED"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CL-A4-80-BRT",
+          "quantity": 1
+        }
+      ],
+      "note": "Seven A4 coloured papers come back and no CMYK flyers do. The eighth A4 coloured paper, PL-CL-A4-100-IVY, is out of stock, so it is separated into refusals rather than silently dropped — which is why the candidate list is seven and not eight. A pricing-only assertion would not catch a wrong set: the total would be plausible either way. This is why retrieval is scored separately."
+    },
+    {
+      "number": 26,
+      "request": "A4 copy paper",
+      "proves": "filter semantics: an unstated 'sides' must not exclude plain paper (F1)",
+      "behaviour": [
+        "filter semantics for inapplicable attributes"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-CP-A4-70",
+          "PL-CP-A4-75",
+          "PL-CP-A4-80-NUSA",
+          "PL-CP-A4-80-ECO",
+          "PL-CP-A4-80"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-CP-A4-70",
+          "quantity": 1
+        }
+      ],
+      "note": "Plain paper has no sides attribute. If 'not applicable' were treated as 'mismatch', every copy paper would be filtered out and the answer would be a spurious no-match."
+    },
+    {
+      "number": 27,
+      "request": "10 packs of the 100gsm A4 gloss flyers and 10 packs of the 130gsm",
+      "proves": "tiers are per SKU: 10 of each does not reach a 20+ tier (F3)",
+      "behaviour": [
+        "multi-item orders",
+        "filter semantics for inapplicable attributes"
+      ],
+      "expect": {
+        "outcome": "multi_line",
+        "skus": [
+          "PL-PR-A4-GL-100-40",
+          "PL-PR-A4-GL-130-40"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-PR-A4-GL-100-40",
+          "quantity": 10
+        },
+        {
+          "sku": "PL-PR-A4-GL-130-40",
+          "quantity": 10
+        }
+      ],
+      "note": "20 packs in total, but they are two different SKUs. Each is priced on its own 5+ tier, not a shared 20+ tier. Aggregating tiers across SKUs would understate the total."
+    },
+    {
+      "number": 28,
+      "request": "letter flyers, one side, colour, under 250, 20 packs",
+      "proves": "the half-character size encoding is normalised, not string-matched (Trap 10)",
+      "behaviour": [
+        "synonym and notation handling"
+      ],
+      "expect": {
+        "outcome": "quoted",
+        "skus": [
+          "PL-PR-LTR-MT-100-40",
+          "PL-PR-LTR-GL-100-40",
+          "PL-PR-LTR-MT-130-40",
+          "PL-PR-LTR-GL-130-40",
+          "PL-PR-LTR-MT-170-40"
+        ]
+      },
+      "lines": [
+        {
+          "sku": "PL-PR-LTR-MT-100-40",
+          "quantity": 20
+        }
+      ],
+      "note": "Deliberately the same request as case 1 with the budget written differently. The Letter flyer pages carry both '8.5 x 11 in' in the heading and '8.5 x 11 inches' with a half character in the body, so a string-matching filter could pass or fail depending on which occurrence it read. On normalised size_code both are one value."
+    }
+  ]
+}

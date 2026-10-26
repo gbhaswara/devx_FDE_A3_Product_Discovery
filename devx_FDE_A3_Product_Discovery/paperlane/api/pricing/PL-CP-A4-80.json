@@ -1,0 +1,17 @@
+{
+ "sku": "PL-CP-A4-80",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 10,
+   "unit_price": 122.55
+  },
+  {
+   "min_qty": 50,
+   "unit_price": 116.1
+  }
+ ],
+ "updated": "2026-10-01"
+}

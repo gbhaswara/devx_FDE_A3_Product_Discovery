@@ -1,0 +1,17 @@
+{
+ "sku": "PL-CP-A4-80-NUSA",
+ "currency": "THB",
+ "unit": "pack",
+ "vat_included": false,
+ "tiers": [
+  {
+   "min_qty": 10,
+   "unit_price": 117.0
+  },
+  {
+   "min_qty": 50,
+   "unit_price": 110.0
+  }
+ ],
+ "updated": "2026-10-01"
+}

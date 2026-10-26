@@ -1,0 +1,34 @@
+[project]
+name = "paperlane"
+version = "0.1.0"
+description = "PaperLane product discovery and quoting assistant (devx AI Labs A3)"
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "httpx>=0.27",
+    "selectolax>=0.3.21",
+    "pydantic>=2.7",
+    "python-multipart>=0.0.32",
+]
+
+[project.scripts]
+paperlane = "paperlane.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/paperlane"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
