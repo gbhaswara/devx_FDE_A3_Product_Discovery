@@ -69,7 +69,14 @@ See `proposal.md` — Why. Constraints that shape the approach, all verified on 
 
 **Why:** an assistant that returns a 500 because a local embedding server is down is worse than one that returns a slightly worse ordering. But silent degradation is how a model-backed feature rots unnoticed — the same failure mode the observability change exists to catch. So: answer, and state that similarity was unavailable.
 
-**Timeout:** short (2s). An embedding call is a local dot product, not a generation; if it takes longer than that the provider is unhealthy and waiting does not help.
+**Timeout:** short by generation standards, but **not 2s** as this design first
+proposed. Measured on this machine: a *cold* model load costs 2.0s for one text
+and 2.8s for all 72, while warm calls cost 0.02s and 0.64s. A 2s timeout failed
+the first request after every restart, so the feature degraded on first use and
+looked broken — the failure mode D5 exists to make visible, triggered by the
+default path rather than an outage. 10s covers a cold load with headroom and
+still fails fast on a dead provider. The original 2s figure came from warm-only
+measurements; recorded here because the correction changes a stated decision.
 
 ### D6 — Measure the effect on the recorded set and report the number
 

@@ -14,7 +14,7 @@ From a clean checkout, in this directory:
 
 ```bash
 uv sync                                    # 1. install dependencies
-./run.sh test                              # 2. 682 tests, offline, no model
+./run.sh test                              # 2. 765 tests, offline, no model
 ./run.sh serve                             # 3. the app on http://127.0.0.1:8001
 ./run.sh eval                              # 4. the recorded evaluation set
 ./run.sh diff                              # 5. snapshot vs previous snapshot
@@ -26,6 +26,13 @@ than part of the demo path. `verify-refresh` mutates a git-ignored copy of the
 site, ingests it into a throwaway snapshot, and checks that every change it
 declared in advance is reported under the correct kind. It needs no server and
 no network beyond loopback.
+
+**None of these six commands needs an embedding provider**, and none sets
+`PAPERLANE_EMBED_*`. That is not luck: with no provider configured the similarity
+term is *omitted* from the ranking rather than set to a constant, so the ordering
+is the pre-semantic one by construction. The seventh command, `./run.sh
+similarity`, is the only one that needs a provider — it measures the tiebreak and
+says `NOT MEASURED` when it cannot.
 
 That is the whole demo. The catalog snapshot (`data/catalog.duckdb`) is
 committed, so step 3 works without crawling anything.
@@ -199,10 +206,17 @@ When a customer's "pack" might mean 50 sheets or 500, the reply states the basis
 it used rather than guessing silently. That is honest, but it is not a
 resolution.
 
-**Semantic search is a tiebreak only.** Search is hard filtering plus
-deterministic ranking. A request phrased entirely in paraphrase, with no size,
-weight, category or trade term the aliases recognise, will miss. There is no
-embedding layer.
+**Semantic search is a tiebreak, and its benefit here is unmeasured.** Search is
+hard filtering plus deterministic ranking, with an optional similarity term that
+decides ties *among items priced equally*. A request phrased entirely in
+paraphrase, with no size, weight, category or trade term the aliases recognise,
+will still miss — embeddings never enter the filter, by design, because letting
+them in would make membership approximate.
+
+Measured against the recorded set with `bge-m3`, the term reorders 3 of 28 cases,
+changes no first result, and produces **0 improvements and 0 regressions**. It
+is a better tiebreak than SKU order; it is not a quality win, and it is not
+described as one. See [`docs/semantic-ranking.md`](docs/semantic-ranking.md).
 
 **Single-turn.** No conversation memory. Each request is interpreted on its own,
 so "make that 40 packs instead" is not understood as a follow-up.
@@ -231,9 +245,11 @@ In order, because the order is the judgement:
 2. **Price-change monitoring.** Alert on movement beyond a threshold between
    snapshots. The diff already computes this; what is missing is the delivery
    channel and the judgement about what counts as noteworthy.
-3. **A real semantic layer.** Embeddings with *measured* recall against a
-   labelled set — not vibes. The current tiebreak cannot help a paraphrase-only
-   request, and I would want numbers before claiming a fix.
+3. **A real semantic *retrieval* layer.** The tiebreak built here cannot help a
+   paraphrase-only request, because embeddings never reach the filter. Doing that
+   safely means measuring recall against a labelled set — not vibes — and being
+   willing to lose the "cannot change membership" guarantee. I would want numbers
+   before making that trade.
 4. **Human-in-the-loop.** Let a salesperson edit a quote, and feed the edit back
    as a labelled evaluation case. That turns every correction into a regression
    test, which is how the evaluation set should grow.
@@ -297,8 +313,8 @@ interpretation, the four assistant outcomes, the JSON API, and the evaluation
 harness with its results. Everything in sections 1–7 above. **Complete** — 80 of
 86 tasks closed, and every open task is Tier 2.
 
-**Tier 2 — extras, each independently droppable.** Six were planned. Four are
-built; two are not:
+**Tier 2 — extras, each independently droppable.** Six were planned. Five are
+built; one is not:
 
 | Item | State |
 |---|---|
@@ -306,7 +322,7 @@ built; two are not:
 | Single-page interface | Built — `ui.py`, all four outcomes rendered |
 | Snapshot diff as a demo artefact | Built — `GET /api/diff`, `./run.sh diff` |
 | Mutated-site refresh demonstration | Built — `./run.sh verify-refresh` mutates a copy of the site, ingests it, and verifies all 12 injected changes are reported under the correct kind |
-| Hybrid semantic tiebreak | **Not built** — search is hard filtering plus deterministic ranking, with no embedding layer |
+| Hybrid semantic tiebreak | Built — `embeddings.py`, optional `PAPERLANE_EMBED_*` configuration, similarity term after price; measured with `./run.sh similarity` |
 | Structured logging and the five metrics | **Not built** — no logging or metrics module |
 
 ### On the six-hour estimate

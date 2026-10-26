@@ -14,6 +14,7 @@ from paperlane.money import Money
 from paperlane.pricing import PriceFacts, PriceTier
 from paperlane.search import (
     RANKING_ORDER,
+    RANKING_ORDER_WITHOUT_SIMILARITY,
     Candidate,
     search,
 )
@@ -226,8 +227,15 @@ class TestRanking:
         assert "PL-CL-A4-100-IVY" in {c.sku for c in result.unavailable}
 
     def test_ranking_order_constant_matches_implementation(self):
-        # The documented chain and the sort key must not drift apart.
-        assert RANKING_ORDER == ("availability_penalty", "budget_margin", "sku")
+        # The documented chain and the sort key must not drift apart. The
+        # similarity term is conditional, so the constant names it and the
+        # implementation must produce it only when enabled.
+        assert RANKING_ORDER == (
+            "availability_penalty", "budget_margin", "similarity", "sku"
+        )
+        assert RANKING_ORDER_WITHOUT_SIMILARITY == (
+            "availability_penalty", "budget_margin", "sku"
+        )
         candidate_a = Candidate(
             sku="A", name="a", product=product("A"), facts=FACTS["PL-CP-A5-80"],
             match_reasons=(), unit_price=b("10.00"), line_total=b("10.00"),
@@ -244,6 +252,34 @@ class TestRanking:
         assert sorted([candidate_b, candidate_a], key=_rank_key) == [
             candidate_a, candidate_b
         ]
+
+    def test_unconfigured_rank_key_is_exactly_the_previous_tuple(self):
+        # Not "orders the same way" — the same tuple. A constant 0.0 in the
+        # fourth position would order identically while still being a different
+        # key, and a later edit making the term non-constant would silently
+        # change the unconfigured path.
+        candidate = Candidate(
+            sku="A", name="a", product=product("A"), facts=FACTS["PL-CP-A5-80"],
+            match_reasons=(), unit_price=b("10.00"), line_total=b("10.00"),
+            quantity=1, tier_applied=None, available=True,
+            stock_status="in_stock", back_in_stock_date=None,
+        )
+        from paperlane.search import _rank_key
+        assert _rank_key(candidate) == (0, 1000, "A")
+        assert _rank_key(candidate, use_similarity=False) == (0, 1000, "A")
+
+    def test_enabled_key_places_similarity_after_price(self):
+        from paperlane.search import _rank_key
+        candidate = Candidate(
+            sku="A", name="a", product=product("A"), facts=FACTS["PL-CP-A5-80"],
+            match_reasons=(), unit_price=b("10.00"), line_total=b("10.00"),
+            quantity=1, tier_applied=None, available=True,
+            stock_status="in_stock", back_in_stock_date=None, similarity=0.75,
+        )
+        key = _rank_key(candidate, use_similarity=True)
+        # After price: measured, placing it before price regressed 6 of 28
+        # recorded cases and displaced the cheapest-first rule.
+        assert key == (0, 1000, -0.75, "A")
 
 
 # ---------------------------------------------------------------------------

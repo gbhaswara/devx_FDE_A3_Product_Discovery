@@ -27,20 +27,49 @@ wrong.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Sequence
 
 from .criteria import Criteria
+from .embeddings import (
+    SEMANTIC_APPLIED,
+    SEMANTIC_OFF,
+    SEMANTIC_UNAVAILABLE,
+    EmbeddingUnavailable,
+    SemanticScorer,
+)
 from .money import Money
 from .pricing import PriceFacts, applied_tier, unit_price
 
 #: Ranking criteria, in priority order. The tuple is the sort key, so its order
 #: *is* the ranking rule and a test asserts the documented chain matches it.
 #: Lower sorts first.
+#:
+#: ``similarity`` is **conditional**: it appears only when an embedding provider
+#: is configured and answered. With no provider the key is exactly the
+#: three-element tuple it was before the capability existed, because the term is
+#: omitted rather than inserted as a constant — see ``embeddings.py``.
+#:
+#: It sorts **after price**, and that position is a measured decision rather than
+#: the one originally planned. Placed before price it reordered 13 of 28 recorded
+#: cases, moved the expected first result in 9, produced **0 improvements and 6
+#: regressions** (`./run.sh similarity`) — and it contradicted this system's own
+#: stated rule that the cheaper item ranks first when nothing distinguishes
+#: items. After price it is a genuine tiebreak: it decides only among items that
+#: price does not separate, so cheapest-first is preserved exactly.
 RANKING_ORDER = (
     "availability_penalty",   # available before unavailable
     "budget_margin",          # cheapest first, when no preference distinguishes
+    "similarity",             # closest wording first, among items priced equally
     "sku",                    # stable, total, and independent of iteration order
+)
+
+#: The order that applies when similarity does not participate. Pinned
+#: separately so the unconfigured path has a name and a test of its own.
+RANKING_ORDER_WITHOUT_SIMILARITY = (
+    "availability_penalty",
+    "budget_margin",
+    "sku",
 )
 
 
@@ -84,6 +113,11 @@ class Candidate:
     available: bool
     stock_status: str
     back_in_stock_date: str | None
+    #: Cosine similarity between the request and this product's description.
+    #: ``None`` when no embedding provider participated, so the field's presence
+    #: is itself the signal that the tiebreak was active — the response shape for
+    #: existing callers does not change.
+    similarity: float | None = None
 
     @property
     def discount_note(self) -> str:
@@ -95,7 +129,7 @@ class Candidate:
         return "list price"
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "sku": self.sku,
             "name": self.name,
             "size": self.product.get("size_code"),
@@ -110,6 +144,11 @@ class Candidate:
             "back_in_stock_date": self.back_in_stock_date,
             "match_reasons": [r.as_dict() for r in self.match_reasons],
         }
+        # Present only when the semantic layer participated, so a caller that
+        # never configures a provider sees exactly the shape it saw before.
+        if self.similarity is not None:
+            payload["similarity"] = round(self.similarity, 6)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -122,6 +161,12 @@ class SearchResult:
     relaxed: str | None = None
     unavailable: tuple[Candidate, ...] = ()
     considered: int = 0
+    #: Whether similarity participated: ``"off"``, ``"applied"`` or
+    #: ``"unavailable"``. Reported rather than inferred, because a silent
+    #: fallback is how a model-backed feature rots unnoticed.
+    semantic: str = SEMANTIC_OFF
+    #: Why the provider failed, when it did. A short reason, never request text.
+    semantic_detail: str | None = None
 
     @property
     def is_match(self) -> bool:
@@ -308,18 +353,58 @@ def _availability_penalty(candidate: Candidate) -> int:
     return 2  # discontinued
 
 
-def _rank_key(candidate: Candidate) -> tuple:
+def _rank_key(candidate: Candidate, *, use_similarity: bool = False) -> tuple:
     """The total order. Mirrors ``RANKING_ORDER`` exactly.
 
     ``sku`` is the final element, which makes the order total: two items can
     never tie, so the sort is stable regardless of input order or dictionary
     iteration.
+
+    When ``use_similarity`` is false the key is the **three-element tuple it has
+    always been**, not a four-element tuple with a constant in it. That is the
+    difference between "behaves exactly as before" and "orders the same way by
+    coincidence", and a test asserts the exact tuple rather than the ordering.
+
+    ``-similarity`` because similarity sorts descending. It sits **after price**:
+    measured, placing it before price regressed 6 of 28 recorded cases and
+    displaced the cheapest-first rule this system states. A float in a sort key
+    is safe here only because ``sku`` follows it and makes the order total;
+    otherwise float non-associativity could make the order depend on input
+    sequence.
     """
+    if use_similarity and candidate.similarity is not None:
+        return (
+            _availability_penalty(candidate),
+            candidate.unit_price.satang,
+            -candidate.similarity,
+            candidate.sku,
+        )
     return (
         _availability_penalty(candidate),
         candidate.unit_price.satang,
         candidate.sku,
     )
+
+
+def _ranked(
+    candidates: list[Candidate], similarity: dict[str, float] | None
+) -> list[Candidate]:
+    """Order candidates, scoring them by similarity first when enabled.
+
+    Similarity is computed here, over already-filtered candidates only, so it
+    cannot introduce or exclude anything — there is no path from this function
+    to membership. Scores are attached to the candidates so the response can
+    show the tiebreak acting rather than asking a reviewer to trust it.
+    """
+    if similarity is None:
+        return sorted(candidates, key=_rank_key)
+    scored = [
+        replace(candidate, similarity=similarity[candidate.sku])
+        if candidate.sku in similarity
+        else candidate
+        for candidate in candidates
+    ]
+    return sorted(scored, key=lambda c: _rank_key(c, use_similarity=True))
 
 
 # ---------------------------------------------------------------------------
@@ -357,12 +442,16 @@ def search(
     facts: dict[str, PriceFacts],
     *,
     quantity: int | None = None,
+    scorer: SemanticScorer | None = None,
 ) -> SearchResult:
     """Filter, rank, and justify.
 
     Returns matches in ranked order. When nothing satisfies every requirement,
     ``matches`` is empty and ``alternatives`` holds the closest items with the
     relaxed requirement named — the two are never mixed.
+
+    ``scorer`` is optional. ``None`` means no embedding provider is configured,
+    and the ranking is the pre-semantic one, exactly.
     """
     qty = quantity or criteria.quantity or 1
     considered = 0
@@ -377,8 +466,9 @@ def search(
         if passed:
             matched.append(_make_candidate(product, facts[sku], reasons, qty))
 
-    matched.sort(key=_rank_key)
-    matches = tuple(matched)
+    similarity, semantic, detail = _similarity_for(scorer, matched)
+    ranked = _ranked(matched, similarity)
+    matches = tuple(ranked)
 
     # Unavailable items that otherwise match are reported separately so the
     # assistant can refuse them rather than offering them.
@@ -391,6 +481,8 @@ def search(
             matches=available,
             unavailable=unavailable,
             considered=considered,
+            semantic=semantic,
+            semantic_detail=detail,
         )
 
     # Nothing available satisfied everything. If unavailable items matched,
@@ -400,15 +492,44 @@ def search(
             criteria=criteria,
             unavailable=unavailable,
             considered=considered,
+            semantic=semantic,
+            semantic_detail=detail,
         )
 
-    alternatives, relaxed = _relax(criteria, products, facts, qty)
+    alternatives, relaxed = _relax(criteria, products, facts, qty, scorer=scorer)
     return SearchResult(
         criteria=criteria,
-        alternatives=alternatives,
+        alternatives=alternatives[:MAX_ALTERNATIVES],
         relaxed=relaxed,
         considered=considered,
+        semantic=semantic,
+        semantic_detail=detail,
     )
+
+
+def _similarity_for(
+    scorer: SemanticScorer | None, candidates: Sequence[Candidate]
+) -> tuple[dict[str, float] | None, str, str | None]:
+    """Scores for ``candidates``, plus what to report about them.
+
+    Returns ``(scores, status, detail)``. ``scores`` is ``None`` when similarity
+    does not participate — either no provider is configured, or the provider
+    failed. Both cases rank with the pre-semantic key; they differ only in what
+    is reported, because an operator needs to tell "not configured" from
+    "configured and broken".
+
+    Scoring nothing when nothing qualified is deliberate: a request that
+    matches no product should not cost an embedding round trip.
+    """
+    if scorer is None:
+        return None, SEMANTIC_OFF, None
+    if not candidates:
+        return None, SEMANTIC_OFF, None
+    try:
+        scores = scorer.scores([candidate.sku for candidate in candidates])
+    except EmbeddingUnavailable as exc:
+        return None, SEMANTIC_UNAVAILABLE, str(exc)
+    return scores, SEMANTIC_APPLIED, None
 
 
 #: Requirements in the order they are relaxed. Cheapest-to-lose first: a budget
@@ -416,16 +537,34 @@ def search(
 RELAXATION_ORDER = ("budget", "finish", "weight", "sides", "colour", "size")
 
 
+#: How many alternatives the reply shows. A display limit, applied *after*
+#: ranking — which is why enabling similarity can change which five of a larger
+#: qualifying set are displayed. It cannot change what qualifies: that set is
+#: fixed by the filter before any score exists.
+MAX_ALTERNATIVES = 5
+
+
 def _relax(
     criteria: Criteria,
     products: Sequence[dict[str, Any]],
     facts: dict[str, PriceFacts],
     quantity: int,
+    *,
+    scorer: SemanticScorer | None = None,
 ) -> tuple[tuple[Candidate, ...], str | None]:
     """Find the closest items by dropping one requirement at a time.
 
     Each alternative is labelled with the requirement that was relaxed, so it is
     never presented as though it satisfied the original request.
+
+    The same ``scorer`` is applied here as in :func:`search`, so the alternatives
+    path cannot quietly rank differently from the matches path. A test asserts
+    both order by similarity when it is enabled.
+
+    Returns **every** qualifying alternative, not the display five. Truncation
+    happens at the caller so that the full qualifying set stays inspectable —
+    the invariant "similarity cannot change what qualifies" is then testable
+    without going through a display cap that legitimately does.
     """
     for attribute in RELAXATION_ORDER:
         relaxed = _drop(criteria, attribute)
@@ -441,10 +580,10 @@ def _relax(
             if passed:
                 found.append(_make_candidate(product, facts[sku], reasons, quantity))
 
-        found.sort(key=_rank_key)
-        available = [c for c in found if c.available]
+        similarity, _semantic, _detail = _similarity_for(scorer, found)
+        available = [c for c in _ranked(found, similarity) if c.available]
         if available:
-            return tuple(available[:5]), attribute
+            return tuple(available), attribute
 
     return (), None
 

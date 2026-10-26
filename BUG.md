@@ -218,6 +218,23 @@ This is exactly the failure mode `TEST.md` opens with: **a wrong expectation is 
 
 **A8 is the instructive one.** The script failed because it initialised the best price to nothing and then looked for a tier, but most SKUs' lowest tier is 5+ or 10+, so at qty 1 no tier matches. That is a real defect in the pricing function, not a scripting slip — and it was found by accident. It is now an explicit test.
 
+### A10 — The semantic tiebreak regressed six recorded cases, and its timeout was too short to work
+
+Found during `add-semantic-tiebreak`, by measuring rather than by reading. Two separate defects in one feature, both of the "looks fine, is not" kind.
+
+**The ranking position was wrong.** The design placed similarity *before* price, reasoning that price rarely ties so the term would otherwise be decorative. Measured against the recorded set: **13 of 28 cases reordered, 9 first results changed, 0 improvements, 6 regressions.** Case 26 (`A4 copy paper`) dropped `PL-CP-A4-70` — the cheapest qualifying item — from first to fourth. That directly contradicts the system's own stated rule and the spec scenario *"similarity does not override a stated preference for cheaper"*, so it was a spec violation, not a judgement call.
+
+Moved after price and re-measured: 3 of 28 reorder, 0 first results change, 0 improvements, 0 regressions. The three reorderings are price ties among equally-valid items.
+
+| Position | Reordered | First changed | Improvements | Regressions |
+|---|---|---|---|---|
+| Before price | 13 / 28 | 9 | 0 | 6 |
+| After price | 3 / 28 | 0 | 0 | 0 |
+
+**The timeout was measured warm-only.** The design specified 2s, on the reasoning that an embedding call is a local matrix multiply. A cold model load costs **2.0s** for one text and **2.8s** for all 72; warm calls cost 0.02s and 0.64s. So the 2s timeout failed the *first request after every restart* — the feature degraded on first use and looked broken, which is precisely the failure mode the degradation reporting exists to surface, triggered by the default path rather than an outage. Now 10s.
+
+Both are recorded in `design.md`, `docs/semantic-ranking.md` and `CHANGELOG.md`. The general lesson is the same as A9's: a number that came from one measurement regime was applied to another, and only re-measuring found it.
+
 ---
 
 ## Part 3 — Accepted risks in the design

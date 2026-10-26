@@ -61,3 +61,40 @@ def snapshot_products():
     from paperlane.catalog import load_products
 
     return load_products()
+
+
+def embedding_provider_reachable() -> bool:
+    """Whether a configured embedding provider answers right now.
+
+    Distinct from :func:`loopback_available`: the provider is optional by
+    design, so a machine with a working loopback and no Ollama running must skip
+    these tests too, and skip them for a different stated reason.
+    """
+    from paperlane.embeddings import EmbeddingConfig
+
+    config = EmbeddingConfig.from_env()
+    if not config.configured or not loopback_available():
+        return False
+    import httpx
+
+    try:
+        response = httpx.post(
+            f"{config.base_url}/api/embed",
+            json={"model": config.model, "input": ["probe"]},
+            timeout=config.timeout,
+        )
+    except Exception:  # noqa: BLE001 - any failure means "not reachable"
+        return False
+    return response.status_code == 200
+
+
+#: Skip marker for tests that need a live embedding provider. The feature is
+#: optional, so these must skip rather than fail wherever it is absent — a
+#: skip is reported in the summary, not counted as a pass.
+needs_embedding = pytest.mark.skipif(
+    not embedding_provider_reachable(),
+    reason=(
+        "no embedding provider reachable; set PAPERLANE_EMBED_BASE_URL and "
+        "PAPERLANE_EMBED_MODEL to run the provider-dependent tests"
+    ),
+)

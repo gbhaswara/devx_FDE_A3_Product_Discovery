@@ -182,13 +182,25 @@ silently turn a preference into a constraint.
 ## Ranking is deterministic and total
 
 ```python
-RANKING_ORDER = ("availability_penalty", "budget_margin", "sku")
+RANKING_ORDER = (
+    "availability_penalty",   # available before unavailable
+    "budget_margin",          # cheapest first, when no preference distinguishes
+    "similarity",             # CONDITIONAL: only when a provider is configured
+    "sku",                    # stable, total tiebreak
+)
 ```
 
 which the implementation expresses as the sort key:
 
 ```python
-def _rank_key(candidate):
+def _rank_key(candidate, *, use_similarity=False):
+    if use_similarity and candidate.similarity is not None:
+        return (
+            _availability_penalty(candidate),
+            candidate.unit_price.satang,
+            -candidate.similarity,
+            candidate.sku,
+        )
     return (
         _availability_penalty(candidate),   # in_stock 0, out 1, discontinued 2
         candidate.unit_price.satang,        # cheapest first
@@ -205,7 +217,23 @@ version of Python. Verified:
 * two items at the same price still order consistently (`AAA` before `ZZZ`)
 
 A test asserts `RANKING_ORDER` equals the tuple in the sort key, so the
-documented chain and the code cannot drift apart.
+documented chain and the code cannot drift apart. The similarity term is
+conditional, and a second constant `RANKING_ORDER_WITHOUT_SIMILARITY` pins the
+unconfigured key — which is asserted as an *exact tuple*, not as an equivalent
+ordering, so "behaves exactly as before" is a testable claim rather than a
+coincidence.
+
+### The conditional similarity term
+
+With no embedding provider configured — the default, and the only state the
+offline test suite runs in — the key is the three-element tuple above and no
+network call is attempted. With one configured, `similarity` decides ties *among
+items priced equally*; it sorts after price so cheapest-first is never displaced.
+
+The position is a measured decision: before price, it regressed 6 of 28 recorded
+cases and moved the expected first result in 9. After price it reorders 3 of 28
+with zero regressions and zero improvements — a pure tiebreak. Full numbers,
+method and caveats are in [`semantic-ranking.md`](semantic-ranking.md).
 
 ### Why cheapest-first is not just a convenience
 

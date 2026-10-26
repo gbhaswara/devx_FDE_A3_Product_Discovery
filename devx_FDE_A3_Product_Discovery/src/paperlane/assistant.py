@@ -79,6 +79,10 @@ class AssistantReply:
     budget_check: Any = None
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+    #: "off" | "applied" | "unavailable" — whether similarity ranked this reply.
+    semantic: str = "off"
+    #: Why the provider failed, when it did. Never request text.
+    semantic_detail: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -126,6 +130,12 @@ class AssistantReply:
             payload["warnings"] = list(self.warnings)
         if self.errors:
             payload["errors"] = list(self.errors)
+        # Only when it participated or failed: an unconfigured deployment sees
+        # exactly the response shape it saw before this capability existed.
+        if self.semantic != "off":
+            payload["semantic"] = self.semantic
+            if self.semantic_detail:
+                payload["semantic_detail"] = self.semantic_detail
         return payload
 
 
@@ -420,8 +430,14 @@ def answer(
     *,
     interpretation: str = "rules",
     product_tiers: dict[str, list[dict[str, int]]] | None = None,
+    scorer: Any = None,
 ) -> AssistantReply:
-    """Turn validated criteria into one of the four outcomes."""
+    """Turn validated criteria into one of the four outcomes.
+
+    ``scorer`` is an optional semantic scorer. ``None`` — the default, and what
+    every caller gets when no embedding provider is configured — means the
+    ranking is exactly the pre-semantic one and no network call is attempted.
+    """
     # --- clarification first: never price on a guess -------------------
     # Tier data is needed to decide whether an unstated quantity could change
     # the verdict, so it must reach the question logic. ``facts`` already holds
@@ -455,7 +471,7 @@ def answer(
         )
 
     quantity = criteria.quantity or 1
-    result = search(criteria, products, facts, quantity=quantity)
+    result = search(criteria, products, facts, quantity=quantity, scorer=scorer)
 
     # --- refusal: matched but unavailable ------------------------------
     if not result.matches and result.unavailable:
@@ -654,6 +670,8 @@ def _quote_reply(
         budget_check=budget,
         warnings=tuple(warnings),
         errors=tuple(errors),
+        semantic=result.semantic,
+        semantic_detail=result.semantic_detail,
     )
 
 

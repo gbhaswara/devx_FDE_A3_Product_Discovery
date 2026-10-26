@@ -29,12 +29,15 @@ Commands:
   test     Run unit, extraction and integration tests (offline, no model)
   eval     Run the recorded evaluation cases against a loaded snapshot
   diff     Compare the current snapshot with the previous one
+  similarity      Measure the semantic tiebreak against the recorded cases
   verify-refresh  Mutate a copy of the site, refresh against it, verify the diff
 
 Examples:
   ./run.sh ingest --base-url http://localhost:8000/paperlane/
   ./run.sh serve
   ./run.sh test
+  PAPERLANE_EMBED_BASE_URL=http://localhost:11434 \
+    PAPERLANE_EMBED_MODEL=bge-m3:latest ./run.sh similarity
 EOF
 }
 
@@ -52,6 +55,7 @@ case "$cmd" in
     test)   exec $PY -m pytest tests -q "$@" ;;
     eval)   exec $PY -m paperlane.cli eval   "$@" ;;
     diff)   exec $PY -m paperlane.cli diff   "$@" ;;
+    similarity) exec $PY -m paperlane.cli similarity "$@" ;;
     verify-refresh) exec $PY -m paperlane.cli verify-refresh "$@" ;;
     -h|--help|help) usage; exit 0 ;;
     *)

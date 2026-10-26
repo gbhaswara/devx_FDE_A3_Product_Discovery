@@ -30,7 +30,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from . import catalog
+from . import catalog, embeddings
 from .assistant import (
     OUTCOME_CLARIFIED,
     OUTCOME_NO_MATCH,
@@ -269,6 +269,12 @@ def _candidates_and_figures(reply: AssistantReply) -> dict[str, Any]:
         "outcome": reply.outcome,
         "candidates": [c.as_dict() for c in reply.candidates],
     }
+    # Reported only when similarity participated or failed, so a deployment with
+    # no provider returns exactly the shape it returned before this capability.
+    if reply.semantic != "off":
+        payload["semantic"] = reply.semantic
+        if reply.semantic_detail:
+            payload["semantic_detail"] = reply.semantic_detail
     if reply.quote is not None:
         payload["figures"] = {
             "subtotal": reply.quote.subtotal.format(),
@@ -338,6 +344,15 @@ def create_app(
         config = ModelConfig.from_env()
         return ModelClient(config) if config.configured else None
 
+    def get_scorer(request_text: str, product_rows: list[dict[str, Any]]):
+        """A semantic scorer for this request, or ``None`` when unconfigured.
+
+        Built per request because it carries the request text, but the product
+        vectors behind it are cached per snapshot, so the 72-product embed cost
+        is paid once per re-ingest rather than once per question.
+        """
+        return embeddings.scorer_for(request_text, product_rows, db_path=db_path)
+
     def model_reachable() -> bool:
         return get_model() is not None
 
@@ -403,7 +418,11 @@ def create_app(
         criteria = _criteria_from_structured(payload)
         validate(criteria)
 
-        reply = answer(criteria, products(), facts(), interpretation="rules")
+        rows = products()
+        reply = answer(
+            criteria, rows, facts(), interpretation="rules",
+            scorer=get_scorer(criteria.raw_text, rows),
+        )
         body = _candidates_and_figures(reply)
         body["criteria"] = criteria.describe()
         body["meta"] = _meta(
@@ -478,8 +497,10 @@ def create_app(
         # Validation failure is a client error, and it never reaches pricing.
         validate(criteria)
 
+        rows = products()
         reply = answer(
-            criteria, products(), facts(), interpretation=interpretation.path
+            criteria, rows, facts(), interpretation=interpretation.path,
+            scorer=get_scorer(criteria.raw_text or payload.request, rows),
         )
 
         body = _candidates_and_figures(reply)
@@ -618,8 +639,10 @@ def create_app(
 
                 criteria = replace(criteria, quantity=parsed_quantity)
             validate(criteria)
+            rows = products()
             reply = answer(
-                criteria, products(), facts(), interpretation=interpretation.path
+                criteria, rows, facts(), interpretation=interpretation.path,
+                scorer=get_scorer(criteria.raw_text or request, rows),
             )
         except catalog.SnapshotMissing as exc:
             return HTMLResponse(render_fragment(

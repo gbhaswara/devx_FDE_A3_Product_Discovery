@@ -143,6 +143,15 @@ def _connect_readonly(db_path: Path) -> duckdb.DuckDBPyConnection:
     return duckdb.connect(str(db_path), read_only=True)
 
 
+def resolve_db_path(db_path: Path | None = None) -> Path:
+    """The snapshot path a caller means, defaulting to the committed one.
+
+    One place for the fallback, so a caller that needs only the path (to check
+    existence, or to key a cache) does not re-implement it and drift.
+    """
+    return Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+
+
 @contextmanager
 def open_readonly(db_path: Path | None = None) -> Iterator[duckdb.DuckDBPyConnection]:
     """A short-lived read-only connection, one per request.

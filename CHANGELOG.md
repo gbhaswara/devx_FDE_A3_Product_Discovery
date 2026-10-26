@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.5.0 shipped — Tier 1 complete, plus the first of three Tier 2 changes.** 83 of 86 tasks closed; the 3 open items belong to the other two Tier 2 changes and are named in §"Not yet started". 682 tests pass offline, the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), and the negative control fails as designed. See `openspec/changes/add-paperlane-product-discovery/tasks.md`.
+Current status: **0.6.0 — Tier 1 complete, plus two of three Tier 2 changes.** 83 of 86 tasks closed in the Tier 1 change; the 3 open items belong to the remaining Tier 2 change and are named in §"Not yet started". 765 tests pass offline, the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), and the negative control fails as designed. See `openspec/changes/add-paperlane-product-discovery/tasks.md` (archived) and `openspec/changes/add-semantic-tiebreak/tasks.md`.
 
 ---
 
@@ -74,6 +74,73 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Added — 2026-10-26 · `add-semantic-tiebreak` (Tier 2, second of three)
+
+Closes task 10.5 of `add-paperlane-product-discovery`. The OpenSpec change is
+26/26. Tier 2 now stands at five of six extras built; only the observability
+change remains.
+
+**The problem.** Search was hard filtering plus a deterministic ranking whose
+only price-independent term was the SKU. Two items that both match "A4 80gsm
+copy paper" were ordered by SKU, which is arbitrary from the customer's point of
+view.
+
+**What was built.**
+
+- `src/paperlane/embeddings.py` — an optional client for a local embedding
+  server, a per-snapshot cache, and cosine similarity as a dot product. No
+  credential is read or sent; there is no API-key setting to leak.
+- The similarity term enters the ranking as a **tiebreak**, and only as one:
+  it scores candidates that have already passed every hard constraint, so there
+  is no code path from a score to membership. That is the whole safety
+  guarantee, and it is structural rather than careful.
+- `./run.sh similarity` — a measurement command that runs every recorded case
+  with the term off and on and reports counts.
+
+**The measured result, which changed a decision.** The design put similarity
+*before* price, verified on the machine and recorded in `design.md`. Measured,
+it reordered 13 of 28 cases and moved the expected first result in 9, with **0
+improvements and 6 regressions**. Case 26 showed it plainly: `PL-CP-A4-70`, the
+cheapest qualifying item, fell to fourth — contradicting the system's own stated
+rule that the cheapest qualifying item ranks first, and the spec's scenario
+"similarity does not override a stated preference for cheaper".
+
+The term was moved **after** price. Re-measured: 3 of 28 cases reorder, 0 first
+results change, **0 improvements and 0 regressions**. Three reorderings are ties
+on price among equally-valid items, which is exactly what a tiebreak is for.
+Case 25 swaps two A4 80gsm coloured papers at the same price; the order carries
+no correctness claim either way.
+
+So the honest finding is that the feature is a *better* tiebreak than SKU order,
+not that it improves answers. `README.md`, `docs/search.md` and
+`docs/semantic-ranking.md` all say zero rather than dressing it up.
+
+**Two corrections the work forced, both recorded rather than quietly made.**
+
+- The design specified a **2s** embed timeout, from warm-only measurements. A
+  cold model load costs 2.0s for one text and 2.8s for all 72, so a 2s timeout
+  failed the first request after every restart — the feature degraded on first
+  use and looked broken. Now 10s, with the cold/warm figures in the docs.
+- `_relax` truncated to five alternatives *before* returning them, so enabling
+  similarity changed which five a reviewer saw. That is a display cap, not
+  membership, but the two were indistinguishable from the outside. Truncation
+  moved to the caller, and the invariant is now tested against the full
+  qualifying set — which is why the test compares `_relax` output rather than
+  the reply.
+
+**A bug the tests caught in the measurement command.** `render()` accepted an
+`out` stream but only honoured it on the "not measured" branch; every count went
+to stdout regardless. Found by asserting on a captured buffer instead of
+eyeballing console output.
+
+**Verification.** 765 tests pass offline (7 skip under `unshare -rn`); eval
+24/24 on v1; `--self-check` exit 0; negative control exit 1; `verify-refresh`
+exit 0. With no provider configured, the `/api/quote` response has **no**
+`semantic` key and candidates carry **no** `similarity` field — verified
+directly, so the unconfigured path is the old response shape rather than merely
+an old ordering. With a dead provider the request is still answered with HTTP
+200, `semantic: "unavailable"`, and the same total.
 
 ### Added — 2026-10-26 · `add-mutated-site-refresh-harness` (Tier 2, first of three)
 

@@ -175,6 +175,33 @@ reply       would a salesperson send this?
 | # | request | expected SKUs | actual SKUs | retrieval | expected total | actual total | pricing | notes |
 ```
 
+### Layer 6 — Semantic tiebreak
+
+`tests/test_embeddings.py` and `tests/test_semantic_api.py`. **No network** unless
+a test is explicitly marked; the suite must pass under `unshare -rn`, where
+loopback is down.
+
+The capability's whole safety claim is that similarity reorders without changing
+membership, so that is what the layer is built around.
+
+- **The invariant across the entire recorded set**, not a spot check: for all 28 cases the returned SKU set is identical with the term enabled and disabled. The scores are adversarial — the most similar product is deliberately the one the old ranking put *last* — so any case where membership could shift has the best chance to show it
+- An item failing a hard requirement is never introduced, however similar
+- A qualifying but lexically distant item is never excluded
+- The unconfigured key is asserted as the **exact** 3-tuple, not as an equivalent ordering — a constant `0.0` would order identically while still being a different key
+- Both call sites (`search()` on matches, `_relax()` on alternatives) order by similarity, so the two paths cannot diverge
+- Equal similarity still resolves totally via the SKU term; two runs return the same order
+- A dead provider still answers the request, and the degradation is **reported** (`semantic: "unavailable"`), not silent
+- With no provider configured the HTTP response has no `semantic` key and candidates have no `similarity` field — the previous shape, verified rather than assumed
+- Receipt checks reject a malformed vector instead of scoring with it: mismatched dimension, non-finite value (via `1e400`, the path that is actually reachable), un-normalised vector, changed dimension between calls
+- The client sends no `Authorization` header and has no API-key setting
+- Float32 normalisation is **accepted**: measured worst case is 6.5e-7 off unit length, so a strict `norm == 1.0` check would reject every real response
+- The measurement command's verdict rule (up = improvement, down = regression) is asserted directly, so the definition cannot drift toward the result
+
+Provider-dependent tests are marked `needs_embedding` and **skip** when no
+provider answers — with a stated reason, reported in the summary, never counted
+as a pass. There are two distinct skip reasons: no loopback at all (offline run),
+and loopback present but nothing listening.
+
 ## What is tested where
 
 | Requirement area | Unit | Extraction | Integration | Evaluation |
@@ -216,7 +243,7 @@ reply       would a salesperson send this?
 ## Running the tests
 
 ```
-./run.sh test             # 682 tests: unit + extraction + integration; offline, no model
+./run.sh test             # 765 tests: unit + extraction + integration; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot
 ./run.sh verify-refresh   # mutate a copy of the site, refresh against it, verify (~55s)
 ```

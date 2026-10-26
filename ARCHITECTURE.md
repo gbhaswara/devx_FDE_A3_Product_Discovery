@@ -58,6 +58,13 @@ A sales assistant over PaperLane's paper catalog. A customer sends a chat messag
 |  subtotal -> deliv  |                              |  + deterministic rank|
 |  -> VAT (half-up)   |                              |  + match_reasons     |
 +---------------------+                              +----------------------+
+                                                              ^
+                                        +---------------------+
+                                        |  EMBEDDINGS (optional)
+                                        |  local HTTP, no key
+                                        |  similarity = a TIEBREAK
+                                        |  cannot change membership
+                                        +----------------------+
         |                                                          |
         +----------------------+-----------------------------------+
                                v
@@ -106,6 +113,12 @@ Consequence: the demo round's updated site can introduce a fifth markup shape wi
 Printing attributes (`sides`, colour mode) do not apply to plain paper. They are stored as not-applicable, and a constraint on them does not exclude those products.
 
 Consequence: the naive `WHERE sides = 'single'` — which returns *zero* paper products — cannot be written.
+
+### 5. Similarity reorders; it cannot change what qualifies
+
+The optional embedding layer scores only candidates that already passed the filter. There is no code path that consults a similarity score before `_evaluate()`, so "semantic ranking cannot introduce or exclude a product" is a property of the structure rather than of careful coding.
+
+Consequence: the ranking key gains a `similarity` term **conditionally** — omitted entirely when no provider is configured, never inserted as a constant, so the unconfigured path is the previous tuple exactly. The term sorts *after* price, measured: before price it regressed 6 of 28 recorded cases and displaced the cheapest-first rule.
 
 ## Data model
 
@@ -255,7 +268,7 @@ Two consequences worth naming, because both are silent:
 ## Known architectural limitations
 
 - **Single-turn.** No conversation memory. A correction starts a new request. Deliberate: an explicit clarification step is more reliable than half-built memory.
-- **Semantic search is a tiebreak only.** A purely descriptive request with no structured terms can miss. The structured path covers the request shapes the brief describes.
+- **Semantic search is a tiebreak only.** A purely descriptive request with no structured terms can miss — embeddings never enter the filter. The tiebreak decides ties among equally-priced items; measured against the recorded set it reorders 3 of 28 cases with zero improvements and zero regressions, so it is not a quality claim.
 - **Rule interpretation is narrower than the model.** Paraphrases the model handles may fall back to a clarification. The fallback rate is measured so the degradation is visible.
 - **No authentication, no rate limiting beyond the crawler.** This is a local demonstration service.
 - **One site, one layout family.** The extraction ladder covers this site's four shapes plus a structured fallback; onboarding a different supplier would need a parser profile per site.

@@ -55,6 +55,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("diff", help="Compare the current snapshot with the previous")
 
+    similarity = sub.add_parser(
+        "similarity",
+        help="Measure the semantic tiebreak against the recorded cases",
+    )
+    similarity.add_argument(
+        "--json", action="store_true", help="Machine-readable output"
+    )
+    similarity.add_argument(
+        "--cases",
+        default=None,
+        help="Path to a case file (default: eval/cases.json)",
+    )
+
     refresh = sub.add_parser(
         "verify-refresh",
         help="Mutate a copy of the site, refresh against it, and verify the diff",
@@ -110,6 +123,15 @@ def main(argv: list[str] | None = None) -> int:
         from .catalog import run_diff
 
         return run_diff()
+    if args.command == "similarity":
+        from pathlib import Path
+
+        from .similarity import run_measure
+
+        return run_measure(
+            as_json=args.json,
+            cases_path=Path(args.cases) if args.cases else None,
+        )
     if args.command == "verify-refresh":
         from .refresh_cli import run_verify_refresh
 
