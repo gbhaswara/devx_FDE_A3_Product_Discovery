@@ -67,6 +67,14 @@ class Criteria:
     #: Free-text hints the model produced that are not filterable. Kept for
     #: disclosure only; never used to filter.
     notes: tuple[str, ...] = ()
+    #: Field names carried from an earlier turn in the same conversation.
+    #:
+    #: This is provenance, not a requirement: it never affects filtering or
+    #: pricing, and it is deliberately absent from :meth:`describe`, which
+    #: states what was *asked for*. Its only job is to let the reply say which
+    #: requirements the customer stated just now and which it remembered — the
+    #: distinction that makes a remembered constraint correctable.
+    sources: frozenset[str] = frozenset()
 
     def has_any_constraint(self) -> bool:
         """Is there anything to search on at all?"""
@@ -78,6 +86,40 @@ class Criteria:
                 self.sides, self.colour_mode, self.category,
             )
         )
+
+    def describe_carried(self) -> dict[str, object]:
+        """Only the requirements carried from earlier turns.
+
+        Uses the same key names as :meth:`describe`, so the reply can render a
+        carried requirement with the wording it would have used for a fresh one
+        and a reader is not asked to learn two vocabularies for the same field.
+        """
+        described = self.describe()
+        if not self.sources:
+            return {}
+        # A carried budget is described under two keys; both belong to the one
+        # source field, so the mapping is explicit rather than a prefix match.
+        key_for = {
+            "category": "category",
+            "size_code": "size",
+            "weight_gsm": "weight_gsm",
+            "weight_gsm_min": "weight_gsm_min",
+            "weight_gsm_max": "weight_gsm_max",
+            "colour_name": "colour_shade",
+            "colour_mode": "colour_mode",
+            "finish": "finish",
+            "sides": "sides",
+            "quantity": "quantity",
+            "budget_per_unit": "budget_per_unit",
+        }
+        carried: dict[str, object] = {}
+        for field_name, described_as in key_for.items():
+            if field_name in self.sources and described_as in described:
+                carried[described_as] = described[described_as]
+                if field_name == "budget_per_unit" and "budget_basis" in described:
+                    carried["budget_basis"] = described["budget_basis"]
+        return carried
+
 
     def describe(self) -> dict[str, object]:
         """A stable, JSON-safe description of what was understood.
