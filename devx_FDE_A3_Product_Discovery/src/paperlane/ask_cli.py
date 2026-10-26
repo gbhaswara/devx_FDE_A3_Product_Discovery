@@ -18,10 +18,28 @@ import json
 import time
 from dataclasses import replace
 
-from . import catalog, embeddings, records
+from . import catalog, conversation, embeddings, records
 from .assistant import answer
 from .interpret import CriteriaInvalid, fallback_reason, interpret, validate
 from .model import ModelClient, ModelConfig
+
+#: Where `--conversation` keeps its state between invocations. Git-ignored, for
+#: the same reason request records are: runtime data, not catalog data.
+DEFAULT_CONVERSATION_PATH = (
+    catalog.DEFAULT_DB_PATH.parent / "conversations.jsonl"
+)
+
+
+def _conversation_store(path=None) -> conversation.JsonlConversationStore:
+    """The store `--conversation` uses.
+
+    A file, because a CLI invocation is a new process and an in-memory store
+    would make the flag appear to work while remembering nothing. The path is
+    injectable so a test does not write to the real file.
+    """
+    return conversation.JsonlConversationStore(
+        path if path is not None else DEFAULT_CONVERSATION_PATH
+    )
 
 
 def _record(
@@ -34,6 +52,8 @@ def _record(
     client: ModelClient | None = None,
     db_path=None,
     error: str | None = None,
+    turn_index: int | None = None,
+    carried_fields=(),
 ):
     """Write one record for a handled CLI request. Never raises.
 
@@ -60,6 +80,8 @@ def _record(
             fallback_reason=fallback_reason(interpretation, client),
             interpretation=interpretation.path if interpretation else None,
             error=error,
+            turn_index=turn_index,
+            carried_fields=carried_fields,
         )
     except records.RecordInvalid as exc:
         # A record the schema refuses is a bug here, but it must not turn a good
@@ -77,6 +99,9 @@ def run_ask(
     as_json: bool = False,
     verbose: bool = False,
     db_path=None,
+    conversation_id: str | None = None,
+    forget: bool = False,
+    conversation_path=None,
 ) -> int:
     """Answer one free-text request. Returns a process code.
 
@@ -90,6 +115,28 @@ def run_ask(
             request, or criteria that failed validation. Nothing was priced.
     """
     started = time.perf_counter()
+
+    # --- forget --------------------------------------------------------
+    # A separate mode, because "forget this conversation" is not a question and
+    # pricing one would be nonsense. The file store is used even here so a
+    # forget reaches the state a previous invocation wrote.
+    if forget:
+        if not conversation_id:
+            print("ask: --forget needs --conversation <id>")
+            return 2
+        store = _conversation_store(conversation_path)
+        try:
+            removed = store.forget(conversation_id)
+        except conversation.ConversationInvalid as exc:
+            print(f"ask: {exc}")
+            return 2
+        print(
+            f"ask: forgot conversation {conversation_id}"
+            if removed else
+            f"ask: no conversation {conversation_id} to forget"
+        )
+        return 0
+
     text = (request or "").strip()
     if not text:
         print("ask: the request is empty")
@@ -122,6 +169,31 @@ def run_ask(
     if quantity is not None:
         criteria = replace(criteria, quantity=quantity)
 
+    # --- conversation --------------------------------------------------
+    # The file store, because every CLI invocation is a new process: an
+    # in-memory store here would make --conversation look like it works while
+    # remembering nothing. The merge is the service's own pure function, so the
+    # CLI cannot interpret a refinement differently from the API.
+    store = None
+    existing = None
+    merge = None
+    turn_index: int | None = None
+    carried_fields: list[str] = []
+    if conversation_id is not None:
+        store = _conversation_store(conversation_path)
+        try:
+            existing = store.get(conversation_id) or conversation.Conversation(
+                id=conversation_id
+            )
+        except conversation.ConversationInvalid as exc:
+            print(f"ask: {exc}")
+            return 2
+        previous = existing.criteria if existing.criteria.has_any_constraint() else None
+        merge = conversation.merge_turn(previous, criteria)
+        criteria = merge.criteria
+        carried_fields = sorted(merge.carried)
+        turn_index = existing.turn_index
+
     try:
         criteria = validate(criteria)
     except CriteriaInvalid as exc:
@@ -129,6 +201,7 @@ def run_ask(
             started=started, interpret_ms=interpret_ms, request_text=text,
             interpretation=interpretation, client=client, db_path=db_path,
             error=f"criteria invalid: {exc.reason}",
+            turn_index=turn_index, carried_fields=carried_fields,
         )
         print(f"ask: could not use that request — {exc.reason}")
         if as_json:
@@ -158,14 +231,22 @@ def run_ask(
             started=started, interpret_ms=interpret_ms, request_text=text,
             interpretation=interpretation, client=client, db_path=db_path,
             error=f"no snapshot: {exc}",
+            turn_index=turn_index, carried_fields=carried_fields,
         )
         print(f"ask: no catalog snapshot — {exc}")
         return 2
+
+    # A clarified turn is still a turn: the clarification is often the only
+    # constraint the customer has given, and the next turn needs it.
+    if store is not None and conversation_id is not None:
+        assert existing is not None and merge is not None
+        store.put(conversation.record_turn(existing, merge, outcome=reply.outcome))
 
     _record(
         started=started, interpret_ms=interpret_ms, request_text=text,
         reply=reply, interpretation=interpretation, client=client,
         db_path=db_path,
+        turn_index=turn_index, carried_fields=carried_fields,
     )
 
     # --- report --------------------------------------------------------
@@ -174,10 +255,23 @@ def run_ask(
         # so the CLI cannot drift from the service: one shape, one definition.
         # Hand-rolling a second shape here is how a CLI and an API start
         # disagreeing about what a quote looks like.
-        print(json.dumps(reply.as_dict(), indent=2, default=str))
+        body = reply.as_dict()
+        if conversation_id is not None:
+            body["conversation"] = {
+                "id": conversation_id,
+                "turn": turn_index,
+                "carried": carried_fields,
+                "carried_described": criteria.describe_carried(),
+            }
+        print(json.dumps(body, indent=2, default=str))
         return 0
 
     print(reply.text)
+    if conversation_id is not None:
+        # Stated outside the reply text, because it is about the command rather
+        # than about the catalog: without it a user cannot tell which id the next
+        # invocation must repeat.
+        print(f"\n(conversation {conversation_id}, turn {turn_index})")
 
     if verbose:
         print("\n--- interpretation ---")

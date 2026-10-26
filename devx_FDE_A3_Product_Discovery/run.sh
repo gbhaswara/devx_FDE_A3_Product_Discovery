@@ -27,6 +27,7 @@ Commands:
   ingest   Crawl the catalog over HTTP into a new snapshot, then swap it in
   serve    Run the HTTP API and the single page
   ask      Ask one question and print the answer (no server required)
+           --conversation ID continues a conversation; --forget discards it
   test     Run unit, extraction and integration tests (offline, no model)
   eval     Run the recorded evaluation cases against a loaded snapshot
   diff     Compare the current snapshot with the previous one
@@ -38,6 +39,8 @@ Examples:
   ./run.sh ingest --base-url http://localhost:8000/paperlane/
   ./run.sh serve
   ./run.sh ask "A4 80gsm copy paper, 20 reams"
+  ./run.sh ask "make it 50" --conversation demo   # continues the previous turn
+  ./run.sh ask --forget --conversation demo       # discards it
   ./run.sh test
   ./run.sh metrics
   ./run.sh metrics --eval      # the most recent evaluation run's records

@@ -7,7 +7,27 @@ evaluation harness and the tests can call it directly without a subprocess.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+
+
+def _is_conversation_file(path) -> bool:
+    """Is this case file a conversation set rather than a request set?
+
+    Decided by the file's own shape, not by a flag or a filename: one command
+    (``./run.sh eval --cases <file>``) should run whichever harness the file is
+    written for. A separate flag would mean a conversation file passed without
+    it silently scores as a request file and reports nonsense — a failure mode
+    that is invisible in the output.
+
+    Anything unreadable or unrecognised is treated as a request set, so the
+    error a caller sees comes from the real loader rather than from here.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(raw, dict) and "conversations" in raw and "cases" not in raw
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,7 +81,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ask.add_argument(
         "request",
-        help="The customer's sentence, e.g. \"A4 80gsm copy paper, 20 reams\"",
+        nargs="?",
+        default="",
+        help=(
+            "The customer's sentence, e.g. \"A4 80gsm copy paper, 20 reams\". "
+            "Omit only with --forget."
+        ),
     )
     ask.add_argument(
         "--quantity",
@@ -83,6 +108,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-model",
         action="store_true",
         help="Use the rule interpreter only, even when a model is configured",
+    )
+    ask.add_argument(
+        "--conversation",
+        metavar="ID",
+        default=None,
+        help=(
+            "Continue a conversation across invocations. The id is a label, "
+            "not an authenticated session. Kept in data/conversations.jsonl."
+        ),
+    )
+    ask.add_argument(
+        "--forget",
+        action="store_true",
+        help="Discard the conversation named by --conversation, then exit",
     )
 
     similarity = sub.add_parser(
@@ -168,10 +207,13 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.self_check:
             return self_check()
-        return run_eval(
-            as_json=args.json,
-            cases_path=Path(args.cases) if args.cases else None,
-        )
+
+        cases_path = Path(args.cases) if args.cases else None
+        if cases_path is not None and _is_conversation_file(cases_path):
+            from .conversation_eval import run_conversation_eval
+
+            return run_conversation_eval(as_json=args.json, cases_path=cases_path)
+        return run_eval(as_json=args.json, cases_path=cases_path)
     if args.command == "diff":
         from .catalog import run_diff
 
@@ -185,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
             use_model=not args.no_model,
             as_json=args.json,
             verbose=args.verbose,
+            conversation_id=args.conversation,
+            forget=args.forget,
         )
     if args.command == "similarity":
         from pathlib import Path

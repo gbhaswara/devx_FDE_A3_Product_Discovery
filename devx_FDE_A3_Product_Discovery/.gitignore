@@ -30,6 +30,11 @@ requests.jsonl
 *.requests.jsonl
 eval-records.jsonl
 *.eval-records.jsonl
+# Conversation state written by `./run.sh ask --conversation`. Same reasoning:
+# runtime data, unbounded, and committing it would look like a second source of
+# truth. It also holds a customer's requirements, which do not belong in git.
+conversations.jsonl
+*.conversations.jsonl
 
 # Build output
 dist/
