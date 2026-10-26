@@ -496,6 +496,8 @@ recorded for each.
 
 ### 1.0.0 — Tier 2 extras · partial
 
+> **Historical — superseded.** Three of six items were shipped when this was written; the other three were built on 2026-10-26 and are recorded in the `[Unreleased]` entries above. This entry is left as it was written so the sequence of reasoning stays auditable.
+
 `tasks.md` group 10, each item independently droppable. Gate: no Tier 2 work starts while a Tier 1 task is unfinished. Three of six items are shipped; three are not, and the three open ones are the reason 1.0.0 is not cut.
 
 **Shipped 0.5.0 (built because they were cheap once the core existed):**
@@ -520,6 +522,8 @@ The honest summary is that the three shipped items were built because the core m
 ---
 
 ## Not yet started
+
+> **Historical — superseded 2026-10-26.** This section described the state before the three Tier 2 changes were built. All three are now shipped and archived: 10.5 by `add-semantic-tiebreak`, 10.6 and 10.7 by `add-observability`. `tasks.md` reads 86 of 86, and no change is active. Kept rather than deleted because the reasoning about *why* they were deferred is part of the record; see the `[Unreleased]` entries above for what closed each.
 
 Three `tasks.md` items remain, all Tier 2, all named rather than omitted:
 
