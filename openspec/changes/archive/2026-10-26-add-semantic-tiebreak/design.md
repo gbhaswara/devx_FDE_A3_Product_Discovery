@@ -37,13 +37,26 @@ See `proposal.md` — Why. Constraints that shape the approach, all verified on 
 
 **Alternative rejected:** embedding-based pre-filtering or approximate nearest-neighbour retrieval. It changes membership, which means it can now *miss* a correct answer, and no test can distinguish "correctly excluded" from "silently lost".
 
-### D2 — Ranking position: after availability, before price
+### D2 — Ranking position: after availability, after price
 
-**Chosen:** `(availability_penalty, -similarity, unit_price.satang, sku)`.
+**Originally chosen, then overturned by measurement:** `(availability_penalty, -similarity, unit_price.satang, sku)`. **Shipped:** `(availability_penalty, unit_price.satang, -similarity, sku)`.
 
-**Why:** this ordering satisfies both specs without a special case. Price still decides when items are equally similar; similarity decides when they are not. Putting similarity *after* price would make it nearly inert, since SKUs rarely tie on price — the term would almost never fire and the feature would be decorative. Putting it before availability would let a similar-but-unavailable item outrank an available one, which contradicts the existing availability rule.
+**Why the original argument was wrong.** The reasoning below is preserved because it was not obviously bad — it just turned out to be false in this catalog. The claim was that putting similarity after price would make it "nearly inert, since SKUs rarely tie on price". That is exactly what happened, and it is the *right* behaviour: SKUs rarely tie on price because price is a real customer preference and similarity is not. The term firing on almost every case means it was overriding a preference the customer actually stated.
 
-**Cost:** the existing test asserting "cheapest qualifying option ranks first" must be checked to still hold. It does, because that scenario has no similarity spread between candidates when the provider is unconfigured, and the test runs unconfigured.
+**What measurement showed.** Against the 28 recorded cases:
+
+| Position | Cases reordered | First results changed | Improvements | Regressions |
+|---|---|---|---|---|
+| Before price | 13 of 28 | 9 | 0 | 6 |
+| After price | 3 of 28 | 0 | 0 | 0 |
+
+Before price, case 26 dropped `PL-CP-A4-70` — the cheapest qualifying item — from first to fourth, contradicting the spec scenario *"similarity does not override a stated preference for cheaper"*. So the original position violated a requirement that already existed.
+
+**The honest conclusion, which is weaker than the feature's pitch.** Zero improvements in both positions. Similarity after price is a better tiebreak than SKU order — that is all that can be claimed, and README, `docs/search.md` and `docs/semantic-ranking.md` all say zero rather than dressing it up. The original "why" below argued the feature would be "decorative" after price; it is closer to decorative than to a quality win, and saying so is more useful than a number that would not survive review.
+
+**Original reasoning, retained for the audit trail.** This ordering satisfies both specs without a special case. Price still decides when items are equally similar; similarity decides when they are not. Putting similarity *after* price would make it nearly inert, since SKUs rarely tie on price — the term would almost never fire and the feature would be decorative. Putting it before availability would let a similar-but-unavailable item outrank an available one, which contradicts the existing availability rule.
+
+**Cost, as assessed at the time:** the existing test asserting "cheapest qualifying option ranks first" must be checked to still hold. It does in both positions, because that scenario has no similarity spread between candidates when the provider is unconfigured, and the test runs unconfigured.
 
 **Note on ordering semantics:** similarity is a float in [0,1] and sorts descending, so the key uses `-similarity`. Floats in a sort key are acceptable here *only because* the final term is `sku`, which makes the order total. Without that final term, float non-associativity could make order depend on input sequence.
 
@@ -88,7 +101,7 @@ measurements; recorded here because the correction changes a stated decision.
 
 ## Risks / Trade-offs
 
-- **Similarity displaces a correct cheapest-first answer** → similarity sorts after availability but before price, so it *can* reorder items that differ in price when their similarity also differs. This is a genuine behaviour change when the provider is on. Mitigation: the measurement in D6 counts how many recorded cases change, and the README states it. If it regresses cases, the term moves after price and the feature becomes a pure tiebreak — that is a one-line change, and the decision is recorded rather than guessed.
+- **Similarity displaces a correct cheapest-first answer** → *this risk materialised.* Measured at the originally chosen position (before price): 13 of 28 cases reordered, 9 first results changed, 6 regressions and 0 improvements, including case 26 dropping the cheapest qualifying item from first to fourth. The mitigation was applied rather than deferred: the term moved after price, where 3 of 28 reorder and no first result changes. See D2. The residual risk is that a reviewer reads "reorders 3 cases" as an improvement; the measurement reports 0 improvements, so the README says 0.
 - **The offline guarantee silently breaks** → the suite runs under `unshare -rn` where loopback is down; provider-absent is the default path, and a test asserts the suite passes with no provider. The provider-dependent tests are explicitly gated and skip rather than fail when it is absent.
 - **Float ordering instability** → the final `sku` term makes the order total; a test asserts two items with equal similarity still order consistently.
 - **Embedding text is chosen badly** (e.g. embedding only the SKU) and the feature is inert → the text is built from name, category, finish, weight and size, and the D6 measurement exposes inertness as a zero.
