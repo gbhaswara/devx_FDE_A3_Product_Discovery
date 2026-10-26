@@ -1,6 +1,6 @@
 # BUG.md — known issues, traps, and failure modes
 
-Nothing is implemented yet, so this file is not a list of observed defects. It is the **register of failure modes we already know about** — traps found in the data, risks accepted in the design, and defects found and corrected in our own analysis.
+This file began as the **register of failure modes we already knew about** — traps found in the data, risks accepted in the design, and defects found and corrected in our own analysis. It now also carries **observed defects** (Part 2b), reproduced against the running service and registered *before* being fixed.
 
 Its purpose is the demo and interview: the brief scores *"honesty about where it does not work"*, and the live-engineering round is a debugging exercise. This is where the known-unknowns are written down before they are found the hard way.
 
@@ -253,6 +253,64 @@ What shipped instead: `request_chars` (a length) and `request_digest` (16 hex ch
 
 ---
 
+## Part 2b — Defects found in the shipped code · OPEN
+
+Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. All three are in conversation memory. Registered before being fixed, per the rule at the end of this file.
+
+### A12 — A first turn that states only a quantity or a budget cannot be continued
+
+```
+turn 1  "20 packs"            -> clarified   criteria {quantity: 20}
+turn 2  "make it 50"          -> clarified   criteria {}
+```
+
+Both the 20 and the 50 are lost. The reply asks a fresh question as if nothing had been said.
+
+**Root cause.** The same predicate is applied twice, and it is the wrong one. `Criteria(quantity=20).has_any_constraint()` is `False` — a quantity and a budget do not *filter* the catalog — so:
+
+- `conversation.is_continuation` returns `False` at `if previous is None or not previous.has_any_constraint()` (conversation.py:172); and
+- every caller passes `None` instead of the stored criteria by the same test: api.py:753, api.py:1037 (page route), ask_cli.py:191, conversation_eval.py:243.
+
+`_states_something` exists precisely to be the broader predicate ("A budget or a quantity is a statement even though neither filters the catalog") and is used only for the *current* turn. The module documents the distinction and then fails to apply it.
+
+**Why it is invisible in the recorded set.** No conversation case starts with a quantity-only or budget-only turn. A *later* budget-only turn does work — case 7 is `"A4 300gsm card, 5 packs" >> "under 200 a pack"` — because by then the retained criteria already had a category. Only a first turn is affected, and no case is one.
+
+**Guard:** an evaluation conversation starting `"20 packs"` and one starting `"under 200 a pack"`, each continued by a turn that must carry the first; and a unit test `is_continuation(Criteria(quantity=20), Criteria(quantity=50))` is `True`.
+
+**Status: OPEN.**
+
+### A13 — One unparseable turn permanently forgets the conversation
+
+```
+turn 1  "A4 copy paper"   -> quoted      criteria {category: Copy paper, size: A4}
+turn 2  "hello there"     -> clarified   criteria {}
+turn 3  "make it 50"      -> clarified   criteria {}   carried []
+```
+
+The A4 is gone for good. The same happens with a real paraphrase: `"too expensive"`.
+
+**Root cause.** D3 says a turn that understood nothing is a **fresh request** — it must not silently re-answer the previous question. That is about the *reply*. `merge_turn` returns `MergeResult(criteria=current)` for a fresh turn, and the caller then stores `record_turn(existing, merge)`, which sets `conversation.criteria` to the empty criteria (conversation.py:569). The intent "answer fresh" was implemented as "erase history", which D3 never says.
+
+It compounds with A12: after the wipe the conversation has no filterable constraint, so the next turn cannot continue even once, and the bare-number rule does not fire either (a *fresh* request requires a unit word, which is correct on its own terms).
+
+**Guard:** a conversation case with a mid-conversation no-understanding turn asserting that the following turn still continues from the earlier subject.
+
+**Status: OPEN.**
+
+### A14 — `turn_index` saturates at 21 and stops distinguishing turns
+
+A 25-turn conversation writes `turn_index` values `… 19, 20, 21, 21, 21`. Every turn past the cap reports turn 21, in the record and in the API's `conversation.turn`.
+
+**Root cause.** `Conversation.turn_index` is `len(self.turns) + 1`, and `put` trims `turns` to the last `MAX_TURNS` (20): once 20 turns are retained, the index is pinned at 21 forever. `records.py` states that turns are "distinguished by `turn_index`"; past the cap they are not.
+
+Low severity — no answer is affected, and the cap is deliberate — but it is a wrong number in an observability field, which is the class of defect this file exists to catch.
+
+**Guard:** a test asserting that 25 turns produce strictly increasing `turn_index`.
+
+**Status: OPEN.**
+
+---
+
 ## Part 3 — Accepted risks in the design
 
 Carried deliberately. Each is stated in the README as a known limitation.
@@ -260,7 +318,7 @@ Carried deliberately. Each is stated in the README as a known limitation.
 | Risk | Impact | Why accepted |
 |---|---|---|
 | Three-day build against a six-hour brief | may read as scope indiscipline | Two explicit tiers, every extra separable, and the split stated in the README and customer summary. Framing reduces it; it does not remove it. |
-| Single-turn only | a correction restarts the request | An explicit clarification step with an echo of what was understood is more reliable than half-built memory. |
+| Single-turn by default; memory is opt-in per conversation id | a caller that never sends a `conversation_id` gets no memory, and the in-memory store loses everything on restart | Memory shipped, but it is off unless a caller names a conversation: an implicit session would be a session nobody asked for, and the id is an unauthenticated label. Bounds and the wipe-on-unparseable-turn risk are stated in `docs/conversation-memory.md`; the unparseable-turn case is defect A13, not an accepted risk. |
 | Rule interpretation is narrower than the model | some paraphrases fall back to a clarification | The model path runs first; rules are the fallback; the fallback rate is measured so degradation is visible. |
 | Semantic search is a tiebreak only | a purely descriptive request with no structured terms can miss | The structured path covers the request shapes the brief describes. |
 | Two pound conversions unverified against real data | T7 path may be wrong on first contact | All four implemented from the agreed table; unlisted values raise; the mutated site exercises them. |
