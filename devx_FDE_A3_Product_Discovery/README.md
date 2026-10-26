@@ -18,31 +18,30 @@ uv sync                                    # 1. install dependencies
 ./run.sh serve                             # 3. the app on http://127.0.0.1:8001
 ./run.sh eval                              # 4. the recorded evaluation set
 ./run.sh diff                              # 5. snapshot vs previous snapshot
-./run.sh verify-refresh                    # 6. prove the refresh path works (~55s)
-./run.sh metrics                           # 7. the five operational measures
 ```
 
-Steps 1–5 are the demo path. Steps 6 and 7 are verification steps: they prove
-something about the system rather than demonstrate it, so they sit outside the
-main sequence. `verify-refresh` mutates a git-ignored copy of the site, ingests
-it into a throwaway snapshot, and checks that every change it declared in
-advance is reported under the correct kind. It needs no server and no network
-beyond loopback.
+Those five are the demo path. Three further commands exist to *prove* something
+rather than demonstrate it, and none is needed to see the system work:
 
-`./run.sh metrics` reads the records the assistant writes and reports five
-measures — fallback rate, zero-result rate, extraction backlog, p95 latency, and
-reply/total disagreement. On a fresh checkout it says plainly that there is no
-data rather than reporting zero rates, which would look like a healthy system.
-After `./run.sh eval`, use `./run.sh metrics --eval` to see the same measures over
-the evaluation harness's records. `GET /api/metrics` serves them from the running
-service. Details, thresholds and limitations: `docs/observability.md`.
+- `./run.sh verify-refresh` (~55s) mutates a git-ignored copy of the site,
+  ingests it into a throwaway snapshot, and checks that every change it declared
+  in advance is reported under the correct kind. It needs no server and no
+  network beyond loopback.
+- `./run.sh metrics` reads the records the assistant writes and reports five
+  measures — fallback rate, zero-result rate, extraction backlog, p95 latency,
+  and reply/total disagreement. On a fresh checkout it says plainly that there is
+  no data rather than reporting zero rates, which would look like a healthy
+  system. After `./run.sh eval`, `./run.sh metrics --eval` gives the same
+  measures over the evaluation harness's records. `GET /api/metrics` serves them
+  from the running service. Details, thresholds and limitations:
+  `docs/observability.md`.
+- `./run.sh similarity` measures the semantic tiebreak. It is the only command
+  that needs an embedding provider, and it says `NOT MEASURED` when it cannot.
 
-**None of these seven commands needs an embedding provider**, and none sets
+**None of the five demo commands needs an embedding provider**, and none sets
 `PAPERLANE_EMBED_*`. That is not luck: with no provider configured the similarity
 term is *omitted* from the ranking rather than set to a constant, so the ordering
-is the pre-semantic one by construction. The eighth command, `./run.sh
-similarity`, is the only one that needs a provider — it measures the tiebreak and
-says `NOT MEASURED` when it cannot.
+is the pre-semantic one by construction.
 
 That is the whole demo. The catalog snapshot (`data/catalog.duckdb`) is
 committed, so step 3 works without crawling anything.
@@ -160,7 +159,8 @@ Module map:
 | `evaluate.py` | The recorded evaluation harness |
 
 Full detail in `docs/`: `pricing.md`, `ingestion.md`, `search.md`,
-`assistant.md`, `api.md`, `refresh.md`.
+`assistant.md`, `api.md`, `refresh.md`, `refresh-verification.md`,
+`semantic-ranking.md`, `observability.md`, `chat-channel.md`.
 
 ---
 
@@ -349,6 +349,16 @@ are built:
 
 All six Tier 2 items are now built. The metrics module is the last one, and its
 own numbers are in `docs/observability.md`.
+
+**The brief's five nice-to-haves, and where each landed:**
+
+| Nice-to-have | State |
+|---|---|
+| Hybrid search (filters plus semantic) | Built as a tiebreak that cannot change membership — see above |
+| Multi-item quotes | Built — `POST /api/quote/lines` |
+| Conversation memory | **Not built.** Single-turn by design; the gap is stated in the customer summary and analysed in `docs/chat-channel.md` §3 |
+| Defences against untrusted text | Built — sanitising boundary in `model.py`, escaping in `ui.py`, plus tests |
+| Notes on deploying behind LINE or WhatsApp | `docs/chat-channel.md` — platform limits, the conversation-memory problem, and the gaps that must close before this is internet-reachable |
 
 ### On the six-hour estimate
 
