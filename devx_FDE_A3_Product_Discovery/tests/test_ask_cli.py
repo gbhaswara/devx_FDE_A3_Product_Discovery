@@ -33,6 +33,10 @@ def ask(tmp_path, monkeypatch, capsys):
         # PAPERLANE_LLM_* is configured here anyway, but stating it means a
         # developer with a model configured sees the same result.
         kwargs.setdefault("use_model", False)
+        # A per-test conversation file, so a test never reads or writes the real
+        # data/conversations.jsonl — that would make one test's turns visible to
+        # the next and make the assertions depend on ordering.
+        kwargs.setdefault("conversation_path", tmp_path / "conversations.jsonl")
         code = run_ask(request, **kwargs)
         return code, capsys.readouterr().out
 
@@ -216,3 +220,94 @@ class TestCommandLine:
         from paperlane.cli import main
 
         assert main(["ask", QUOTED, "--no-model"]) == 0
+
+    def test_conversation_flags_parse(self):
+        from paperlane.cli import build_parser
+
+        args = build_parser().parse_args(
+            ["ask", "hello", "--conversation", "abc", "--forget"]
+        )
+        assert args.conversation == "abc"
+        assert args.forget is True
+
+    def test_the_request_is_optional_so_forget_can_stand_alone(self):
+        from paperlane.cli import build_parser
+
+        args = build_parser().parse_args(["ask", "--forget", "--conversation", "abc"])
+        assert args.request == ""
+
+
+class TestConversation:
+    """``--conversation`` across invocations, which is the point of the file store.
+
+    Each ``run_ask`` call here is a separate call, standing in for a separate
+    process: nothing is shared between them except the file.
+    """
+
+    def test_a_second_invocation_refines_the_first(self, ask):
+        ask(QUOTED, conversation_id="c1")
+        code, out = ask("make it 50", conversation_id="c1", as_json=True)
+        assert code == 0
+        body = json.loads(out)
+        assert body["criteria"]["quantity"] == 50
+        assert body["criteria"]["size"] == "A4"
+        assert body["conversation"]["turn"] == 2
+
+    def test_the_reply_discloses_what_it_remembered(self, ask):
+        ask(QUOTED, conversation_id="c1")
+        code, out = ask("make it 50", conversation_id="c1")
+        assert "Remembered from your earlier message" in out
+        assert "size A4" in out
+
+    def test_a_new_size_starts_fresh(self, ask):
+        ask(QUOTED, conversation_id="c1")
+        code, out = ask("A5 copy paper", conversation_id="c1", as_json=True)
+        body = json.loads(out)
+        assert body["criteria"]["size"] == "A5"
+        assert body["conversation"]["turn"] == 2
+        assert body["conversation"]["carried"] == []
+
+    def test_forget_makes_the_next_invocation_fresh(self, ask):
+        ask(QUOTED, conversation_id="c1")
+        code, out = ask("", conversation_id="c1", forget=True)
+        assert code == 0
+        assert "forgot conversation c1" in out
+
+        code, out = ask("make it 50", conversation_id="c1", as_json=True)
+        body = json.loads(out)
+        assert body["conversation"]["turn"] == 1
+        assert body["criteria"] == {}
+
+    def test_forgetting_an_unknown_conversation_is_not_a_failure(self, ask):
+        code, out = ask("", conversation_id="never", forget=True)
+        assert code == 0
+        assert "no conversation never to forget" in out
+
+    def test_forget_without_an_id_is_a_usage_error(self, ask):
+        code, out = ask("", forget=True)
+        assert code == 2
+        assert "--forget needs --conversation" in out
+
+    def test_the_store_holds_no_request_text(self, ask, tmp_path):
+        ask(QUOTED, conversation_id="c1")
+        ask("make it 50", conversation_id="c1")
+        written = (tmp_path / "conversations.jsonl").read_text()
+        assert "copy paper" not in written
+        assert "make it" not in written
+        # It holds the requirements, which is what it is for.
+        assert "PL-CP" not in written
+        assert '"size_code": "A4"' in written
+
+    def test_a_conversation_writes_one_record_per_turn(self, ask):
+        before = len(_records())
+        ask(QUOTED, conversation_id="c1")
+        ask("make it 50", conversation_id="c1")
+        written = _records()
+        assert len(written) == before + 2
+        assert written[-1]["turn_index"] == 2
+        assert "size_code" in written[-1]["carried_fields"]
+
+    def test_without_the_flag_nothing_is_stored(self, ask, tmp_path):
+        ask(QUOTED)
+        assert not (tmp_path / "conversations.jsonl").exists()
+        assert "turn_index" not in _records()[-1]

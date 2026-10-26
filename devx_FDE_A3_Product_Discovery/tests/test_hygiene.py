@@ -266,3 +266,44 @@ class TestProducedRecordsCarryNoCredential:
         assert out.returncode == 0, (
             f"{records.DEFAULT_PATH.name} is not gitignored"
         )
+
+
+class TestDocumentationIndex:
+    """Every doc that exists is listed, and every doc listed exists.
+
+    A docs index drifts in exactly one direction: it stops mentioning a file that
+    was added, so the file is invisible to anyone reading the index. That is not
+    a typo, it is a doc nobody finds. Checked in both directions, because the
+    other drift — an index naming a file that was deleted — is just as
+    misleading.
+    """
+
+    def _listed(self) -> set[str]:
+        """Doc filenames the README index mentions.
+
+        Two forms are used in the README: an explicit ``docs/name.md`` link, and
+        a bare ``name.md`` inside the "Full detail in ``docs/``:" sentence. Both
+        count as listed — the index is that sentence — so both are collected.
+        """
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        listed = set(re.findall(r"docs/([a-z0-9-]+\.md)", readme))
+
+        # The bare-name sentence, found by its own wording rather than by
+        # position, so it can be reworded without silently emptying this check.
+        index = re.search(r"Full detail in `docs/`:(.+?)\.\n", readme, re.S)
+        if index:
+            listed |= set(re.findall(r"`([a-z0-9-]+\.md)`", index.group(1)))
+        return listed
+
+    def test_every_doc_is_listed(self):
+        present = {path.name for path in (ROOT / "docs").glob("*.md")}
+        missing = present - self._listed()
+        assert not missing, f"docs exist but are not in the README index: {missing}"
+
+    def test_every_listed_doc_exists(self):
+        absent = self._listed() - {path.name for path in (ROOT / "docs").glob("*.md")}
+        assert not absent, f"the README index names docs that do not exist: {absent}"
+
+    def test_the_conversation_doc_is_indexed(self):
+        """Named explicitly, so removing it from the index is a visible failure."""
+        assert "conversation-memory.md" in self._listed()
