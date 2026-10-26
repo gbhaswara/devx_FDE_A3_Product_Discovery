@@ -75,15 +75,21 @@ ready for unattended public use. Both are a week of work, not a rewrite.
 ## What we left out
 
 We built the core first — reading your site, pricing accurately, answering
-correctly. That is complete and tested. Three extras were deliberately held back:
+correctly — and then three extras on top of it. Two are done; one is half done.
 
-- **A test copy of your site with deliberate faults**, to prove the refresh catches
-  a missing product or a wrong price. The change report already works; this is the
-  rehearsal against known-bad input.
-- **A smarter "closest match" search** for requests phrased entirely in paraphrase,
-  with no size, weight or trade term to go on.
-- **A dashboard and alerts**, turning the records we already keep into answers to
-  "how often did we have to ask instead of quote?".
+- **A test copy of your site with deliberate faults — done.** We plant twelve known
+  changes (a removed product, a changed price, a new sale, an item going out of
+  stock) and check that the refresh report catches every one. It does: twelve of
+  twelve. This is the rehearsal that says the change report can be trusted when
+  your real site moves.
+- **A smarter "closest match" search — partly done.** When two products cost the
+  same, a semantic score now breaks the tie. It cannot help a request that is
+  *entirely* paraphrase, with no size, weight or trade word to hold on to. Doing
+  that safely needs measurements we have not taken, so we did not guess.
+- **A dashboard and alerts — half done.** We already record every request and
+  compute the five numbers worth watching, including "how often did we have to ask
+  instead of quote?". The numbers and their warning thresholds are available on
+  request; what is missing is a screen to look at and a channel to send alerts to.
 
-All three are small additions. We spent the time on pricing accuracy instead, which
-is what your customers notice.
+The honest reading: the parts that affect whether a customer gets a correct price
+are finished. What remains is presentation and delivery, not correctness.
