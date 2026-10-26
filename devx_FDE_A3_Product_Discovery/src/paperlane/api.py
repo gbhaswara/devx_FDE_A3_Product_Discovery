@@ -22,16 +22,17 @@ from __future__ import annotations
 
 import sys
 import time
+import uuid
 from dataclasses import asdict, dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Sequence
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from . import catalog, embeddings, records
+from . import catalog, conversation, embeddings, records
 from .assistant import (
     OUTCOME_CLARIFIED,
     OUTCOME_NO_MATCH,
@@ -108,6 +109,15 @@ class ConversationalRequest(BaseModel):
                          description="What the customer asked for, in their words.")
     quantity: int | None = Field(None, ge=1, le=100_000)
     use_model: bool = Field(True, description="Allow the model to interpret.")
+    conversation_id: str | None = Field(
+        None,
+        max_length=conversation.MAX_ID_LENGTH,
+        description=(
+            "Continue a conversation. Opaque, caller-supplied, and not "
+            "authenticated: anyone who knows an id can continue it. Omit for a "
+            "single-turn request, which behaves exactly as it always has."
+        ),
+    )
 
     @field_validator("request")
     @classmethod
@@ -115,6 +125,15 @@ class ConversationalRequest(BaseModel):
         if not value.strip():
             raise ValueError("request must not be blank")
         return value
+
+    @field_validator("conversation_id")
+    @classmethod
+    def id_is_usable(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        # Trimmed and validated here rather than in the handler, so a bad id is
+        # a 422 with the field named instead of a 500 from deep in the store.
+        return conversation.validate_id(value)
 
 
 class StructuredRequest(BaseModel):
@@ -392,6 +411,7 @@ def create_app(
     db_path=None,
     model_client: ModelClient | None = None,
     record_writer=_UNSET,
+    conversation_store=None,
 ) -> FastAPI:
     """Build the application.
 
@@ -404,6 +424,11 @@ def create_app(
     at import — before any test fixture can set ``PAPERLANE_RECORD_PATH``, and
     therefore into the real log. Passing ``None`` explicitly disables recording,
     which is how a test asserts that a request still works with recording off.
+
+    ``conversation_store`` is the memory behind multi-turn requests. Omitted
+    means a fresh in-memory store per application, which is the right default for
+    a service: bounded, gone on restart, and never written to disk unasked. A
+    request that names no conversation never touches it.
     """
     app = FastAPI(
         title="PaperLane sales assistant",
@@ -412,6 +437,9 @@ def create_app(
     )
 
     _explicit = record_writer
+
+    if conversation_store is None:
+        conversation_store = conversation.InMemoryConversationStore()
 
     def writer() -> "records.RecordWriter | None":
         """The record sink for this request.
@@ -466,6 +494,8 @@ def create_app(
         fallback_reason: str | None = None,
         model_configured: bool = False,
         error: str | None = None,
+        turn_index: int | None = None,
+        carried_fields: Sequence[str] = (),
     ):
         """Write one record for a handled request. Never raises.
 
@@ -497,6 +527,8 @@ def create_app(
                 fallback_reason=fallback_reason,
                 interpretation=interpretation,
                 error=error,
+                turn_index=turn_index,
+                carried_fields=carried_fields,
             )
         except records.RecordInvalid as exc:
             # A record the schema refuses is a bug in the caller, but it must not
@@ -680,7 +712,13 @@ def create_app(
 
     @app.post("/api/ask")
     def ask(payload: ConversationalRequest):
-        """Free text in; reply, interpretation, candidates, figures out."""
+        """Free text in; reply, interpretation, candidates, figures out.
+
+        With no ``conversation_id`` this is exactly the single-turn path it has
+        always been: no store is read, no store is written, and the record
+        carries no conversation fields. That equivalence is asserted by a test,
+        because "off by default" that nobody checks is a default that drifts.
+        """
         started = time.perf_counter()
 
         client = get_model() if payload.use_model else None
@@ -693,6 +731,30 @@ def create_app(
             from dataclasses import replace
 
             criteria = replace(criteria, quantity=payload.quantity)
+
+        # --- conversation: merge, then validate the whole thing --------
+        # The merge happens *after* interpretation and before validation, so a
+        # merged value the catalog cannot stock is caught by the same check that
+        # guards a fresh request. Validating before merging would check a set
+        # that is not the one about to be priced.
+        turn_index: int | None = None
+        carried_fields: list[str] = []
+        conversation_id: str | None = None
+        store = None
+        existing = None
+        merge = None
+
+        if payload.conversation_id:
+            conversation_id = payload.conversation_id
+            store = conversation_store
+            existing = store.get(conversation_id) or conversation.Conversation(
+                id=conversation_id
+            )
+            previous = existing.criteria if existing.criteria.has_any_constraint() else None
+            merge = conversation.merge_turn(previous, criteria)
+            criteria = merge.criteria
+            carried_fields = sorted(merge.carried)
+            turn_index = existing.turn_index
 
         # Validation failure is a client error, and it never reaches pricing.
         # It is still a handled request, so it is still recorded — a failure with
@@ -707,6 +769,8 @@ def create_app(
                 fallback_reason=_fallback_reason(interpretation, client),
                 model_configured=client is not None,
                 error=f"criteria invalid: {exc.reason}",
+                turn_index=turn_index,
+                carried_fields=carried_fields,
             )
             raise
 
@@ -727,8 +791,21 @@ def create_app(
                 fallback_reason=_fallback_reason(interpretation, client),
                 model_configured=client is not None,
                 error=f"no snapshot: {exc}",
+                turn_index=turn_index,
+                carried_fields=carried_fields,
             )
             raise
+
+        # A clarified turn still becomes part of the conversation: the
+        # clarification is often the only constraint the customer has given.
+        # The turn is appended to the *existing* conversation, so its history
+        # and turn count survive; rebuilding it from the id would reset the
+        # turn index to 1 on every request.
+        if store is not None and conversation_id is not None:
+            assert existing is not None and merge is not None
+            store.put(conversation.record_turn(
+                existing, merge, outcome=reply.outcome,
+            ))
 
         body = _candidates_and_figures(reply)
         body["reply"] = reply.text
@@ -739,6 +816,13 @@ def create_app(
             snapshot=_snapshot_meta(db_path),
         )
         body["meta"]["interpretation_detail"] = interpretation.detail
+        if conversation_id is not None:
+            body["conversation"] = {
+                "id": conversation_id,
+                "turn": turn_index,
+                "carried": carried_fields,
+                "carried_described": criteria.describe_carried(),
+            }
 
         record(
             endpoint="/api/ask", started=started, interpret_ms=interpret_ms,
@@ -746,8 +830,28 @@ def create_app(
             interpretation=interpretation.path,
             fallback_reason=_fallback_reason(interpretation, client),
             model_configured=client is not None,
+            turn_index=turn_index,
+            carried_fields=carried_fields,
         )
         return body
+
+    @app.delete("/api/conversations/{conversation_id}")
+    def forget_conversation(conversation_id: str):
+        """Discard a conversation. Idempotent, and not an error if unknown."""
+        try:
+            key = conversation.validate_id(conversation_id)
+        except conversation.ConversationInvalid as exc:
+            return _client_error(str(exc), field="conversation_id", status=422)
+        forgotten = conversation_store.forget(key)
+        return {
+            "id": key,
+            "forgotten": forgotten,
+            "detail": (
+                "the conversation is no longer remembered"
+                if forgotten
+                else "there was no such conversation to forget"
+            ),
+        }
 
     # -- 6.7 catalog inspection, health, comparison --------------------
 
@@ -840,12 +944,16 @@ def create_app(
     def index():
         from .ui import PAGE
 
-        return HTMLResponse(PAGE)
+        # Each page load starts a conversation with a fresh id. "Start over" is
+        # simply a link back here, so abandoning a conversation needs no request
+        # and leaves no state behind beyond the store's own bound.
+        return HTMLResponse(PAGE.replace("__CONVERSATION_ID__", uuid.uuid4().hex))
 
     @app.post("/ask", response_class=HTMLResponse)
     def ask_fragment(
         request: str = Form(...),
         quantity: str | None = Form(None),
+        conversation_id: str | None = Form(None),
     ):
         """The fragment the page swaps in.
 
@@ -859,6 +967,16 @@ def create_app(
         from .ui import render_fragment
 
         started = time.perf_counter()
+
+        # The page keeps a conversation, so a salesperson can refine what they
+        # just asked. An absent or unusable id means a single-turn request, which
+        # is exactly the old behaviour.
+        conversation_key: str | None = None
+        if conversation_id:
+            try:
+                conversation_key = conversation.validate_id(conversation_id)
+            except conversation.ConversationInvalid:
+                conversation_key = None
 
         if not request.strip():
             record(
@@ -890,6 +1008,15 @@ def create_app(
 
         client = get_model()
         interpret_started = time.perf_counter()
+        interpret_ms = 0.0
+        # Hoisted out of the try so the exception handlers can name them: an
+        # interpretation can itself raise CriteriaInvalid, before a conversation
+        # has been read, and a record that cannot be built is worse than one with
+        # empty conversation fields.
+        existing = None
+        merge = None
+        turn_index: int | None = None
+        carried_fields: list[str] = []
         try:
             interpretation = interpret(request, client)
             interpret_ms = (time.perf_counter() - interpret_started) * 1000
@@ -898,6 +1025,22 @@ def create_app(
                 from dataclasses import replace
 
                 criteria = replace(criteria, quantity=parsed_quantity)
+
+            # Same merge, same order as the JSON endpoint: after interpretation,
+            # before validation. A page that merged differently from the API
+            # would be a second assistant wearing the same name.
+            if conversation_key is not None:
+                existing = conversation_store.get(conversation_key) or (
+                    conversation.Conversation(id=conversation_key)
+                )
+                previous = (
+                    existing.criteria if existing.criteria.has_any_constraint() else None
+                )
+                merge = conversation.merge_turn(previous, criteria)
+                criteria = merge.criteria
+                carried_fields = sorted(merge.carried)
+                turn_index = existing.turn_index
+
             validate(criteria)
             rows = products()
             reply = answer(
@@ -919,11 +1062,18 @@ def create_app(
                 endpoint="/ask", started=started, request_text=request,
                 interpretation="rules", model_configured=client is not None,
                 error=f"criteria invalid: {exc.reason}",
+                turn_index=turn_index, carried_fields=carried_fields,
             )
             return HTMLResponse(render_fragment(
                 outcome="clarified", badge="Could not use that",
                 body=exc.reason, criteria={}, meta={},
             ))
+
+        if conversation_key is not None:
+            assert existing is not None and merge is not None
+            conversation_store.put(
+                conversation.record_turn(existing, merge, outcome=reply.outcome)
+            )
 
         record(
             endpoint="/ask", started=started, interpret_ms=interpret_ms,
@@ -931,6 +1081,7 @@ def create_app(
             interpretation=interpretation.path,
             fallback_reason=_fallback_reason(interpretation, client),
             model_configured=client is not None,
+            turn_index=turn_index, carried_fields=carried_fields,
         )
         return HTMLResponse(render_fragment(
             outcome=reply.outcome,
@@ -948,6 +1099,12 @@ def create_app(
             },
             errors=list(reply.errors),
             warnings=list(reply.warnings),
+            conversation={
+                "id": conversation_key,
+                "turn": turn_index,
+                "carried": carried_fields,
+                "carried_described": criteria.describe_carried(),
+            } if conversation_key is not None else None,
         ))
 
     return app

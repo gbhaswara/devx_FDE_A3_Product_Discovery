@@ -80,6 +80,16 @@ PAGE = """<!doctype html>
     border-radius: 5px; font-size: .84rem; color: var(--warn); }
   .htmx-indicator { display: none; color: var(--muted); font-size: .86rem; }
   .htmx-request .htmx-indicator { display: block; }
+  .note { color: var(--muted); font-size: .84rem; margin: .75rem 0 0; }
+  .note a, .note button.link {
+    background: none; border: 0; padding: 0; font: inherit; font-size: inherit;
+    color: var(--accent); cursor: pointer; text-decoration: underline;
+  }
+  #conversation-bar:empty { display: none; }
+  #conversation-bar {
+    margin-top: .75rem; font-size: .8rem; color: var(--muted);
+  }
+  #conversation-bar b { color: var(--ink); font-weight: 600; }
   footer { max-width: 52rem; margin: 3rem auto 0; font-size: .8rem; color: var(--muted); }
   footer a { color: var(--muted); }
 </style>
@@ -92,12 +102,17 @@ PAGE = """<!doctype html>
 
   <form hx-post="/ask" hx-target="#result" hx-swap="innerHTML"
         hx-disabled-elt="button" hx-indicator="#spinner">
+    <input type="hidden" name="conversation_id" id="conversation_id"
+           value="__CONVERSATION_ID__">
     <input type="text" name="request" required autofocus
            placeholder="e.g. letter-size flyers, one side, colour, under 250 a pack, 20 packs">
     <input type="number" name="quantity" min="1" placeholder="qty">
     <button type="submit">Ask</button>
   </form>
   <div id="spinner" class="htmx-indicator">Working&hellip;</div>
+  <p class="note">This page remembers your last request so you can refine it &mdash;
+  try <em>make it 50</em> after a quote. The reply says what it remembered.
+  <a href="/" id="start-over">Start over</a>.</p>
 
   <div class="examples">
     <button hx-post="/ask" hx-target="#result" hx-swap="innerHTML"
@@ -132,6 +147,7 @@ def render_fragment(
     meta: dict,
     errors: list[str] | None = None,
     warnings: list[str] | None = None,
+    conversation: dict | None = None,
 ) -> str:
     """Render one result panel.
 
@@ -157,6 +173,24 @@ def render_fragment(
             f"{escape(str(k))}: {escape(str(v))}" for k, v in meta.items()
         )
         parts.append(f'<div class="meta">{rendered_meta}</div>')
+
+    if conversation:
+        # Which turn this was, and which requirements it carried. The reply text
+        # already says what was remembered in words; this is the same fact in a
+        # form a reader can scan, and it is how a salesperson sees that the
+        # assistant is not starting from nothing on turn two.
+        turn = conversation.get("turn")
+        carried = conversation.get("carried") or []
+        rendered = (
+            f"<b>Turn {escape(str(turn))}</b>"
+            + (
+                " &middot; remembered: "
+                + escape(", ".join(carried).replace("_", " "))
+                if carried else
+                " &middot; nothing carried from earlier turns"
+            )
+        )
+        parts.append(f'<div id="conversation-bar">{rendered}</div>')
 
     if errors:
         parts.append(

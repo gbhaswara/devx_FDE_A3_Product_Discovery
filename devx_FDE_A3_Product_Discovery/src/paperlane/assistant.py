@@ -92,6 +92,9 @@ class AssistantReply:
     #: the only place that knows where the stage boundaries are. ``total_ms`` is
     #: the whole call and is asserted to be no less than the sum of the stages.
     timings: dict[str, float] = field(default_factory=dict)
+    #: Requirements carried from earlier turns, as described keys. Empty when
+    #: nothing was carried, which is every single-turn reply.
+    carried: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -508,6 +511,53 @@ def answer(
         "search_ms": round(search_ms, 3),
         "price_ms": round(price_ms, 3),
     }
+    return _disclose_carried(reply, criteria)
+
+
+def _disclose_carried(reply: AssistantReply, criteria: Criteria) -> AssistantReply:
+    """State which requirements came from earlier turns.
+
+    Applied to every outcome from one place, so a refined request cannot end up
+    quietly quoting a remembered constraint in any of the four shapes. A customer
+    who cannot see which requirement was remembered cannot correct it, and a
+    remembered constraint presented as a fresh one is the single most confusing
+    thing this feature can do.
+
+    Quantity and budget are named individually rather than folded into the match
+    reasons, because both change the figure the customer is looking at and
+    neither appears in a match reason.
+    """
+    carried = criteria.describe_carried()
+    if not carried:
+        return reply
+
+    phrases: list[str] = []
+    for key, value in carried.items():
+        if key == "budget_basis":
+            continue        # rendered with its budget, not on its own
+        if key == "budget_per_unit":
+            phrases.append(f"a budget of {value} {carried.get('budget_basis', '')}".strip())
+        elif key == "size":
+            phrases.append(f"size {value}")
+        elif key == "weight_gsm":
+            phrases.append(f"{value} gsm")
+        elif key == "quantity":
+            phrases.append(f"a quantity of {value}")
+        elif key == "colour_shade":
+            phrases.append(f"colour {value}")
+        else:
+            phrases.append(f"{key.replace('_', ' ')} {value}")
+
+    if not phrases:
+        return reply
+
+    note = (
+        "Remembered from your earlier message: "
+        + ", ".join(phrases)
+        + ". Tell me if any of that is wrong."
+    )
+    reply.text = reply.text.rstrip() + "\n\n" + note
+    reply.carried = tuple(sorted(carried))
     return reply
 
 

@@ -171,6 +171,14 @@ class RequestRecord:
     #: would have its metrics computed over their union, so re-running the
     #: harness would silently change what the next read reports.
     run_id: str | None = None
+    #: Position in a conversation, 1-based. ``None`` for a single-turn request,
+    #: so single-turn and multi-turn traffic stay separable in the metrics
+    #: rather than blended into one population with two behaviours.
+    turn_index: int | None = None
+    #: Field names carried from earlier turns. Empty for a single-turn request,
+    #: and empty for a multi-turn turn that carried nothing — the two are
+    #: distinguished by ``turn_index``.
+    carried_fields: tuple[str, ...] = ()
     timestamp: str = ""
 
     def __post_init__(self) -> None:
@@ -201,6 +209,8 @@ class RequestRecord:
             raise RecordInvalid("a record must name the endpoint that produced it")
         if self.request_chars < 0:
             raise RecordInvalid("request_chars cannot be negative")
+        if self.turn_index is not None and self.turn_index < 1:
+            raise RecordInvalid("turn_index is 1-based, so it cannot be below 1")
         for stage in TIMING_STAGES:
             value = self.timings.get(stage)
             if value is not None and value < 0:
@@ -256,6 +266,13 @@ class RequestRecord:
             payload["request_text"] = self.request_text
         if self.run_id:
             payload["run_id"] = self.run_id
+        if self.turn_index is not None:
+            payload["turn_index"] = self.turn_index
+        # Present whenever this was a multi-turn request, even when nothing was
+        # carried: an empty list says "turn 3 carried nothing", which is a
+        # different fact from "this was turn 1".
+        if self.turn_index is not None:
+            payload["carried_fields"] = list(self.carried_fields)
         return payload
 
 
@@ -309,6 +326,8 @@ def build_record(
     fallback_reason: str | None = None,
     interpretation: str | None = None,
     error: str | None = None,
+    turn_index: int | None = None,
+    carried_fields: Sequence[str] = (),
 ) -> RequestRecord:
     """Assemble a record from whatever the handler managed to produce.
 
@@ -332,6 +351,8 @@ def build_record(
             request_digest=digest_of(request_text or ""),
             request_text=body,
             error=error,
+            turn_index=turn_index,
+            carried_fields=tuple(carried_fields),
         )
 
     quoted_total = reply.quote.total.format() if reply.quote is not None else None
@@ -352,6 +373,8 @@ def build_record(
         request_digest=digest_of(request_text or ""),
         request_text=body,
         error=error,
+        turn_index=turn_index,
+        carried_fields=tuple(carried_fields),
     )
 
 
