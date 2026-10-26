@@ -1,0 +1,238 @@
+{
+  "_comment": [
+    "The conversation evaluation set. Each entry is a sequence of turns in one",
+    "conversation, and what each turn must produce.",
+    "",
+    "Two different kinds of assertion live here, and they are deliberately",
+    "separate from eval/cases.json:",
+    "",
+    "  * 'criteria' / 'absent' assert what the MERGE carried. A subset check, so a",
+    "    case states what it is about rather than every field the catalog has.",
+    "  * 'carried' / 'not_carried' assert what the reply DISCLOSED. A field the",
+    "    customer restated is current, not remembered, and reporting it as",
+    "    remembered is a small lie they cannot check.",
+    "  * 'reply_contains' asserts the disclosure reached the words a salesperson",
+    "    reads, not just a JSON field.",
+    "",
+    "No total is transcribed anywhere. Where a total matters, the harness",
+    "compares a fresh turn against the same request run standalone through",
+    "eval/cases.json — a number written down here would be a guess that happens",
+    "to have been written down."
+  ],
+  "version": 1,
+  "catalog": "v1",
+  "conversations": [
+    {
+      "number": 1,
+      "name": "refine the quantity",
+      "proves": "the most common second sentence a customer says is understood",
+      "turns": [
+        {
+          "request": "A4 copy paper, 20 reams",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"category": "Copy paper", "size": "A4", "quantity": 20},
+            "carried": []
+          }
+        },
+        {
+          "request": "make it 50",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"category": "Copy paper", "size": "A4", "quantity": 50},
+            "carried": ["category", "size_code"],
+            "not_carried": ["quantity"],
+            "reply_contains": ["Remembered from your earlier message", "size A4"]
+          }
+        }
+      ],
+      "note": "The bare number 50 has no unit word, so the general quantity parser cannot see it. In a refinement it can only be the quantity."
+    },
+    {
+      "number": 2,
+      "name": "a new subject does not inherit",
+      "proves": "the failure mode the scope cut was protecting against",
+      "turns": [
+        {
+          "request": "letter-size flyers, one side, colour, under 250 a pack, 20 packs",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"category": "Flyer printing", "size": "LTR", "sides": "single"}
+          }
+        },
+        {
+          "request": "A4 copy paper",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"category": "Copy paper", "size": "A4"},
+            "absent": ["sides", "colour_mode", "budget_per_unit", "quantity"],
+            "carried": [],
+            "reply_excludes": ["Remembered from your earlier message"]
+          }
+        }
+      ],
+      "note": "A stated product kind and size is the customer naming a new subject. None of the flyer constraints survive, and the reply says nothing about earlier turns."
+    },
+    {
+      "number": 3,
+      "name": "a weight correction corrects",
+      "proves": "a weight adjusts a thing; it does not name a new one",
+      "turns": [
+        {
+          "request": "A4 80gsm copy paper, 20 reams",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"size": "A4", "weight_gsm": 80, "quantity": 20}
+          }
+        },
+        {
+          "request": "make it 100 gsm",
+          "expect": {
+            "criteria": {"size": "A4", "weight_gsm": 100, "quantity": 20},
+            "carried": ["category", "size_code", "quantity"],
+            "not_carried": ["weight_gsm"],
+            "reply_contains": ["a quantity of 20"]
+          }
+        }
+      ],
+      "note": "This catalog has no 100 gsm A4 copy paper, so the turn is a no_match — which is the honest answer, and the point: the size and quantity were kept, only the weight changed. The reply names the carried quantity because a carried quantity changes the total."
+    },
+    {
+      "number": 4,
+      "name": "a budget refinement",
+      "proves": "a budget is a refinement, and a budget figure is not a quantity",
+      "turns": [
+        {
+          "request": "A4 80gsm copy paper, 20 reams",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"size": "A4", "weight_gsm": 80, "quantity": 20}
+          }
+        },
+        {
+          "request": "and under 130 a pack",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {
+              "size": "A4",
+              "quantity": 20,
+              "budget_per_unit": "130.00"
+            },
+            "carried": ["quantity"],
+            "reply_contains": ["a quantity of 20", "within 130.00"]
+          }
+        }
+      ],
+      "note": "'130' is a budget, not a quantity. Reading it as the quantity would quote 130 reams — a wrong total, not a cosmetic slip."
+    },
+    {
+      "number": 5,
+      "name": "a refusal is a turn",
+      "proves": "the next sentence after a refusal is usually a continuation",
+      "turns": [
+        {
+          "request": "Heritage Ivory A4 100gsm, 5 reams",
+          "expect": {
+            "outcome": "refused",
+            "criteria": {"size": "A4", "weight_gsm": 100, "colour_shade": "ivory"}
+          }
+        },
+        {
+          "request": "A4 80gsm copy paper, 10 reams",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"category": "Copy paper", "size": "A4", "weight_gsm": 80, "quantity": 10},
+            "absent": ["colour_shade"],
+            "carried": [],
+            "reply_excludes": ["Remembered from your earlier message"]
+          }
+        }
+      ],
+      "note": "A refused turn is remembered, because the customer's next sentence is usually 'then what else have you got'. Here they name a new subject instead, so nothing is carried — including the ivory shade, which must not survive."
+    },
+    {
+      "number": 6,
+      "name": "a no_match is a turn",
+      "proves": "the next sentence after a no-match is a relaxation of it",
+      "turns": [
+        {
+          "request": "A4 300gsm card, 5 packs",
+          "expect": {
+            "outcome": "no_match",
+            "criteria": {"category": "Card and photo paper", "size": "A4", "weight_gsm": 300, "quantity": 5}
+          }
+        },
+        {
+          "request": "under 200 a pack",
+          "expect": {
+            "criteria": {
+              "category": "Card and photo paper",
+              "size": "A4",
+              "weight_gsm": 300,
+              "quantity": 5,
+              "budget_per_unit": "200.00"
+            },
+            "carried": ["category", "size_code", "weight_gsm", "quantity"],
+            "reply_contains": ["a quantity of 5", "300 gsm"]
+          }
+        }
+      ],
+      "note": "The request that failed is exactly what the relaxation needs to see. Still a no_match — the catalog has no 300 gsm card under 200 a pack — and that is the honest answer."
+    },
+    {
+      "number": 7,
+      "name": "a correction of a correction",
+      "proves": "an explicit quantity wins every time, and the turn index advances",
+      "turns": [
+        {
+          "request": "A4 80gsm copy paper",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"size": "A4", "weight_gsm": 80}
+          }
+        },
+        {
+          "request": "make it 40 reams",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"size": "A4", "weight_gsm": 80, "quantity": 40},
+            "carried": ["category", "size_code", "weight_gsm"],
+            "not_carried": ["quantity"]
+          }
+        },
+        {
+          "request": "no wait, 60",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"size": "A4", "weight_gsm": 80, "quantity": 60},
+            "carried": ["category", "size_code", "weight_gsm"],
+            "not_carried": ["quantity"],
+            "reply_contains": ["size A4", "80 gsm"]
+          }
+        }
+      ],
+      "note": "Two corrections in a row. The first restated a unit-bearing quantity, the second a bare one; both must land, and neither may be reported as remembered."
+    },
+    {
+      "number": 8,
+      "name": "an unusable refinement asks",
+      "proves": "a merged request that cannot be priced asks rather than quoting",
+      "turns": [
+        {
+          "request": "A4 copy paper, 20 reams",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"category": "Copy paper", "size": "A4", "quantity": 20}
+          }
+        },
+        {
+          "request": "make it 500000",
+          "expect": {
+            "outcome": "error"
+          }
+        }
+      ],
+      "note": "The bare number is a quantity the merge must read, and 500,000 is out of range. Validation refuses it, so nothing is priced and the harness records an error rather than a quote. The alternative — quoting 20 because the refinement was unusable — would answer a question the customer did not ask."
+    }
+  ]
+}

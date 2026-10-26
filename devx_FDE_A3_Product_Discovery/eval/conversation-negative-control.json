@@ -1,0 +1,104 @@
+{
+  "_comment": [
+    "The negative control for the conversation harness. Every entry here is WRONG",
+    "on purpose, and ./run.sh eval --cases eval/conversation-negative-control.json",
+    "must exit 1.",
+    "",
+    "A conversation harness that passes its own cases proves nothing: a scorer that",
+    "always returns pass would produce the same table. What this file pins is that",
+    "each of the four ways a merge can go wrong is actually detected — criteria not",
+    "carried, criteria carried that should not be, disclosure missing, and",
+    "disclosure claimed for something the turn restated.",
+    "",
+    "The pricing axis is not falsifiable from a case file: it compares a fresh turn",
+    "against the same request run standalone, and both go through the same code. It",
+    "is checked structurally instead (a 'quoted' outcome must carry a total). Saying",
+    "so here is better than listing it as covered."
+  ],
+  "version": 1,
+  "catalog": "v1",
+  "conversations": [
+    {
+      "number": 1,
+      "name": "NEGATIVE: the quantity is not carried",
+      "proves": "detects a merge that drops a refinement",
+      "turns": [
+        {
+          "request": "A4 copy paper, 20 reams",
+          "expect": {"outcome": "quoted"}
+        },
+        {
+          "request": "make it 50",
+          "expect": {
+            "criteria": {"quantity": 999},
+            "carried": ["quantity"]
+          }
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "name": "NEGATIVE: a new subject wrongly inherits",
+      "proves": "detects carried constraints surviving a subject change",
+      "turns": [
+        {
+          "request": "letter-size flyers, one side, colour, under 250 a pack, 20 packs",
+          "expect": {"outcome": "quoted"}
+        },
+        {
+          "request": "A4 copy paper",
+          "expect": {
+            "criteria": {"sides": "single"},
+            "carried": ["sides"]
+          }
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "name": "NEGATIVE: the disclosure is missing",
+      "proves": "detects a reply that remembers something and does not say so",
+      "turns": [
+        {
+          "request": "A4 80gsm copy paper, 20 reams",
+          "expect": {"outcome": "quoted"}
+        },
+        {
+          "request": "make it 50",
+          "expect": {
+            "reply_contains": ["Remembered from your earlier message: nothing at all"]
+          }
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "name": "NEGATIVE: a restated field is called remembered",
+      "proves": "detects a reply claiming to remember what the turn just said",
+      "turns": [
+        {
+          "request": "A4 80gsm copy paper, 20 reams",
+          "expect": {"outcome": "quoted"}
+        },
+        {
+          "request": "make it 50",
+          "expect": {
+            "not_carried": ["size_code"],
+            "reply_contains": ["a quantity of 20"]
+          }
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "name": "NEGATIVE: a wrong outcome",
+      "proves": "detects an outcome that changed",
+      "turns": [
+        {
+          "request": "A4 80gsm copy paper, 20 reams",
+          "expect": {"outcome": "refused"}
+        }
+      ]
+    }
+  ]
+}
