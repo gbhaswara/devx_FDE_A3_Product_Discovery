@@ -172,6 +172,11 @@ def run_ingest(
         return 2
 
     crawled_at = datetime.now(timezone.utc)
+    # Stamped before the first request so the snapshot's ingest_runs row spans the
+    # crawl. Stamping it inside build_snapshot would measure only the database
+    # build, and a row reporting 0.37s for 103 rate-limited requests is not a fast
+    # crawl — it is a duration that cannot have happened.
+    crawl_started_at = datetime.now(timezone.utc)
 
     with crawler:
         try:
@@ -309,6 +314,7 @@ def run_ingest(
         # unless this run reports it again, so the backlog cannot vanish.
         carry_reviews_from=target_db,
         target=target_db.with_suffix(".tmp.duckdb"),
+        crawl_started_at=crawl_started_at,
     )
     catalog.swap_into_place(staged, target_db)
     print(f"snapshot: {target_db}")

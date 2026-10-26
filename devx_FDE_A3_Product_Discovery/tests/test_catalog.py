@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -185,6 +185,73 @@ class TestHealth:
     def test_names_the_snapshot(self, tmp_path):
         path = build(tmp_path)
         assert str(path) in health(path)["path"]
+
+
+class TestIngestRunTiming:
+    """The ingest_runs row must span the crawl, not just the database build.
+
+    This exists because the committed snapshot once reported 0.37s for 103
+    rate-limited requests -- an implied 280 req/s that the crawler's own guard
+    forbids. The row was not measuring a fast crawl; it was measuring the time to
+    write DuckDB, because the start timestamp was taken inside build_snapshot.
+
+    Note on storage: the columns are TIMESTAMP, so DuckDB drops the tzinfo and
+    keeps the local wall-clock rendering of the instant. These assertions are
+    therefore written against *durations*, which are unaffected by that, rather
+    than against wall-clock equality.
+    """
+
+    def _row(self, target):
+        with open_readonly(target) as con:
+            return con.execute(
+                "SELECT started_at, finished_at FROM ingest_runs"
+            ).fetchone()
+
+    def test_crawl_start_is_used_when_supplied(self, tmp_path):
+        started = datetime.now(timezone.utc) - timedelta(minutes=30)
+        target = Path(tmp_path) / "catalog.duckdb"
+        build_snapshot(
+            products=[product_row()],
+            tiers=[],
+            reviews=[],
+            base_url="http://localhost:8000/paperlane/",
+            pages_fetched=103,
+            tier_docs_found=59,
+            target=target,
+            crawl_started_at=started,
+        )
+        started_at, finished_at = self._row(target)
+        assert finished_at > started_at
+        # 30 minutes of crawl plus the build must show up in the row. A start
+        # stamped inside the build would give microseconds.
+        assert (finished_at - started_at) >= timedelta(minutes=30)
+
+    def test_supplied_start_makes_the_duration_cannot_be_a_fast_crawl(self, tmp_path):
+        # The defect, stated as a test: a start an hour in the past must produce a
+        # duration of at least an hour. Stamping inside the build cannot satisfy
+        # this, which is exactly why the parameter exists.
+        started = datetime.now(timezone.utc) - timedelta(hours=1)
+        target = Path(tmp_path) / "catalog.duckdb"
+        build_snapshot(
+            products=[product_row()],
+            tiers=[],
+            reviews=[],
+            base_url="http://localhost:8000/paperlane/",
+            pages_fetched=103,
+            tier_docs_found=59,
+            target=target,
+            crawl_started_at=started,
+        )
+        started_at, finished_at = self._row(target)
+        assert (finished_at - started_at) >= timedelta(hours=1)
+
+    def test_omitting_the_start_still_works(self, tmp_path):
+        # Direct callers (mostly tests) keep the old behaviour rather than being
+        # forced to invent a timestamp. The row still records something sane.
+        path = build(tmp_path)
+        started_at, finished_at = self._row(path)
+        assert started_at <= finished_at
+        assert (finished_at - started_at) < timedelta(minutes=1)
 
 
 class TestBuildThenSwap:

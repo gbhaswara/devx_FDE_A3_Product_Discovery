@@ -292,6 +292,7 @@ def build_snapshot(
     tier_docs_found: int,
     target: Path | None = None,
     carry_reviews_from: Path | None = None,
+    crawl_started_at: datetime | None = None,
 ) -> Path:
     """Write a complete snapshot to ``target`` (default: a staging file).
 
@@ -304,6 +305,12 @@ def build_snapshot(
     item stays flagged until someone confirms it is fixed. Without this, every
     rebuild silently drops the backlog and the review set is always empty — which
     looks like a clean run and is not.
+
+    ``crawl_started_at`` is when the crawl began, so the ``ingest_runs`` row spans
+    the whole ingest rather than only the database build. When it is omitted the
+    build stamps its own start, which keeps direct callers working — but a real
+    ingest should pass it, because a snapshot whose timing measures only the build
+    reports a duration no crawl could have achieved.
     """
     target = Path(target) if target is not None else _staging_path()
     if target.exists():
@@ -314,7 +321,7 @@ def build_snapshot(
     outstanding = [r for r in carried if _review_key(r) not in reported]
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
-    started = datetime.now(timezone.utc)
+    started = crawl_started_at or datetime.now(timezone.utc)
 
     con = duckdb.connect(str(target))
     try:
