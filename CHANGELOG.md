@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.6.0 — Tier 1 complete, plus two of three Tier 2 changes.** 83 of 86 tasks closed in the Tier 1 change; the 3 open items belong to the remaining Tier 2 change and are named in §"Not yet started". 765 tests pass offline, the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), and the negative control fails as designed. See `openspec/changes/add-paperlane-product-discovery/tasks.md` (archived) and `openspec/changes/add-semantic-tiebreak/tasks.md`.
+Current status: **0.7.0 — all three Tier 2 changes complete.** 86 of 86 tasks closed across the Tier 1 change and its three Tier 2 successors. 937 tests pass offline, the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), and the negative control fails as designed. See `openspec/changes/add-paperlane-product-discovery/tasks.md` (archived), `add-mutated-site-refresh-harness/tasks.md`, `add-semantic-tiebreak/tasks.md` and `add-observability/tasks.md`.
 
 ---
 
@@ -74,6 +74,113 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Added — 2026-10-26 · `add-observability` (Tier 2, third of three)
+
+Closes tasks 10.6 and 10.7 of `add-paperlane-product-discovery`. The OpenSpec
+change is 28/28. **All six Tier 2 extras are now built**, and the Tier 1 change
+stands at 86 of 86 tasks closed.
+
+**The problem.** The assistant answers correctly or incorrectly with no
+operational signal either way. A model that silently degraded to the rule path
+looked identical to a model that was working; a catalog gap looked identical to
+a parsing defect. Neither would have been noticed by a customer complaint —
+which is the wrong way to find out.
+
+**What was built.**
+
+- `src/paperlane/records.py` — one structured JSONL record per handled request:
+  endpoint, interpretation path, whether a model was configured, the fallback
+  reason, outcome, candidates considered, items returned, the quoted total, the
+  total the reply **actually printed**, per-stage timings, snapshot identity,
+  request length and digest. Frozen, and validated at construction.
+- `src/paperlane/metrics.py` — the five measures, all derived from records on
+  every read. No counter is incremented while a request is handled.
+- `GET /api/metrics` and `./run.sh metrics` — the same payload from the service
+  and from the command line.
+- `docs/observability.md` — the schema, the five measures with their alarm
+  thresholds, and the limitations.
+
+**Three definitional choices that make the measures mean something.**
+
+- **`fallback_rate`'s denominator is model-eligible requests only.** A
+  deployment with no model configured answers everything with rules, and that is
+  correct behaviour. Counting it as fallback would make the metric permanently
+  alarming, and a permanently red metric is an ignored metric.
+- **`zero_result_rate` excludes clarifications and refusals.** A clarification is
+  the system correctly declining to guess; a refusal is the system correctly
+  declining to sell. Counting either as a miss would make the metric measure
+  questions rather than failures.
+- **p95 is nearest-rank, not interpolated.** With a small window an interpolated
+  p95 reports a duration between two observed requests — a number no request
+  experienced.
+
+Every rate returns `null` rather than `0.0` on an empty basis, and the payload
+carries `record_count`, `window`, `has_data` and a `note`. A rate of 0% over 0
+requests and a perfect run are opposite findings and must not print the same.
+
+**The disagreement metric, and why it is the one worth having.** The reply
+contract is *supposed* to make a reply whose printed total differs from the
+computed total impossible. "Supposed to be impossible" is exactly the claim that
+should be measured. For every record whose reply printed a total, that figure is
+parsed from the rendered text and compared against `evaluate.recompute_totals()`
+run on the same SKUs and quantities — independent integer arithmetic, separately
+asserted by AST inspection not to call `quote()`. So it compares two
+implementations, not a reply agreeing with itself.
+
+The tempting version — compare `reply.total` against `reply.quote.total` — is
+worthless, because both come from the same object and always agree. It is
+structurally incapable of failing, and a test asserts the shipped version does
+not read `quoted_total` at all.
+
+**Observed: 0 disagreements over 17 checked replies** on a real `./run.sh eval`
+run. The metric reports how many replies it *checked*, not just how many
+disagreed, because "0 over zero checked" and "0 over seventeen" are opposite
+findings that would otherwise print identically. A record that stated a total
+but cannot be re-derived is reported as a disagreement *with a reason*, not
+skipped — dropping the uncheckable records would make the metric look better the
+less it was able to do.
+
+**A defect the credential test found, which is the reason the test exists.** The
+first version of `TestNoCredentialInRecords` failed: a model client that raises
+with its own key in the message had that message travel through `interpret` into
+`fallback_reason` and into the record. Redaction now happens in the record's own
+constructor, in two passes — configured key values replaced literally, then
+credential-shaped patterns — so no caller can bypass it by forgetting. The
+realistic leak was never a field someone added for a key; it was an error
+message.
+
+**Two design corrections, both recorded rather than quietly made.**
+
+- `ANALYZE_01.md` §9a specified logging the raw request text. The observability
+  spec forbids retaining conversation content by default. **The spec won** — it
+  is the later and more considered artefact, and `AGENTS.md` ranks it above the
+  analysis. What shipped is `request_chars` and a 16-character `request_digest`,
+  with text capture as an explicit opt-in (`PAPERLANE_RECORD_TEXT`, bounded by
+  `PAPERLANE_RECORD_TEXT_MAX`, default 200). Recorded as defect A11 in `BUG.md`.
+- **The harness writes to its own log.** The first version had `./run.sh eval`
+  append 24 records to `data/requests.jsonl`, which would drag the live fallback
+  and zero-result rates toward whatever the case list emphasises — and the
+  negative control, whose purpose is to fail, would have poisoned them outright.
+  The harness now writes `data/eval-records.jsonl`, each run stamped with a
+  `run_id`, and `metrics --eval` reports **the most recent run** rather than a
+  union of runs. Verified: two runs plus the negative control leave 48 lines in
+  the file and 24 records in the report.
+
+**A test-isolation defect found by the suite itself.** `api.py` ends with
+`app = create_app()`, so an eagerly resolved record writer bound at import —
+before any fixture could set `PAPERLANE_RECORD_PATH` — and 32 records from the
+test run landed in the real `data/requests.jsonl`. Resolution is now lazy and
+cached **per configured path**, so the failure counter survives across requests
+without one test's records landing in another test's file. An autouse fixture
+redirects both logs to `tmp_path`; the suite now leaves both files absent.
+
+**Verification.** 937 tests pass offline under `unshare -rn` (7 skip: the
+loopback and embedding ones), and 937 online (4 skip); eval 24/24 on v1 and
+21/21 on v2; `--self-check` exit 0; negative control exit 1; `verify-refresh`
+exit 0 with all 12 changes verified; `./run.sh similarity` exit 0. Every command
+in `docs/observability.md` was run as written and its quoted output copied from
+the run.
 
 ### Added — 2026-10-26 · `add-semantic-tiebreak` (Tier 2, second of three)
 

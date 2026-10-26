@@ -24,6 +24,7 @@ them:
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Sequence
@@ -83,6 +84,14 @@ class AssistantReply:
     semantic: str = "off"
     #: Why the provider failed, when it did. Never request text.
     semantic_detail: str | None = None
+    #: How many products the filter examined. Carried on the reply so the
+    #: observability record can report it without re-running the search — a
+    #: second search purely to count would be both slower and a second answer.
+    considered: int = 0
+    #: Per-stage timings in milliseconds. Populated by :func:`answer`, which is
+    #: the only place that knows where the stage boundaries are. ``total_ms`` is
+    #: the whole call and is asserted to be no less than the sum of the stages.
+    timings: dict[str, float] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -471,18 +480,35 @@ def answer(
         )
 
     quantity = criteria.quantity or 1
+    search_started = time.perf_counter()
     result = search(criteria, products, facts, quantity=quantity, scorer=scorer)
+    search_ms = (time.perf_counter() - search_started) * 1000
+
+    # Only a quoted reply prices anything, so the price stage stays 0.0 for the
+    # other three outcomes. Reporting zero is honest — nothing was priced —
+    # rather than a missing field the reader has to interpret.
+    price_ms = 0.0
 
     # --- refusal: matched but unavailable ------------------------------
     if not result.matches and result.unavailable:
-        return _refuse(criteria, result, interpretation, quantity)
-
+        reply = _refuse(criteria, result, interpretation, quantity)
     # --- no match ------------------------------------------------------
-    if not result.matches:
-        return _no_match(criteria, result, interpretation)
-
+    elif not result.matches:
+        reply = _no_match(criteria, result, interpretation)
     # --- quoted --------------------------------------------------------
-    return _quote_reply(criteria, result, interpretation, quantity, products)
+    else:
+        price_started = time.perf_counter()
+        reply = _quote_reply(criteria, result, interpretation, quantity, products)
+        price_ms = (time.perf_counter() - price_started) * 1000
+    # Attached here rather than passed into each constructor: it is one number
+    # from one place, and three constructors each remembering to carry it is
+    # three chances to report zero on a request that examined the whole catalog.
+    reply.considered = result.considered
+    reply.timings = {
+        "search_ms": round(search_ms, 3),
+        "price_ms": round(price_ms, 3),
+    }
+    return reply
 
 
 def _render_clarification(questions: Sequence[Question], criteria: Criteria) -> str:

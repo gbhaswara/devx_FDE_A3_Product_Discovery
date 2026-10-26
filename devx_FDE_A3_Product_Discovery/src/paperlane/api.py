@@ -20,6 +20,7 @@ interpreter answers, and `interpretation` says so.
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import asdict, dataclass
 from decimal import Decimal
@@ -30,7 +31,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from . import catalog, embeddings
+from . import catalog, embeddings, records
 from .assistant import (
     OUTCOME_CLARIFIED,
     OUTCOME_NO_MATCH,
@@ -172,9 +173,30 @@ def _meta(*, started: float, interpretation: str, snapshot: dict) -> dict[str, A
     }
 
 
-def _snapshot_meta() -> dict[str, Any]:
-    """A compact statement of what the answer was computed against."""
-    info = catalog.health()
+def _fallback_reason(interpretation, client) -> str | None:
+    """Why the rule path served this request, when a model was available.
+
+    ``None`` when no model was available to this request — that is not a
+    fallback, it is a deployment without a model, and counting it as degradation
+    would make the metric permanently alarming. The distinction is what keeps
+    ``fallback_rate`` meaningful.
+    """
+    if client is None:
+        return None
+    if interpretation.path != "rules":
+        return None
+    return interpretation.detail or "the rule path served the request"
+
+
+def _snapshot_meta(db_path=None) -> dict[str, Any]:
+    """A compact statement of what the answer was computed against.
+
+    Takes the snapshot path so a record written against an injected database
+    names *that* database. A record that names the committed snapshot while the
+    request was served from a temporary one is worse than no record: it points an
+    investigation at the wrong file.
+    """
+    info = catalog.health(db_path)
     return {
         "path": info.get("path"),
         "products": info.get("products"),
@@ -182,6 +204,60 @@ def _snapshot_meta() -> dict[str, Any]:
         "built_at": (info.get("last_ingest") or {}).get("finished_at"),
         "base_url": (info.get("last_ingest") or {}).get("base_url"),
     }
+
+
+def _record_basket(
+    writer,
+    order,
+    *,
+    started: float,
+    request_text: str,
+    snapshot: dict[str, Any],
+):
+    """Write the record for a multi-line basket.
+
+    The basket path calls ``quote()`` directly rather than going through
+    ``answer``, so there is no reply object to describe. The record is assembled
+    from the order instead — the same lines and the same total — which is what
+    the disagreement metric needs. Without this the one endpoint that can catch a
+    per-line delivery charge would contribute nothing to the metric.
+    """
+    elapsed = round((time.perf_counter() - started) * 1000, 3)
+    timings = {
+        "interpret_ms": 0.0,
+        "search_ms": 0.0,
+        "price_ms": elapsed,
+        "total_ms": elapsed,
+    }
+    try:
+        entry = records.RequestRecord(
+            endpoint="/api/quote/lines",
+            outcome="quoted",
+            interpretation="structured",
+            candidates_considered=len(order.lines),
+            items_returned=len(order.lines),
+            quoted_total=order.total.format(),
+            # The basket path renders no reply text, so nothing was *stated* to a
+            # customer. Leaving ``stated_total`` unset keeps the disagreement
+            # metric honest: there is no printed figure to disagree with.
+            stated_total=None,
+            lines=tuple(
+                {"sku": line.sku, "quantity": line.quantity}
+                for line in order.lines
+            ),
+            timings=timings,
+            snapshot=dict(snapshot),
+            request_chars=len(request_text),
+            request_digest=records.digest_of(request_text),
+            request_text=(
+                records.text_for_log(request_text) if records.capture_enabled()
+                else None
+            ),
+        )
+    except records.RecordInvalid as exc:
+        print(f"paperlane: could not build basket record: {exc}", file=sys.stderr)
+        return None
+    return records.emit(writer, entry)
 
 
 def _criteria_from_structured(payload: StructuredRequest) -> Criteria:
@@ -312,22 +388,52 @@ def _candidates_and_figures(reply: AssistantReply) -> dict[str, Any]:
 # The application
 # ---------------------------------------------------------------------------
 
+#: Sentinel distinguishing "no writer given, resolve from the environment" from
+#: "explicitly no writer, do not record". The two are different: the first is a
+#: normal deployment, the second is a test asserting recording can be off.
+_UNSET: Any = object()
+
 
 def create_app(
     *,
     db_path=None,
     model_client: ModelClient | None = None,
+    record_writer=_UNSET,
 ) -> FastAPI:
     """Build the application.
 
     ``db_path`` and ``model_client`` are injectable so tests can drive a
     temporary snapshot and a stub model without touching the committed one.
+
+    ``record_writer`` is the request-record sink. Omitted means "resolve from the
+    environment **at write time**", which matters more than it looks: this module
+    ends with ``app = create_app()``, so anything resolved eagerly here is bound
+    at import — before any test fixture can set ``PAPERLANE_RECORD_PATH``, and
+    therefore into the real log. Passing ``None`` explicitly disables recording,
+    which is how a test asserts that a request still works with recording off.
     """
     app = FastAPI(
         title="PaperLane sales assistant",
         version="0.1.0",
         description="Product discovery and quoting over the PaperLane catalog.",
     )
+
+    _explicit = record_writer
+
+    def writer() -> "records.RecordWriter | None":
+        """The record sink for this request.
+
+        Resolved on every call rather than memoised here, because
+        ``records.writer_from_env()`` is itself cached per configured path — so
+        this is a dictionary lookup, not a file open — and because the test suite
+        repoints ``PAPERLANE_RECORD_PATH`` per test while reusing one application
+        instance. A memoised writer would send every later test's records to the
+        first test's file, and the metrics tests would then be measuring someone
+        else's fixtures.
+        """
+        if _explicit is not _UNSET:
+            return _explicit
+        return records.writer_from_env()
 
     def facts() -> dict[str, PriceFacts]:
         return catalog.load_price_facts(db_path)
@@ -355,6 +461,56 @@ def create_app(
 
     def model_reachable() -> bool:
         return get_model() is not None
+
+    def record(
+        *,
+        endpoint: str,
+        started: float,
+        interpret_ms: float = 0.0,
+        request_text: str = "",
+        reply=None,
+        interpretation: str | None = None,
+        fallback_reason: str | None = None,
+        model_configured: bool = False,
+        error: str | None = None,
+    ):
+        """Write one record for a handled request. Never raises.
+
+        Stage timings are assembled here from three sources: ``interpret_ms``
+        measured by the handler around the interpretation call, ``search_ms`` and
+        ``price_ms`` measured inside ``answer`` (the only place that knows where
+        those boundaries are), and ``total_ms`` from the wall clock, which only
+        the handler knows. ``total_ms`` is therefore never less than the sum of
+        the stages — asserted by a test, because a breakdown that exceeds its own
+        total means the instrumentation is measuring different requests.
+        """
+        timings = dict(getattr(reply, "timings", None) or {})
+        # Every stage is always present, defaulted to 0.0. A missing stage key
+        # would make "the three sum to no more than the total" untestable and
+        # would let a reader mistake "not measured" for "not run" — 0.0 says
+        # plainly that nothing was spent there.
+        for stage in records.TIMING_STAGES:
+            timings.setdefault(stage, 0.0)
+        timings["interpret_ms"] = round(interpret_ms, 3)
+        timings["total_ms"] = round((time.perf_counter() - started) * 1000, 3)
+        try:
+            entry = records.build_record(
+                endpoint=endpoint,
+                reply=reply,
+                request_text=request_text,
+                timings=timings,
+                snapshot=_snapshot_meta(db_path),
+                model_configured=model_configured,
+                fallback_reason=fallback_reason,
+                interpretation=interpretation,
+                error=error,
+            )
+        except records.RecordInvalid as exc:
+            # A record the schema refuses is a bug in the caller, but it must not
+            # turn a good answer into a 500. Note it and carry on.
+            print(f"paperlane: could not build request record: {exc}", file=sys.stderr)
+            return None
+        return records.emit(writer(), entry)
 
     # -- exception handling: no stack traces, ever ---------------------
 
@@ -386,6 +542,15 @@ def create_app(
             })
 
         first = issues[0] if issues else {"field": None, "detail": "invalid request"}
+        # A request the framework rejected never reaches its handler, so this is
+        # the only place it can be recorded. Without it, a malformed request is
+        # the one failure mode that leaves no trace — and "the log is complete"
+        # would be false in exactly the case someone is investigating.
+        record(
+            endpoint=str(request.url.path), started=time.perf_counter(),
+            interpretation="structured",
+            error=f"invalid request: {first['detail']}",
+        )
         return JSONResponse(
             status_code=422,
             content={
@@ -415,8 +580,19 @@ def create_app(
         """Price already-structured requirements. No model is consulted."""
         started = time.perf_counter()
 
-        criteria = _criteria_from_structured(payload)
-        validate(criteria)
+        try:
+            criteria = _criteria_from_structured(payload)
+            validate(criteria)
+        except CriteriaInvalid as exc:
+            # A rejected request is still a handled request. Recording only the
+            # successes would make the failure rate zero by construction.
+            record(
+                endpoint="/api/quote", started=started,
+                request_text=payload.model_dump_json(),
+                interpretation="structured",
+                error=f"criteria invalid: {exc.reason}",
+            )
+            raise
 
         rows = products()
         reply = answer(
@@ -426,7 +602,14 @@ def create_app(
         body = _candidates_and_figures(reply)
         body["criteria"] = criteria.describe()
         body["meta"] = _meta(
-            started=started, interpretation="structured", snapshot=_snapshot_meta()
+            started=started, interpretation="structured", snapshot=_snapshot_meta(db_path)
+        )
+        # Structured requests carry no free text, so the record's length and
+        # digest describe an empty string rather than a made-up one.
+        record(
+            endpoint="/api/quote", started=started,
+            request_text=payload.model_dump_json(), reply=reply,
+            interpretation="structured",
         )
         return body
 
@@ -445,15 +628,27 @@ def create_app(
             lines.append(LineRequest(line.sku, line.quantity, all_facts[line.sku]))
 
         if unknown:
+            record(
+                endpoint="/api/quote/lines", started=started,
+                request_text=payload.model_dump_json(),
+                interpretation="structured",
+                error=f"unknown SKU(s): {', '.join(sorted(unknown))}",
+            )
             return _client_error(
                 f"unknown SKU(s): {', '.join(sorted(unknown))}", field="lines",
                 status=422,
             )
         if not lines:
+            record(
+                endpoint="/api/quote/lines", started=started,
+                request_text=payload.model_dump_json(),
+                interpretation="structured",
+                error="no priceable lines supplied",
+            )
             return _client_error("no priceable lines supplied", field="lines")
 
         order = quote(lines)
-        return {
+        body = {
             "outcome": OUTCOME_QUOTED,
             "figures": {
                 "subtotal": order.subtotal.format(),
@@ -474,9 +669,19 @@ def create_app(
             },
             "meta": _meta(
                 started=started, interpretation="structured",
-                snapshot=_snapshot_meta(),
+                snapshot=_snapshot_meta(db_path),
             ),
         }
+        # A basket is priced by the multi-line path, not by ``answer``, so there
+        # is no AssistantReply to build a record from. The record is assembled
+        # from the order instead: same fields, same lines, same total. Omitting
+        # it would leave the one endpoint that charges delivery once per *order*
+        # outside the record set entirely.
+        _record_basket(
+            writer(), order, started=started,
+            request_text=payload.model_dump_json(), snapshot=_snapshot_meta(db_path),
+        )
+        return body
 
     # -- 6.2, 6.3, 6.6 conversational ----------------------------------
 
@@ -486,7 +691,9 @@ def create_app(
         started = time.perf_counter()
 
         client = get_model() if payload.use_model else None
+        interpret_started = time.perf_counter()
         interpretation = interpret(payload.request, client)
+        interpret_ms = (time.perf_counter() - interpret_started) * 1000
 
         criteria = interpretation.criteria
         if payload.quantity is not None:
@@ -495,13 +702,40 @@ def create_app(
             criteria = replace(criteria, quantity=payload.quantity)
 
         # Validation failure is a client error, and it never reaches pricing.
-        validate(criteria)
+        # It is still a handled request, so it is still recorded — a failure with
+        # no trace is the hardest kind to count.
+        try:
+            validate(criteria)
+        except CriteriaInvalid as exc:
+            record(
+                endpoint="/api/ask", started=started, interpret_ms=interpret_ms,
+                request_text=payload.request,
+                interpretation=interpretation.path,
+                fallback_reason=_fallback_reason(interpretation, client),
+                model_configured=client is not None,
+                error=f"criteria invalid: {exc.reason}",
+            )
+            raise
 
-        rows = products()
-        reply = answer(
-            criteria, rows, facts(), interpretation=interpretation.path,
-            scorer=get_scorer(criteria.raw_text or payload.request, rows),
-        )
+        try:
+            rows = products()
+            reply = answer(
+                criteria, rows, facts(), interpretation=interpretation.path,
+                scorer=get_scorer(criteria.raw_text or payload.request, rows),
+            )
+        except catalog.SnapshotMissing as exc:
+            # No snapshot is a handled request that failed, not an unhandled
+            # crash. Without this, the one failure that makes the service
+            # completely unusable leaves no trace at all.
+            record(
+                endpoint="/api/ask", started=started, interpret_ms=interpret_ms,
+                request_text=payload.request,
+                interpretation=interpretation.path,
+                fallback_reason=_fallback_reason(interpretation, client),
+                model_configured=client is not None,
+                error=f"no snapshot: {exc}",
+            )
+            raise
 
         body = _candidates_and_figures(reply)
         body["reply"] = reply.text
@@ -509,9 +743,17 @@ def create_app(
         body["meta"] = _meta(
             started=started,
             interpretation=interpretation.path,
-            snapshot=_snapshot_meta(),
+            snapshot=_snapshot_meta(db_path),
         )
         body["meta"]["interpretation_detail"] = interpretation.detail
+
+        record(
+            endpoint="/api/ask", started=started, interpret_ms=interpret_ms,
+            request_text=payload.request, reply=reply,
+            interpretation=interpretation.path,
+            fallback_reason=_fallback_reason(interpretation, client),
+            model_configured=client is not None,
+        )
         return body
 
     # -- 6.7 catalog inspection, health, comparison --------------------
@@ -584,6 +826,21 @@ def create_app(
         """Compare the staged snapshot against the serving one."""
         return catalog.diff_snapshots()
 
+    # -- operational measures -------------------------------------------
+
+    @app.get("/api/metrics")
+    def metrics_endpoint():
+        """The five measures, derived from the records on every read.
+
+        No counter is incremented while a request is handled, so this reads the
+        log and computes. The payload carries ``record_count`` and ``window``
+        beside the values, because a rate over zero records would otherwise look
+        like a healthy system.
+        """
+        from .metrics import derive
+
+        return derive(writer=writer(), db_path=db_path).as_dict()
+
     # -- the single page ------------------------------------------------
 
     @app.get("/", response_class=HTMLResponse)
@@ -611,6 +868,10 @@ def create_app(
         started = time.perf_counter()
 
         if not request.strip():
+            record(
+                endpoint="/ask", started=started, request_text=request,
+                interpretation="rules", error="empty request",
+            )
             return HTMLResponse(render_fragment(
                 outcome="clarified", badge="Need a request",
                 body="Please describe what you are looking for.",
@@ -624,15 +885,21 @@ def create_app(
                 if parsed_quantity < 1 or parsed_quantity > 100_000:
                     raise ValueError
             except ValueError:
+                record(
+                    endpoint="/ask", started=started, request_text=request,
+                    interpretation="rules", error="quantity out of range",
+                )
                 return HTMLResponse(render_fragment(
                     outcome="clarified", badge="Bad quantity",
                     body="Quantity must be a whole number between 1 and 100,000.",
                     criteria={}, meta={},
                 ))
 
+        client = get_model()
+        interpret_started = time.perf_counter()
         try:
-            client = get_model()
             interpretation = interpret(request, client)
+            interpret_ms = (time.perf_counter() - interpret_started) * 1000
             criteria = interpretation.criteria
             if parsed_quantity is not None:
                 from dataclasses import replace
@@ -645,16 +912,33 @@ def create_app(
                 scorer=get_scorer(criteria.raw_text or request, rows),
             )
         except catalog.SnapshotMissing as exc:
+            record(
+                endpoint="/ask", started=started, request_text=request,
+                interpretation="rules", model_configured=client is not None,
+                error=f"no snapshot: {exc}",
+            )
             return HTMLResponse(render_fragment(
                 outcome="refused", badge="No catalog",
                 body=str(exc), criteria={}, meta={},
             ))
         except CriteriaInvalid as exc:
+            record(
+                endpoint="/ask", started=started, request_text=request,
+                interpretation="rules", model_configured=client is not None,
+                error=f"criteria invalid: {exc.reason}",
+            )
             return HTMLResponse(render_fragment(
                 outcome="clarified", badge="Could not use that",
                 body=exc.reason, criteria={}, meta={},
             ))
 
+        record(
+            endpoint="/ask", started=started, interpret_ms=interpret_ms,
+            request_text=request, reply=reply,
+            interpretation=interpretation.path,
+            fallback_reason=_fallback_reason(interpretation, client),
+            model_configured=client is not None,
+        )
         return HTMLResponse(render_fragment(
             outcome=reply.outcome,
             badge={

@@ -84,6 +84,22 @@ A sales assistant over PaperLane's paper catalog. A customer sends a chat messag
                     |  GET  /products /health /diff     |
                     |  + one server-rendered page       |
                     +-----------------------------------+
+                               |
+                               v
+                    +-----------------------------------+
+                    |  RECORDS (one line per request)   |
+                    |  path, outcome, fallback reason   |
+                    |  stage timings, snapshot identity |
+                    |  no text, no credentials          |
+                    +-----------------------------------+
+                               |
+                               v
+                    +-----------------------------------+
+                    |  METRICS (derived on every read)  |
+                    |  fallback / zero-result / backlog |
+                    |  p95 latency / disagreement       |
+                    |  no counters during handling      |
+                    +-----------------------------------+
 ```
 
 ## The load-bearing design decisions
@@ -119,6 +135,14 @@ Consequence: the naive `WHERE sides = 'single'` — which returns *zero* paper p
 The optional embedding layer scores only candidates that already passed the filter. There is no code path that consults a similarity score before `_evaluate()`, so "semantic ranking cannot introduce or exclude a product" is a property of the structure rather than of careful coding.
 
 Consequence: the ranking key gains a `similarity` term **conditionally** — omitted entirely when no provider is configured, never inserted as a constant, so the unconfigured path is the previous tuple exactly. The term sorts *after* price, measured: before price it regressed 6 of 28 recorded cases and displaced the cheapest-first rule.
+
+### 6. Metrics are derived from records, never counted
+
+No counter is incremented while a request is handled. Each handled request appends one structured line; every measure is computed by scanning those lines on read.
+
+Consequence: a metric cannot drift from the events it claims to summarise. A counter and its log can disagree, and when they do you no longer know which one is true. The cost is an O(n) scan per read — microseconds at this scale.
+
+Two supporting choices make the measures honest rather than merely present: every rate returns `null` on an empty basis instead of `0.0` (a 0% failure rate over zero requests and a perfect run must not print the same), and the disagreement metric reports how many replies it *checked* as well as how many disagreed.
 
 ## Data model
 
@@ -188,22 +212,31 @@ Three lines in that pseudocode are where the errors live, so each has a named te
 
 | Endpoint | Purpose | Calls the model |
 |---|---|---|
-| `POST /chat` | Free text in, reply + criteria + candidates out | yes (with rule fallback) |
-| `POST /quote` | Structured criteria in, candidates + prices out | **no** |
-| `GET /products` | Inspect the normalised catalog | no |
-| `GET /health` | Snapshot id, product count, store readable, model reachable | no |
-| `GET /diff` | Current snapshot vs previous | no |
+| `POST /api/ask` | Free text in, reply + criteria + candidates out | yes (with rule fallback) |
+| `POST /api/quote` | Structured criteria in, candidates + prices out | **no** |
+| `POST /api/quote/lines` | A multi-line basket, priced once per order | **no** |
+| `GET /api/products` | Inspect the normalised catalog | no |
+| `GET /api/health` | Snapshot id, product count, store readable, model reachable | no |
+| `GET /api/diff` | Current snapshot vs previous | no |
+| `GET /api/metrics` | The five operational measures, derived from request records | no |
+| `GET /` | The single server-rendered page | no |
+| `POST /ask` | The htmx fragment the page swaps in | yes (with rule fallback) |
+
+The three that interpret or quote write a request record; the rest do not.
+Recording the inspection endpoints would dilute the fallback and zero-result
+rates with traffic that structurally cannot exhibit either — see
+`docs/observability.md`.
 
 Every response declares exactly one outcome:
 
 | Outcome | Meaning | Required fields |
 |---|---|---|
-| `ok` | Candidates satisfy all hard constraints | `candidates[]` |
-| `clarify` | A needed detail is missing and would change the answer | `clarification` |
-| `no_match` | Constraints are complete but nothing satisfies them | `alternatives[]` |
-| `refused` | The suitable item is out of stock or discontinued | reason + product |
+| `quoted` | Candidates satisfy all hard constraints | `reply`, `candidates[]`, `figures` |
+| `clarified` | A needed detail is missing and would change the answer | `reply`, `questions[]` |
+| `no_match` | Constraints are complete but nothing satisfies them | `reply` |
+| `refused` | The suitable item is out of stock or discontinued | `reply`, `refused[]` |
 
-The four-outcome enum is what makes the must-haves testable. "Clarifying questions when ambiguous" and "a clear no exact match" are assertions on `status`, not judgements about prose.
+The four-outcome enum is what makes the must-haves testable. "Clarifying questions when ambiguous" and "a clear no exact match" are assertions on `outcome`, not judgements about prose. The record schema adds a fifth value, `failed`, for a request that produced no reply at all — it is not an assistant outcome, but failures have to be countable in the same vocabulary or they become invisible.
 
 ## Refresh and snapshot lifecycle
 
@@ -271,4 +304,5 @@ Two consequences worth naming, because both are silent:
 - **Semantic search is a tiebreak only.** A purely descriptive request with no structured terms can miss — embeddings never enter the filter. The tiebreak decides ties among equally-priced items; measured against the recorded set it reorders 3 of 28 cases with zero improvements and zero regressions, so it is not a quality claim.
 - **Rule interpretation is narrower than the model.** Paraphrases the model handles may fall back to a clarification. The fallback rate is measured so the degradation is visible.
 - **No authentication, no rate limiting beyond the crawler.** This is a local demonstration service.
+- **Request records grow without bound.** No rotation; the remedy is manual (`rm` the file or move it aside). p95 is over a count window of the last 1000 records, not a time window, so a burst can flush history. The `request_digest` is a grouping aid and **not** anonymisation — a 16-character hash of a short string is brute-forceable. Reasoning in `docs/observability.md`.
 - **One site, one layout family.** The extraction ladder covers this site's four shapes plus a structured fallback; onboarding a different supplier would need a parser profile per site.

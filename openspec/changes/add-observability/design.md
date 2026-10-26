@@ -97,6 +97,18 @@ Additive. Existing responses are unchanged; the metrics endpoint is new; the rec
 
 **Sequencing constraint (from `add-mutated-site-refresh-harness` design, restated because it applies here too):** `openspec/specs/` is empty until `add-paperlane-product-discovery` is archived, so this delta is written as ADDED against the `observability` capability path. After the first change is archived, this delta's requirements merge into the existing `observability` spec. If the earlier change is archived first, re-check this delta for duplicate requirement names before archiving.
 
+**Resolved — the earlier change was archived first, and this delta was repaired.** The note above anticipated the problem and it arrived. When written, this delta was ADDED-only, because there was no main spec to modify. `add-paperlane-product-discovery` was then archived, creating `openspec/specs/observability/spec.md` with four requirements — three of which this delta independently declared as ADDED. `openspec validate` flagged only one (`Secrets are never recorded`, an exact name collision); the other three would have archived as silent near-duplicates under different names:
+
+| Existing requirement | Was declared as |
+|---|---|
+| `Each handled request produces a structured record` | `...produces **one** structured record` |
+| `Metrics that reveal silent degradation are derivable` | `The five degradation metrics are derivable from records` |
+| `Recorded conversation content is limited` | `Conversation content is not retained beyond what evaluation requires` |
+
+All four are now **MODIFIED**, keeping the existing header names, with each block carrying the union of the existing scenarios and this change's new ones — a MODIFIED requirement replaces the whole block, so anything omitted would be dropped at archive. Two requirements remain genuinely ADDED: the independent disagreement metric, and metrics reachable without reading a log file.
+
+The merge also fixes a contradiction the main spec shipped with: its record requirement said a record captures *"what was asked"*, while its retention requirement said conversation text is not retained. The MODIFIED text resolves this to "how it was interpreted", and the retention scenarios state the digest-and-length position explicitly.
+
 ## Open Questions
 
 None that would change the specs or the task breakdown. Log rotation is deliberately out of scope and recorded as a limitation.

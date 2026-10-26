@@ -51,6 +51,33 @@ needs_loopback = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_record_path(tmp_path, monkeypatch):
+    """Point request recording at a per-test temporary file.
+
+    Without this the suite writes real records into ``data/requests.jsonl``: the
+    tests would pollute the operational log, and — worse — the metrics tests
+    would then be measuring a mixture of their own fixtures and whatever earlier
+    tests happened to leave behind. That is a test that passes for the wrong
+    reason, so isolation is autouse rather than opt-in.
+
+    Recording stays *enabled*: disabling it would mean the code path under test
+    is never exercised.
+    """
+    monkeypatch.setenv("PAPERLANE_RECORD_PATH", str(tmp_path / "requests.jsonl"))
+    # The harness's log is a separate file, so it needs isolating separately.
+    # Without this, a test that runs the eval would append to the real
+    # ``data/eval-records.jsonl`` and the metrics tests would then be reading
+    # records from someone else's run.
+    monkeypatch.setenv(
+        "PAPERLANE_EVAL_RECORD_PATH", str(tmp_path / "eval-records.jsonl")
+    )
+    monkeypatch.delenv("PAPERLANE_RECORD_TEXT", raising=False)
+    monkeypatch.delenv("PAPERLANE_RECORD_TEXT_MAX", raising=False)
+    monkeypatch.delenv("PAPERLANE_RECORD_WINDOW", raising=False)
+    return tmp_path / "requests.jsonl"
+
+
 @pytest.fixture(scope="session")
 def snapshot_products():
     """The committed catalog's products, loaded once.

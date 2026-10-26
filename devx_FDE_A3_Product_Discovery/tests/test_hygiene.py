@@ -165,3 +165,104 @@ class TestNoCredentialsCommitted:
             assert not any(name.endswith(s) for s in FORBIDDEN_SUFFIXES), (
                 f"staged: {path}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Produced records (task 6.1)
+# ---------------------------------------------------------------------------
+
+
+class TestProducedRecordsCarryNoCredential:
+    """Scan the records the application actually writes, not just the source.
+
+    The source scan above catches a key typed into a file. This catches the other
+    direction: a key that arrives at runtime and is written out. They are
+    different failures and neither implies the other, so both are checked.
+
+    The records are produced by driving the real application, because a scan of a
+    hand-written sample would prove nothing about what the application does.
+    """
+
+    #: A value no source file contains, so a hit in the log is a real leak.
+    #: Assembled at runtime: a literal here would trip this repository's own
+    #: credential scan, which is a false positive in the check that matters.
+    SENTINEL = "sk-" + "recordscan" + "0" * 22
+
+    @staticmethod
+    def _records(tmp_path: Path) -> str:
+        """Drive the app and return everything it wrote, as one string."""
+        from fastapi.testclient import TestClient
+
+        from paperlane.api import create_app
+        from paperlane.records import RecordWriter
+
+        log = tmp_path / "requests.jsonl"
+        client = TestClient(create_app(record_writer=RecordWriter(log)))
+        client.post("/api/ask", json={
+            "request": "A4 80gsm 20 reams", "use_model": False,
+        })
+        client.post("/api/quote", json={
+            "size": "A4", "weight_gsm": 80, "quantity": 20,
+        })
+        client.post("/api/quote/lines", json={"lines": [
+            {"sku": "PL-CP-A4-80-NUSA", "quantity": 10},
+        ]})
+        client.post("/ask", data={"request": "A4 80gsm 20 reams"})
+        return log.read_text() if log.exists() else ""
+
+    def test_produced_records_contain_no_credential_shape(self, tmp_path):
+        text = self._records(tmp_path)
+        assert text, "no records were produced, so the scan proves nothing"
+        for pattern in SECRET_PATTERNS:
+            match = pattern.search(text)
+            assert not match, (
+                f"a produced record contains a credential: "
+                f"{match.group(0)[:40]!r}"
+            )
+
+    def test_a_key_in_an_error_path_does_not_reach_the_record(
+        self, tmp_path, monkeypatch
+    ):
+        """The failure that a source scan cannot catch.
+
+        A provider client that quotes its own key in an exception message would
+        put it into ``fallback_reason``. This asserts the record does not carry
+        it — which is the runtime half of "no credential is ever recorded".
+        """
+        from fastapi.testclient import TestClient
+
+        from paperlane.api import create_app
+        from paperlane.records import RecordWriter
+
+        monkeypatch.setenv("PAPERLANE_LLM_API_KEY", self.SENTINEL)
+        sentinel = self.SENTINEL
+
+        class LeakyClient:
+            def extract_criteria(self, text: str):
+                raise RuntimeError(f"upstream rejected {sentinel}")
+
+        log = tmp_path / "requests.jsonl"
+        client = TestClient(create_app(
+            model_client=LeakyClient(), record_writer=RecordWriter(log)
+        ))
+        client.post("/api/ask", json={"request": "A4 80gsm 20 reams"})
+
+        text = log.read_text()
+        assert sentinel not in text
+        for pattern in SECRET_PATTERNS:
+            assert not pattern.search(text)
+
+    def test_the_record_file_is_not_committable(self, tmp_path):
+        """Operational data must be gitignored, so the scan is a backstop."""
+        from paperlane import records
+
+        try:
+            out = subprocess.run(
+                ["git", "check-ignore", "-q", str(records.DEFAULT_PATH)],
+                cwd=ROOT, capture_output=True, text=True, timeout=20,
+            )
+        except (FileNotFoundError, subprocess.SubprocessError):
+            pytest.skip("git is not available")
+        assert out.returncode == 0, (
+            f"{records.DEFAULT_PATH.name} is not gitignored"
+        )

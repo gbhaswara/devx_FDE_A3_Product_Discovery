@@ -235,6 +235,22 @@ Moved after price and re-measured: 3 of 28 reorder, 0 first results change, 0 im
 
 Both are recorded in `design.md`, `docs/semantic-ranking.md` and `CHANGELOG.md`. The general lesson is the same as A9's: a number that came from one measurement regime was applied to another, and only re-measuring found it.
 
+### A11 — `ANALYZE_01.md` §9a specified logging raw request text, which the observability spec forbids
+
+Found during `add-observability`, by reading the two sources side by side rather than by running anything. **This one was resolved in favour of the spec, so the analysis is what is wrong.**
+
+`ANALYZE_01.md` §9a specified the request record as carrying `raw_message` — the customer's text, verbatim, on every request. The `observability` spec has a requirement headed *"Recorded conversation content is limited"* whose scenarios say the full text is not persisted by default, that routine operation must not accumulate customer conversations, and that capture requires an explicit opt-in with a bounded record.
+
+These cannot both hold. **The spec wins**, and not because specs beat notes in the abstract: `AGENTS.md` ranks the OpenSpec change above `ANALYZE_01.md` as a source of truth, and the analysis was written as a plan for a change that was then specified more carefully. The spec is the later and more considered artefact.
+
+What shipped instead: `request_chars` (a length) and `request_digest` (16 hex characters of a SHA-256). The digest preserves the one thing the text was genuinely needed for — grouping repeated identical requests — and nothing else. Text capture exists as `PAPERLANE_RECORD_TEXT`, off by default and truncated at `PAPERLANE_RECORD_TEXT_MAX` (default 200) when on.
+
+**The digest is explicitly not anonymisation.** A 16-character hash of a short string is brute-forceable by anyone holding a candidate list, and it is documented as a grouping aid in the record schema, `docs/observability.md` and the README. Calling it anonymisation would be the kind of claim that gets relied on in a privacy review and then fails it.
+
+**The spec won on a second point too.** The main `observability` spec as first archived said a record captures *"what was asked"*, while its own retention requirement said conversation text is not retained — an internal contradiction that the `add-observability` delta resolved to "how it was interpreted". So the conflict was not only between the analysis and the spec, but inside the spec itself, and following either literally would have been wrong.
+
+**Verification.** `tests/test_records.py::TestRequestText` asserts the text is absent by default and that the digest and length are present; `tests/test_observability_api.py::TestNoRequestTextByDefault` asserts a distinctive request phrase appears nowhere in the written log at all, not merely absent from a field.
+
 ---
 
 ## Part 3 — Accepted risks in the design

@@ -23,6 +23,14 @@ venv/
 # Committed, it would look like a second catalog.
 .refresh-verification/
 
+# Operational request records. Runtime data about traffic, not catalog data —
+# committing it would look like a second source of truth about the catalog, and
+# it grows without bound.
+requests.jsonl
+*.requests.jsonl
+eval-records.jsonl
+*.eval-records.jsonl
+
 # Build output
 dist/
 build/

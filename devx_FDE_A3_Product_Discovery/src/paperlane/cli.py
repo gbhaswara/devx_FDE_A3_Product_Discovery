@@ -68,6 +68,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to a case file (default: eval/cases.json)",
     )
 
+    metrics = sub.add_parser(
+        "metrics",
+        help="Print the five operational measures derived from request records",
+    )
+    metrics.add_argument(
+        "--json", action="store_true", help="Machine-readable output"
+    )
+    metrics.add_argument(
+        "--records",
+        default=None,
+        help="Record file to read (default: the configured PAPERLANE_RECORD_PATH)",
+    )
+    metrics.add_argument(
+        "--eval",
+        action="store_true",
+        help="Report over the evaluation harness's records instead of live traffic",
+    )
+    metrics.add_argument(
+        "--run",
+        default=None,
+        help="With --eval: the run id to report (default: the most recent run)",
+    )
+
     refresh = sub.add_parser(
         "verify-refresh",
         help="Mutate a copy of the site, refresh against it, and verify the diff",
@@ -131,6 +154,18 @@ def main(argv: list[str] | None = None) -> int:
         return run_measure(
             as_json=args.json,
             cases_path=Path(args.cases) if args.cases else None,
+        )
+    if args.command == "metrics":
+        from pathlib import Path
+
+        from . import records
+        from .metrics import run_metrics
+
+        writer = records.RecordWriter(Path(args.records)) if args.records else None
+        return run_metrics(
+            as_json=args.json, writer=writer,
+            source="eval" if args.eval else "live",
+            run_id=args.run,
         )
     if args.command == "verify-refresh":
         from .refresh_cli import run_verify_refresh

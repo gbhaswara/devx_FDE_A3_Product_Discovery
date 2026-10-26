@@ -31,11 +31,12 @@ import json
 import sys
 import dataclasses
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
-from . import catalog
+from . import catalog, records as records_mod
 from .assistant import answer
 from .interpret import interpret, interpret_rules, validate
 from .money import Money
@@ -678,6 +679,101 @@ def run_case(case: Case, *, products=None, facts=None, strategy: str = "rules",
     return result
 
 
+def _now_run_id() -> str:
+    """A fresh identifier for one evaluation run.
+
+    Timestamp-based, so runs sort by when they happened and the newest is
+    findable without a registry. Not a UUID: the point is to be readable in a log
+    line while still separating one run from the next.
+    """
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+
+
+#: The harness's outcome vocabulary is its own: ``multi_line`` and ``error`` are
+#: real results it reports, but they are not assistant outcomes. Mapped to the
+#: record vocabulary here rather than widened there, so the record schema keeps
+#: meaning the same thing whether it was written by a live request or by a run.
+_EVAL_OUTCOME = {
+    "quoted": "quoted",
+    "clarified": "clarified",
+    "no_match": "no_match",
+    "refused": "refused",
+    # A basket is priced and quoted; it is quoted, not failed. Recording it as
+    # failed would put two phantom failures into every eval run's outcome counts.
+    "multi_line": "quoted",
+}
+
+
+def _record_eval_run(
+    results: Sequence["CaseResult"], *, db_path: Path | None = None
+) -> int:
+    """Write one record per scored case, so the disagreement metric can run.
+
+    Task 5.3 asks for the disagreement count to be *measured* on a real
+    ``./run.sh eval`` run rather than assumed. That only means something if the
+    run leaves records behind for ``./run.sh metrics --eval`` to read, so the
+    harness writes them.
+
+    Each run stamps a shared ``run_id`` on its records. Without one, a log holding
+    several runs would have its metrics computed over the union — so re-running
+    the harness, or running the negative control, would silently change what the
+    next ``metrics --eval`` reports. ``derive(source="eval")`` reads the most
+    recent run by that id.
+
+    What is recorded is the *harness's* view: the reply text it scored, the SKUs
+    and quantities it quoted, and the total the reply actually printed. The
+    disagreement metric then re-derives that total through
+    ``recompute_totals`` — a different code path again — and compares.
+
+    Returns how many records landed, so the caller can report the basis. A
+    failure to write is not a failure of the run: the eval's verdict is about
+    the catalog and the assistant, not about the log.
+    """
+    writer = records_mod.eval_writer()
+    if writer is None:
+        return 0
+
+    run_id = _now_run_id()
+    written = 0
+    for result in results:
+        if not result.ran or not result.reply_text:
+            continue
+        lines = tuple(
+            {"sku": line["sku"], "quantity": line["quantity"]}
+            for line in (result.actual_figures or {}).get("lines", [])
+        )
+        try:
+            entry = records_mod.RequestRecord(
+                endpoint=f"eval:{result.case.number}",
+                outcome=_EVAL_OUTCOME.get(result.outcome, "failed"),
+                interpretation="rules",
+                model_configured=False,
+                candidates_considered=len(result.actual_skus),
+                items_returned=len(result.actual_skus),
+                quoted_total=(result.actual_figures or {}).get("total"),
+                # Parsed from the text the harness scored, exactly as the live
+                # path parses it. A transcribed figure would defeat the point.
+                stated_total=records_mod.parse_stated_total(result.reply_text),
+                lines=lines,
+                # No timings: the harness measures correctness, not latency, and
+                # a 0.0 here would drag the p95 down and read as "instant". An
+                # absent ``total_ms`` makes the p95 skip these records entirely,
+                # so an eval-only log reports no latency rather than a fake one.
+                timings={},
+                snapshot={
+                    "path": str(Path(db_path or catalog.DEFAULT_DB_PATH)),
+                },
+                request_chars=len(result.case.request),
+                request_digest=records_mod.digest_of(result.case.request),
+                run_id=run_id,
+            )
+        except records_mod.RecordInvalid:
+            continue
+        if records_mod.emit(writer, entry) is not None:
+            written += 1
+    return written
+
+
 def run_eval(
     *,
     as_json: bool = False,
@@ -738,6 +834,12 @@ def run_eval(
         "summary": _summary(results),
         "strategies": strategy_rows,
     }
+
+    # The disagreement metric has to be *measured*, not assumed (task 5.3). The
+    # harness writes a record per scored case so ``./run.sh metrics`` has
+    # something to read afterwards; the count it then reports is the result of
+    # re-deriving every quoted total, not an expectation that they agree.
+    payload["records_written"] = _record_eval_run(results, db_path=snapshot_path)
 
     if as_json:
         json.dump(payload, out, indent=2, default=str)

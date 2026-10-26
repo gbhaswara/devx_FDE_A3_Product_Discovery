@@ -202,6 +202,25 @@ provider answers — with a stated reason, reported in the summary, never counte
 as a pass. There are two distinct skip reasons: no loopback at all (offline run),
 and loopback present but nothing listening.
 
+### Layer 7 — Observability
+
+`tests/test_records.py`, `tests/test_metrics.py`, `tests/test_observability_api.py`.
+No network. The layer is built around one question: **can this metric fail?**
+
+- **The metric is shown able to fail.** A reply's stated total is corrupted and the count must become non-zero *and* name the affected request. Without that test, "reads zero" is indistinguishable from "never runs" — the two would print identically
+- The comparison goes through `recompute_totals`, asserted by **AST** inspection rather than a substring search, so a docstring explaining why `quote()` is avoided does not trip it. It must not read `quoted_total` either — comparing the engine's figure to itself agrees by construction
+- **Metrics are derived, not counted.** One record line is deleted and the metric must move to match. The module's AST is checked for a module-level tally incremented across calls; `THRESHOLDS` is a constant dict and is not one
+- Every rate returns `null` on an empty basis, and the payload carries `record_count`, `window`, `has_data` and a note
+- `zero_result_rate` excludes `clarified` and `refused` from **both** numerator and denominator; `fallback_rate`'s denominator is model-configured requests only, so a deployment without a model is not permanently alarming
+- p95 is nearest-rank, checked against the rank formula for eight sizes, and asserted to be a value some request actually experienced
+- **Two concurrent writers produce 80 well-formed lines**, not an interleaved one
+- A write failure is noted and swallowed: the request still returns its normal response with the log path replaced by a directory
+- **A sentinel credential set in the environment, with a model client that raises quoting it, appears nowhere in the record** — and the redaction is marked, so a reader can tell an error was scrubbed. The production pattern list and the hygiene test's list are asserted to agree, since production code may not import from tests
+- Request text is absent by default; a distinctive phrase appears nowhere in the written file at all, not merely absent from a field
+- All four recording endpoints emit exactly one record; `/api/products`, `/api/health` and `/api/diff` emit none
+- Stage timings sum to no more than the total, each is non-negative, and a stage that did not run is `0.0` rather than absent
+- The eval log and the live log are separate files, and two harness runs are told apart by `run_id` — so re-running the harness, or running the negative control, cannot change what the next read reports
+
 ## What is tested where
 
 | Requirement area | Unit | Extraction | Integration | Evaluation |
@@ -229,6 +248,7 @@ and loopback present but nothing listening.
 | Four-outcome enum, error contract | | | ● | ● |
 | Untrusted text | | ● | ● | ● |
 | Mutated-site refresh verification | | | ● | |
+| Observability: records, metrics, no credentials | ● | | ● | ● |
 
 ## Deliberately not tested
 
@@ -243,8 +263,10 @@ and loopback present but nothing listening.
 ## Running the tests
 
 ```
-./run.sh test             # 765 tests: unit + extraction + integration; offline, no model
+./run.sh test             # 937 tests: unit + extraction + integration + observability; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot
+./run.sh metrics          # the five operational measures, derived from request records
+./run.sh metrics --eval   # the same measures over the most recent evaluation run
 ./run.sh verify-refresh   # mutate a copy of the site, refresh against it, verify (~55s)
 ```
 

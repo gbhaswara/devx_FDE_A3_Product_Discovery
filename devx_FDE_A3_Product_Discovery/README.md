@@ -8,29 +8,39 @@ Built for the devx AI Labs FDE take-home, assignment **A3 — Product Discovery*
 
 ---
 
-## 1. How to run it in five commands
+## 1. How to run it
 
 From a clean checkout, in this directory:
 
 ```bash
 uv sync                                    # 1. install dependencies
-./run.sh test                              # 2. 765 tests, offline, no model
+./run.sh test                              # 2. 937 tests, offline, no model
 ./run.sh serve                             # 3. the app on http://127.0.0.1:8001
 ./run.sh eval                              # 4. the recorded evaluation set
 ./run.sh diff                              # 5. snapshot vs previous snapshot
 ./run.sh verify-refresh                    # 6. prove the refresh path works (~55s)
+./run.sh metrics                           # 7. the five operational measures
 ```
 
-A sixth command sits outside the five because it is a verification step rather
-than part of the demo path. `verify-refresh` mutates a git-ignored copy of the
-site, ingests it into a throwaway snapshot, and checks that every change it
-declared in advance is reported under the correct kind. It needs no server and
-no network beyond loopback.
+Steps 1–5 are the demo path. Steps 6 and 7 are verification steps: they prove
+something about the system rather than demonstrate it, so they sit outside the
+main sequence. `verify-refresh` mutates a git-ignored copy of the site, ingests
+it into a throwaway snapshot, and checks that every change it declared in
+advance is reported under the correct kind. It needs no server and no network
+beyond loopback.
 
-**None of these six commands needs an embedding provider**, and none sets
+`./run.sh metrics` reads the records the assistant writes and reports five
+measures — fallback rate, zero-result rate, extraction backlog, p95 latency, and
+reply/total disagreement. On a fresh checkout it says plainly that there is no
+data rather than reporting zero rates, which would look like a healthy system.
+After `./run.sh eval`, use `./run.sh metrics --eval` to see the same measures over
+the evaluation harness's records. `GET /api/metrics` serves them from the running
+service. Details, thresholds and limitations: `docs/observability.md`.
+
+**None of these seven commands needs an embedding provider**, and none sets
 `PAPERLANE_EMBED_*`. That is not luck: with no provider configured the similarity
 term is *omitted* from the ranking rather than set to a constant, so the ordering
-is the pre-semantic one by construction. The seventh command, `./run.sh
+is the pre-semantic one by construction. The eighth command, `./run.sh
 similarity`, is the only one that needs a provider — it measures the tiebreak and
 says `NOT MEASURED` when it cannot.
 
@@ -233,6 +243,15 @@ exercised against live data. Both are marked not-run in the evaluation results.
 exists, names no absent SKU, and carries no total it did not earn. "Would a
 salesperson send this?" is a judgement the harness does not make.
 
+**Logging and metrics have four stated limitations.** In `data/requests.jsonl`:
+**no rotation** (it grows without bound; the remedy is manual), and **p95 is over
+a count window of the last 1000 records, not a time window**, so a burst can
+flush history. The **request digest is a grouping aid, not anonymisation** — a
+16-character hash of a short string is brute-forceable — and **redaction is
+pattern-based**, so it catches the shapes it knows and the structural guarantee
+(no field that could hold a key) is what actually carries the weight. Full
+reasoning in [`docs/observability.md`](docs/observability.md).
+
 ---
 
 ## 5. What I would do with another week
@@ -299,6 +318,9 @@ a reply — those are deterministic code paths with their own tests.
 | The crawler is faithful | `./run.sh diff`, `tests/test_extract.py`, `docs/ingestion.md` |
 | The documented API is real | `tests/test_api.py::TestDocumentedExamples` executes every example |
 | No credential is committed | `.gitignore`; `./run.sh test` includes a scan |
+| No credential reaches a record | `tests/test_records.py::TestNoCredentialInRecords` sets a sentinel key, makes a model call, and scans the log |
+| The metrics are derived, not counted | `tests/test_metrics.py::TestDerivedOnRead` deletes a record and asserts the metric moves |
+| The disagreement metric can fail | `tests/test_metrics.py::TestDisagreement` corrupts a stated total and asserts the count goes non-zero |
 
 ---
 
@@ -310,11 +332,11 @@ rather than blurred.
 **Tier 1 — the core, and what the assignment is actually scoring:** the crawler
 and snapshot, the normalisation layer, the pricing engine, search and
 interpretation, the four assistant outcomes, the JSON API, and the evaluation
-harness with its results. Everything in sections 1–7 above. **Complete** — 80 of
-86 tasks closed, and every open task is Tier 2.
+harness with its results. Everything in sections 1–7 above. **Complete** — 86 of
+86 tasks closed.
 
-**Tier 2 — extras, each independently droppable.** Six were planned. Five are
-built; one is not:
+**Tier 2 — extras, each independently droppable.** Six were planned, and all six
+are built:
 
 | Item | State |
 |---|---|
@@ -323,7 +345,10 @@ built; one is not:
 | Snapshot diff as a demo artefact | Built — `GET /api/diff`, `./run.sh diff` |
 | Mutated-site refresh demonstration | Built — `./run.sh verify-refresh` mutates a copy of the site, ingests it, and verifies all 12 injected changes are reported under the correct kind |
 | Hybrid semantic tiebreak | Built — `embeddings.py`, optional `PAPERLANE_EMBED_*` configuration, similarity term after price; measured with `./run.sh similarity` |
-| Structured logging and the five metrics | **Not built** — no logging or metrics module |
+| Structured logging and the five metrics | Built — `records.py`, `metrics.py`, `./run.sh metrics`, `GET /api/metrics`. See `docs/observability.md` |
+
+All six Tier 2 items are now built. The metrics module is the last one, and its
+own numbers are in `docs/observability.md`.
 
 ### On the six-hour estimate
 
