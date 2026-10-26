@@ -86,11 +86,21 @@ class Conversation:
     id: str
     criteria: Criteria = field(default_factory=Criteria)
     turns: list[Turn] = field(default_factory=list)
+    #: How many turns this conversation has ever had. Kept apart from
+    #: ``len(turns)`` because the store trims the retained history to
+    #: ``MAX_TURNS``: deriving the turn number from the retained list made it
+    #: saturate at ``MAX_TURNS + 1`` and stopped distinguishing turns (A14).
+    turns_seen: int = 0
 
     @property
     def turn_index(self) -> int:
-        """The index the *next* turn will have, 1-based."""
-        return len(self.turns) + 1
+        """The index the *next* turn will have, 1-based.
+
+        ``len(turns)`` is a floor, not the source: a conversation assembled by
+        hand, or read from a file written before this counter existed, still
+        numbers its next turn after the turns it is holding.
+        """
+        return max(self.turns_seen, len(self.turns)) + 1
 
 
 @dataclass(frozen=True)
@@ -513,6 +523,7 @@ def _to_json(conversation: Conversation) -> dict[str, Any]:
     return {
         "id": conversation.id,
         "criteria": _criteria_to_json(conversation.criteria),
+        "turns_seen": conversation.turns_seen,
         "turns": [
             {
                 "index": turn.index,
@@ -541,7 +552,12 @@ def _from_json(record: dict[str, Any]) -> Conversation | None:
                 outcome=raw.get("outcome"),
             )
         )
-    return Conversation(id=conversation_id, criteria=criteria, turns=turns)
+    return Conversation(
+        id=conversation_id,
+        criteria=criteria,
+        turns=turns,
+        turns_seen=int(record.get("turns_seen") or 0),
+    )
 
 
 def _copy(conversation: Conversation) -> Conversation:
@@ -550,6 +566,7 @@ def _copy(conversation: Conversation) -> Conversation:
         id=conversation.id,
         criteria=conversation.criteria,
         turns=list(conversation.turns),
+        turns_seen=conversation.turns_seen,
     )
 
 
@@ -579,6 +596,7 @@ def record_turn(
         id=conversation.id,
         criteria=result.criteria,
         turns=list(conversation.turns) + [turn],
+        turns_seen=turn.index,
     )
 
 

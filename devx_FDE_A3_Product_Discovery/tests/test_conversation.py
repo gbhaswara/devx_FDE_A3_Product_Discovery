@@ -398,6 +398,48 @@ class TestBounds:
 # What a store must never hold
 # ---------------------------------------------------------------------------
 
+class TestTurnNumbering:
+    """BUG.md A14 — the turn number must not saturate at the retained cap.
+
+    ``turn_index`` was ``len(turns) + 1`` while ``put`` trims ``turns`` to
+    ``MAX_TURNS``: past that, every turn reported the same number, and
+    ``records.py`` says turns are distinguished by it. The number is a
+    property of the conversation's history, not of how much of it is retained.
+    """
+
+    def test_the_turn_number_keeps_advancing_past_the_cap(self):
+        store = InMemoryConversationStore(max_turns=3)
+        conversation = Conversation(id="c")
+        for _ in range(10):
+            result = merge_turn(None, criteria(quantity=5))
+            conversation = record_turn(conversation, result)
+            store.put(conversation)
+        stored = store.get("c")
+        assert len(stored.turns) == 3, "the history is still bounded"
+        assert [t.index for t in stored.turns] == [8, 9, 10]
+        assert stored.turn_index == 11, "the next turn number is the 11th"
+
+    def test_turn_numbers_are_strictly_increasing(self):
+        store = InMemoryConversationStore(max_turns=3)
+        conversation = Conversation(id="c")
+        numbers = []
+        for _ in range(10):
+            conversation = record_turn(conversation, merge_turn(None, criteria(quantity=5)))
+            store.put(conversation)
+            numbers.append(store.get("c").turns[-1].index)
+        assert numbers == list(range(1, 11))
+
+    def test_the_number_survives_a_restart(self, tmp_path):
+        path = tmp_path / "conversations.jsonl"
+        store = JsonlConversationStore(path, max_turns=2)
+        conversation = Conversation(id="c")
+        for _ in range(5):
+            conversation = record_turn(conversation, merge_turn(None, criteria(quantity=5)))
+            store.put(conversation)
+        reopened = JsonlConversationStore(path, max_turns=2)
+        assert reopened.get("c").turn_index == 6
+
+
 class TestNoTextStored:
     def test_the_store_holds_no_request_text(self):
         store = InMemoryConversationStore()

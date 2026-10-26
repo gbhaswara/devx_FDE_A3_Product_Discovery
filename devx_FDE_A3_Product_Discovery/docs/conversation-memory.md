@@ -124,7 +124,11 @@ Both are bounded, and the bounds are a security property rather than a tidiness
 one:
 
 - **`MAX_CONVERSATIONS = 100`** — least-recently-used eviction.
-- **`MAX_TURNS = 20`** — the oldest turn is dropped from a long conversation.
+- **`MAX_TURNS = 20`** — the oldest turn is dropped from a long conversation. The
+  *turn number* is not capped with it: it comes from a counter on the
+  conversation, so a 25-turn conversation still numbers its turns 1…25 even
+  though only the newest 20 are retained (`BUG.md` A14 — deriving the number from
+  the retained list made it saturate).
 
 Without the first, an unauthenticated caller could grow the process's memory
 without bound by inventing conversation ids. Without the second, one conversation

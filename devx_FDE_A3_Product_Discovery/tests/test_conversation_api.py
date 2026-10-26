@@ -299,6 +299,19 @@ class TestRecords:
         assert "request_text" not in entry
         assert entry["request_chars"] > 0
 
+    def test_the_recorded_turn_number_keeps_advancing(self, client):
+        """BUG.md A14 — past MAX_TURNS it used to report the same number."""
+        from paperlane.conversation import MAX_TURNS
+
+        ask(client, "A4 copy paper", "c1")
+        for _ in range(MAX_TURNS + 4):
+            ask(client, "but red", "c1")
+        numbers = [
+            entry["turn_index"] for entry in records_written()
+            if entry.get("turn_index") is not None
+        ]
+        assert numbers == list(range(1, len(numbers) + 1)), numbers
+
 
 # ---------------------------------------------------------------------------
 # The page
