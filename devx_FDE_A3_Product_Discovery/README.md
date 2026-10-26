@@ -17,8 +17,12 @@ uv sync                                    # 1. install dependencies
 ./run.sh test                              # 2. the full suite, offline, no model
 ./run.sh serve                             # 3. the app on http://127.0.0.1:8001
 ./run.sh eval                              # 4. the recorded evaluation set
-./run.sh ask "A4 80gsm copy paper, 20 reams"   # 5. one question, no server needed
+./run.sh ask "A4 80gsm copy paper, 20 reams" --conversation demo \
+  && ./run.sh ask "make it 50" --conversation demo   # 5. two turns, no server needed
 ```
+
+Step 5 is deliberately two turns: the second one is understood without repeating
+the product, and the reply says which requirements it remembered.
 
 Those five are the demo path. Four further commands exist to *prove* something
 rather than demonstrate it, and none is needed to see the system work:
@@ -168,7 +172,8 @@ Module map:
 
 Full detail in `docs/`: `pricing.md`, `ingestion.md`, `search.md`,
 `assistant.md`, `api.md`, `refresh.md`, `refresh-verification.md`,
-`semantic-ranking.md`, `observability.md`, `chat-channel.md`.
+`semantic-ranking.md`, `observability.md`, `conversation-memory.md`,
+`chat-channel.md`.
 
 ---
 
@@ -236,8 +241,13 @@ changes no first result, and produces **0 improvements and 0 regressions**. It
 is a better tiebreak than SKU order; it is not a quality win, and it is not
 described as one. See [`docs/semantic-ranking.md`](docs/semantic-ranking.md).
 
-**Single-turn.** No conversation memory. Each request is interpreted on its own,
-so "make that 40 packs instead" is not understood as a follow-up.
+**Conversation memory, deliberately conservative.** A follow-up that names no new
+category or size continues the previous request, and the reply says which
+requirements it remembered. The model never sees the conversation: the merge
+happens after interpretation over typed criteria, so every constraint is
+traceable to a turn that stated it. The cost is that "the cheaper one" with no
+subject is a fresh request rather than a reference. See
+[`docs/conversation-memory.md`](docs/conversation-memory.md).
 
 **No auth and no rate limiting** beyond the crawler's own 1 req/s politeness.
 The app is local-only and not hardened for exposure.
@@ -364,9 +374,9 @@ own numbers are in `docs/observability.md`.
 |---|---|
 | Hybrid search (filters plus semantic) | Built as a tiebreak that cannot change membership — see above |
 | Multi-item quotes | Built — `POST /api/quote/lines` |
-| Conversation memory | **Not built.** Single-turn by design; the gap is stated in the customer summary and analysed in `docs/chat-channel.md` §3 |
+| Conversation memory | Built — continuation rule in `conversation.py`, two bounded stores, disclosure in every continued reply, and its own evaluation. See `docs/conversation-memory.md` |
 | Defences against untrusted text | Built — sanitising boundary in `model.py`, escaping in `ui.py`, plus tests |
-| Notes on deploying behind LINE or WhatsApp | `docs/chat-channel.md` — platform limits, the conversation-memory problem, and the gaps that must close before this is internet-reachable |
+| Notes on deploying behind LINE or WhatsApp | `docs/chat-channel.md` — platform limits, the webhook and identity work, and the gaps that must close before this is internet-reachable. Memory now exists; an authenticated conversation principal does not |
 
 ### On the six-hour estimate
 

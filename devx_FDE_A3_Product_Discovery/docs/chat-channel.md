@@ -56,43 +56,69 @@ an adapter that drops it leaves the customer with silence.
 
 ---
 
-## 3. The problem that will actually bite: no conversation memory
+## 3. Conversation memory: built, with a stated limit
 
-**This is single-turn by design, and a chat channel is inherently multi-turn.**
-That mismatch is the main thing to solve, and it is not a small one.
+**Memory now exists**, so this section is no longer a list of what is missing. It
+is the boundary the adapter has to work inside.
 
-Verified behaviour — the follow-up does not inherit anything:
-
-```
-Turn 1  "cheap paper"   → clarified   "What are you looking for? For example: A4 copy paper..."
-Turn 2  "A4"            → quoted       criteria = {"size": "A4"}
-```
-
-Turn 2 was interpreted as a *fresh, complete request*. It happened to work, because
-"A4" alone is answerable. But the request the customer was actually making — cheap
-A4 paper — was silently dropped, and the assistant quoted Siam Office 70gsm at list
-price with no budget filter applied.
-
-The follow-ups that fail outright:
+The continuation rule is: a turn that names no new **category or size** continues
+the previous request. Measured against the shipped code:
 
 ```
-"make that 40 packs instead"      → no quantity, no product; nothing to act on
-"and the 130gsm one?"             → no referent
-"too expensive"                   → no referent
+Turn 1  "A4 80gsm copy paper, 20 reams"  → quoted, 20 reams
+Turn 2  "make that 40 packs instead"     → quoted, 40 reams
+        carried: category, size_code, weight_gsm
 ```
 
-So the adapter needs a conversation store and one of two strategies:
+The reply discloses what it remembered, so a wrong carry is visible and
+correctable rather than silently quoted. A weight correction also works —
+*"and the 130gsm one?"* keeps the category, size and quantity and changes only the
+weight (and honestly reports `no_match`, because this catalog has no 130 gsm A4
+copy paper).
 
-1. **Rewrite before sending (recommended).** Keep the last N turns per chat id;
-   prepend them to the customer's message so `/api/ask` sees a self-contained
-   request. This costs one extra model call and keeps the assistant unchanged.
-2. **Carry criteria forward.** Read `criteria` from the previous response, merge it
-   with the new turn, and send `POST /api/quote` with explicit criteria instead of
-   `/api/ask`. Cheaper and exact, but it cannot resolve "the 130gsm one" — the
-   referent is in the product list, not the criteria.
+**The limit: the model never sees the conversation.** The merge happens after
+interpretation, over typed criteria. So a follow-up whose meaning lives in the
+*previous answer* rather than in the previous *request* is not resolved:
 
-Neither is built. Say so plainly rather than shipping an adapter that answers
-"make that 40 packs" by quoting 20 again.
+```
+Turn 1  "A4 80gsm copy paper, 20 reams"  → quoted
+Turn 2  "too expensive"                  → clarified, nothing carried
+```
+
+*"Too expensive"* states no requirement, so there is nothing to merge — it is a
+fresh request. Likewise *"the cheaper one"*. Resolving those needs the product list
+from the last reply, which is a different feature: a referent resolver, not a
+criteria merge. It is not built, and the adapter should not pretend otherwise.
+
+The same applies to a follow-up that drops the subject entirely:
+
+```
+Turn 1  "cheap paper"   → clarified
+Turn 2  "A4"            → quoted, criteria = {"size": "A4"}
+```
+
+Turn 2 is a fresh request because *"A4"* names a size, which is a subject field.
+The *"cheap"* from turn 1 is not carried. This is the conservative direction
+working as designed — but for a chat channel it is the case that will annoy a real
+customer, and it is worth saying so.
+
+### What the adapter should do
+
+1. **Send the chat id as `conversation_id` (recommended).** One field, and the
+   assistant's own merge does the work. The id must be derived from the platform's
+   user or chat identifier, not from anything the customer can set, because the
+   id is an unauthenticated label — see §4.
+2. **Resolve referents in the adapter, if needed.** A follow-up that refers to the
+   previous *answer* can be rewritten by the adapter into a self-contained request
+   before sending. That is one extra model call and it keeps the assistant's
+   guarantee — that every requirement is traceable to something the customer said —
+   intact, because the rewrite is a request, not a silent constraint.
+
+What the adapter must **not** do is re-send the previous `criteria` as explicit
+criteria to `POST /api/quote`. That bypasses the merge, so nothing discloses what
+was carried and a stale requirement becomes invisible.
+
+Details, bounds and the two stores: [`docs/conversation-memory.md`](conversation-memory.md).
 
 ---
 
@@ -211,8 +237,10 @@ Worth saying, because these are the parts that usually go wrong:
   branches on `outcome` cannot be surprised by a fifth value.
 - **No price can reach the customer without deterministic code having produced it.**
   That property is unchanged by adding a channel.
-- **The service is stateless per request**, so horizontal scaling needs only the
-  record writer fixed — no session affinity, no sticky routing.
+- **The service holds no per-request state**, so horizontal scaling needs only the
+  record writer fixed — no session affinity, no sticky routing. Conversation state
+  is the one exception: the in-memory store is per process, so scaling out needs a
+  shared store. The `conversation.Store` interface already allows one.
 - **Reply length is bounded in practice.** 1,055 characters worst case across all
   28 evaluation cases means no chunking, no truncation, no split breakdowns.
 
@@ -223,8 +251,10 @@ Worth saying, because these are the parts that usually go wrong:
 1. **Auth + webhook signature verification.** Nothing else matters until the
    endpoint is safe to expose.
 2. **Idempotency on message id.** Cheap, and it prevents duplicate replies.
-3. **Conversation store and query rewriting.** Without it the channel cannot hold
-   the conversation a chat channel exists for. This is the real work.
+3. **A shared conversation store and referent resolution.** Memory exists, so this
+   is smaller than it was: the work is a store two workers can share, plus a
+   resolver for follow-ups that point at the previous *answer* ("the cheaper one")
+   rather than at the previous *request*. See §3.
 4. **Then LINE, then WhatsApp.** LINE first for Bangkok — it is the channel
    PaperLane's customers are already in. WhatsApp adds the 24-hour template
    constraint, which is a business decision about message templates, not a

@@ -50,6 +50,8 @@ the service handles a request that interprets or quotes.
 | `snapshot` | Which catalog answered: path, product count, tier count, build time |
 | `request_chars` | Length of the request |
 | `request_digest` | 16 hex characters: a **grouping aid, not anonymisation** |
+| `turn_index` | Present only for a multi-turn request: its 1-based position in the conversation. Keeps single-turn and multi-turn traffic separable in the measures rather than blending two behaviours into one population |
+| `carried_fields` | Present whenever `turn_index` is: which requirements came from earlier turns. An empty list means "this turn carried nothing", which is a different fact from "this was turn one" |
 
 ### What the record deliberately excludes
 

@@ -37,8 +37,14 @@ choose a product, or write a total into a reply.
 
 ## What it cannot do
 
-**It cannot hold a conversation.** Every request stands alone. "Make that 40 packs
-instead" is not understood as a follow-up.
+**It holds a conversation, but conservatively.** A follow-up that names no new
+product kind or size continues the previous request — "make that 40 packs instead"
+is understood, and the reply says which requirements it remembered, so a
+remembered requirement can be corrected rather than silently quoted. What it will
+not do is guess: "the cheaper one" with nothing else is treated as a new question,
+because a confidently wrong carry is worse than asking. The model never sees the
+conversation, so every requirement in an answer can be traced to something the
+customer actually said.
 
 **Two weight conversions are unproven.** The site stocks no 28 lb or 32 lb paper,
 so those conversions are implemented but never checked against a real product. The
@@ -69,8 +75,9 @@ traffic. It is built to run on a laptop or behind your own network.
 A working assistant that prices accurately and explains itself, built on the site
 you already have. It is strongest on clear, specific requests and honest about its
 limits — it asks rather than guesses, and says "nothing matches" rather than
-inventing something. What it is not yet: a system that holds a conversation, or one
-ready for unattended public use. Both are a week of work, not a rewrite.
+inventing something. It now holds a conversation, within limits it states. What it
+is not yet: ready for unattended public use. That is a week of work, not a
+rewrite.
 
 ## What we left out
 
