@@ -100,16 +100,27 @@ sits inside a disclosure, and the handler is delegated to `document`, so a row i
 a group opened after load behaves exactly like one open at load. No new endpoint,
 no dependency, and no client state beyond that prefill.
 
+**The clipping was a defect; the 50-50 half was a preference.** `BUG.md` records
+it as **A18**. Every row was already in the response, which is why all 19 tests in
+`test_ui_catalog.py` passed while the column showed one of its four categories:
+a DOM assertion cannot see a scrollbar. The equal split is implemented as asked
+and is not claimed as a bug.
+
 `test_ui_catalog.py::TestTheCatalogIsCollapsible` (5) and
 `TestTheSplitIsHalfAndHalf` (2) pin the structure; the escaping, price-parity and
-"every name resolves" tests run against the new markup unchanged. Suite 1183 →
-1190.
+"every name resolves" tests run against the new markup unchanged. Checked in a
+browser at 1440×900 and 390×844 — four categories and their counts on screen at
+once, opening one pushes nothing out of the document, and a row inside a group
+opened after load fills the search box and sends no request. Suite 1183 → 1190,
+and every recorded count moved with it (`README.md`, `TEST.md`, `CLAUDE.md`, the
+status line above).
 
 ### Fixed — 2026-10-27 · a bare quantity that is also a grammage no longer changes the paper
 
 Reported from use, as a five-turn conversation. *Change it to 50* quoted; *change
 it to 100*, then *60*, then *50* again all came back as no-match — including the
-last turn, which restated a quantity that had already quoted.
+last turn, which restated a quantity that had already quoted. Registered as
+**A17** in `BUG.md` Part 2b before the fix.
 
 Two correct rules met on the number 100. The weight parser reads a bare number as
 a grammage when the catalog stocks it (*A5 gloss 130* needs no unit), and the merge
@@ -130,9 +141,19 @@ already lived there. An explicit *100 gsm* still corrects the weight.
 - `test_conversation.py` also pins that refinements past the retained-history cap
   still carry the full requirement set: 20 refinements with `max_turns=3` keep the
   category, size and weight. "How many changes can I make?" has no answer bounded
-  by the store.
+  by the store. Measured against a live server as well: 101 turns in one
+  conversation, 100 of 100 refinements quoted, every total identical to a fresh
+  standalone quote for the same SKU and quantity, and turn 101 still knew it was
+  160 gsm A4 card. The only quantity ceiling is the request contract (1..100,000):
+  the catalog carries no stock count, only in/out of stock.
 - **Falsification:** reverting the merge change fails 4 of the new tests and leaves
   the explicit-weight guard passing.
+- No capability spec changed. The conversation spec already said a bare number in
+  a refinement is the quantity; the code was not doing what it said, so the fix
+  restores the stated behaviour rather than adding a new one.
+- `docs/conversation-memory.md` states the ambiguity and the reclaim rule, and
+  `README.md`'s conversation counts move from 11 conversations / 24 turns to
+  12 / 27.
 - The suite is 1183 tests, up from 1169; the conversation set is 12 conversations
   over 27 turns.
 
