@@ -635,11 +635,11 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A25 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A26 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
-from a compliance audit against `00_START_HERE_All_Briefs.md`; A23 came from the
-section-by-section review of the brief's five "what we look for" areas. Both
+from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A26 came from
+the section-by-section review of the brief's five "what we look for" areas. Both
 probed the running service and the stored snapshot rather than reading the
 modules — the same method as A12–A19. Each was reproduced before being written
 down, with the reproduction in `/tmp/opencode/a3-gap-probe.py`. Registered
@@ -857,7 +857,7 @@ membership.
 against `budget * pack_sheets` so both sides are integers, rather than dividing
 money and rounding.
 
-### A25 — The model can rewrite the sentence that states the budget assumption
+### A25 — The stated budget basis is never constrained to one the engine can apply
 
 ```
 model returns {"budget_basis": "per 500 sheets, excluding VAT"}
@@ -869,6 +869,19 @@ model returns {"budget_basis": "per 500 sheets, excluding VAT"}
 PR7 exists to publish. The rule path can only ever produce four values
 (`per pack|ream|sheet, before|including VAT`, from `interpret._budget_basis`);
 the model path can produce anything, and it reaches the customer verbatim.
+
+The same hole is open on the structured path. `POST /api/quote` accepts
+`budget_basis` as free text (`api.py:154`, copied straight into `Criteria` at
+`:392`), and the value is published twice: in the budget match reason —
+
+```
+{"attribute":"budget per unit","requested":"200.00","actual":"117.00",
+ "detail":"at quantity 10, 10+ tier applied, garbage"}
+```
+
+— and in `assistant._quote_reply`, where `check.describe()` ends in
+`f"… {self.basis})"`. So this is not a model-trust defect specifically; it is a
+missing constraint on a string that is published, with two ways to reach it.
 
 **Why it matters.** This is not cosmetic. PR7's requirement is *"say which
 assumption you used"*, and the model can make the reply say an assumption that
@@ -882,11 +895,50 @@ other model value is re-resolved through an alias table first.
 **Fix direction.** Treat it like the size boundary three lines above: accept a
 model basis only if it is one of the canonical forms, otherwise keep the basis
 the rules parsed from the same text and record a note. Two lines, no new
-vocabulary.
+vocabulary. Put the check where both entry points meet — `interpret.validate` —
+so the structured field is covered by the same guard rather than by a second
+copy of it.
 
 **Falsification.** `TestModelMerge::test_a_model_basis_outside_the_canonical_set_is_ignored`
 and `test_a_canonical_model_basis_is_kept`, plus
-`TestReplyContract::test_the_stated_basis_is_always_one_the_engine_can_apply`.
+`TestReplyContract::test_the_stated_basis_is_always_one_the_engine_can_apply` and
+`TestClientErrors::test_an_unknown_basis_is_a_client_error`.
+
+### A26 — The same SKU split across two lines misses its volume tier
+
+```
+POST /api/quote/lines  [{"sku":"PL-PR-A4-GL-100-40","quantity":20}]
+  -> subtotal 3,784.00    (20+ tier, 189.20 each)
+
+POST /api/quote/lines  [{"sku":"PL-PR-A4-GL-100-40","quantity":10},
+                        {"sku":"PL-PR-A4-GL-100-40","quantity":10}]
+  -> subtotal 4,042.00    (5+ tier, 202.10 each, twice)
+```
+
+**Root cause.** `pricing.quote` prices each `LineRequest` independently —
+`price_line` calls `unit_price(facts, request.quantity)` with that line's own
+quantity — and nothing sums the quantity per SKU first. The tier is a property
+of the item, so it should be selected from the total quantity the order asks
+for, not from whichever way the caller happened to slice it.
+
+**Why it matters.** The same basket, expressed two ways, produces two totals 258
+satang apart in the customer's disfavour — and higher, which is the worse
+direction. PR2's "per item" rule is about *items*, not about lines; nothing in
+the contract says a SKU may appear only once, and `POST /api/quote/lines`
+accepts it. The assistant never emits a split line, so the demo path never shows
+it; it is reachable by any caller that does. The multi-line endpoint is the one
+place where the customer's line structure is not ours, which is exactly why the
+quantity aggregation belongs there.
+
+**Fix direction.** Keep one output line per requested line — the caller's
+structure is theirs — but select the unit price from the summed quantity for
+that SKU and apply it to each of its lines. Merging the lines was rejected: it
+would change the response shape and lose which line was which.
+
+**Falsification.** `TestMultiLine::test_a_sku_split_across_lines_reaches_its_tier`
+and `test_splitting_a_sku_never_costs_more_than_one_line` in
+`tests/test_api.py`, plus `TestTiersArePerSku::test_a_split_line_is_priced_on_the_total_quantity`
+in `tests/test_pricing.py`: the first fails on 4,042.00 against 3,784.00 today.
 
 ---
 
