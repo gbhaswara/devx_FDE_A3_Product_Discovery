@@ -635,7 +635,7 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A24 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
 from a compliance audit against `00_START_HERE_All_Briefs.md`; A23 came from the
@@ -820,6 +820,42 @@ unavailable items alone; the contradiction is in the data, not in the sentence.
 and `test_the_out_of_stock_row_still_carries_its_own`, extracted from the real
 `flyers-a4-gloss.html`. The first fails on five SKUs against the current
 extractor.
+
+### A24 — A budget stated per ream or per sheet is compared as if it were per pack
+
+```
+check_budget(PL-CS-A4-200-WH, 1, 250.00, basis="per ream, before VAT")
+  -> within_budget=True
+     178.00 at 1 (within 250.00, per ream, before VAT)
+
+  that pack holds 100 sheets, so one ream of it costs 890.00 — 3.6x the ceiling
+```
+
+The opposite direction fails too: `PL-CP-A4-80` costs 0.26 a sheet, but a budget
+of *"1.00 per sheet"* compares 129.00 against 1.00 and excludes it.
+
+**Root cause.** `interpret._UNIT_PATTERNS` accepts *pack*, *ream* and *sheet*,
+and `BudgetCheck.basis` reports the one it read — but `pricing.check_budget`
+compares `unit_price()` (always per pack) with the budget and never converts by
+the pack's sheet count. The unit word is a label, not an arithmetic input. This
+is the same shape as A21: a basis that is parsed, echoed and not applied.
+
+**Why it matters.** It is the Search criterion's *"unit and size normalisation"*
+on the one path where a wrong unit changes a verdict rather than a sentence. It
+happens to be harmless for copy paper, where a pack is a 500-sheet ream — which
+is exactly why it went unnoticed: the common case is coincidentally correct. For
+the 100-sheet and 250-sheet packs the error is 2x–5x, and it quotes items far
+over the ceiling or hides items well under it.
+
+**Falsification.** `TestBudget::test_a_per_sheet_budget_is_converted_by_pack_size`
+and `test_a_per_ream_budget_is_converted_by_pack_size` in `tests/test_pricing.py`,
+plus `TestBudgetAtQuantity::test_a_per_ream_budget_excludes_an_over_item` in
+`tests/test_search.py`. The first two fail on the arithmetic, the third on the
+membership.
+
+**Note.** The fix must stay exact: compare `pack_price * sheets_per_stated_unit`
+against `budget * pack_sheets` so both sides are integers, rather than dividing
+money and rounding.
 
 ---
 
