@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.7.0 — all three Tier 2 changes complete and archived.** 86 of 86 tasks closed across the Tier 1 change and its three Tier 2 successors (167 tasks in total, none open). 937 tests pass offline, the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), and the negative control fails as designed. Requirements now live in the ten main specs under `openspec/specs/`; the four changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.8.0 — Tier 1, three Tier 2 extras, and conversation memory, all complete and archived.** 221 tasks closed across the five archived changes, none open. **1095 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 11/11 over 24 turns, and both negative controls fail as designed. Requirements now live in the **eleven** main specs under `openspec/specs/` — 84 requirements, 215 scenarios; the five changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,101 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Added — 2026-10-27 · `add-conversation-memory` (the brief's third nice-to-have)
+
+The OpenSpec change is 54/54. This is the seventh and last of the extras, and it
+started as a nice-to-have rather than a Tier 2 item: the brief lists "conversation
+memory" among its optional items, and `ANALYZE_01.md` §8 cut it deliberately with
+the reason *"single-turn + explicit clarify beats half-built memory."*
+
+**That reasoning is about a half-built memory, and it is right about that.** A
+store that accumulates state without a rule for discarding it produces
+confidently wrong answers, which is worse than asking again. The scope cut was
+correct about the failure mode and wrong about the conclusion, because the second
+most natural thing a customer says is a refinement, and the assistant could not
+hear it: *"make it 50"* returned a clarification instead of a quote.
+
+**What was built.**
+
+- `src/paperlane/conversation.py` — the merge rule as a pure function over two
+  `Criteria` objects, an in-memory store bounded to 100 conversations and 20
+  turns each, and an optional JSONL-backed store for a restart-surviving demo.
+  The store holds `Criteria`, **never the customer's text**.
+- The merge is wired between `interpret` and `validate` in `api.py` and
+  `ask_cli.py`, so a merged value the catalog cannot stock is caught by the same
+  check that guards a fresh request.
+- `./run.sh ask --conversation <id>` and `--forget`, plus the page, which starts
+  a conversation per load and shows the turn number and what was remembered.
+- `eval/conversation-cases.json` — 11 recorded conversations, 24 turns — and
+  `conversation_eval.py` to score them.
+- `docs/conversation-memory.md` — the rule, the bounds, the two stores, and the
+  one thing a conversation id is not.
+
+**The rule, and the decision that took two attempts.** A turn is a *continuation*
+when it names no new **subject**, and a subject is a category or a size — the two
+fields that name *which thing* is being discussed:
+
+```python
+SUBJECT_FIELDS = ("category", "size_code")
+```
+
+Weight is deliberately **not** a subject field. *Make it 100 gsm* adjusts the
+paper already under discussion; including weight in the predicate was the first
+version and it was wrong, because it made the refinement discard the size and the
+category it was refining.
+
+**The structural decision, which is the one that matters.** The model never sees
+the conversation. The merge happens **after** interpretation, over typed
+`Criteria`, and only the current turn's text ever reaches an interpreter. So every
+constraint in a merged result is traceable to a turn that stated it. The
+alternative — passing the transcript to the model — reads better in a demo and is
+untestable: there is no assertion that distinguishes "the model remembered" from
+"the model made it up". The cost is real and documented: *"the cheaper one"* with
+no subject is a fresh request rather than a reference.
+
+**Off by default, and that is asserted.** With no `conversation_id`, the single
+turn path is byte-identical to before the feature existed. That is not claimed
+from inspection: `tests/test_single_turn_unchanged.py` pins a **SHA-256 of every
+case's `{outcome, text}`**, recorded from commit `d4a67db` — the commit before the
+conversation work — with 0 differences across 28 cases. If that test fails, the
+question is not "update the digest"; it is "which reply changed, and why".
+
+**Verification.** Conversation eval 11/11 over 24 turns; single-turn replay 22/22
+comparable cases unchanged (6 not comparable); the conversation negative control
+exits **1** with all five deliberate corruptions rejected. 1095 tests pass, eval
+24/24 on v1 and 21/21 on v2, `verify-refresh` 12/12. Every command in
+`docs/conversation-memory.md` was run as written.
+
+#### Fixed — three defects found after it shipped, all in conversation memory
+
+Found by **probing the running service** rather than by reading the module, and
+registered in `BUG.md` Part 2b *before* being fixed, per that file's own rule.
+Each fix arrived with a test **and** a falsification check: the fix was reverted,
+the new test and evaluation case were confirmed to fail, and the fix restored. A
+guard that has never been seen to fail is a guess.
+
+- **A12 — a first turn stating only a quantity, or only a budget, could not be
+  continued.** `has_any_constraint()` is False for those turns, and gating the
+  *earlier* criteria on it threw the conversation away. **Found by** asking
+  *"20 reams"* and then *"make it 50"*. Fixed by replacing the narrow predicate
+  with the broader `_states_something`, now the only continuation basis, at all
+  four call sites. Pinned by eval cases 9 and 10 plus unit, HTTP and CLI tests.
+  Falsified: restoring the old predicate fails exactly cases 9–10 and exits 1.
+- **A13 — one unparseable turn permanently erased the conversation.** *"A4 80gsm
+  copy paper, 20 reams"*, then *"too expensive"*, then *"make it 50"* clarified
+  instead of quoting. **This one was D3 working as written**, so fixing it meant
+  answering a question the decision left open: an empty turn is now *fresh for the
+  reply* and *transparent for the state*. `MergeResult` carries `empty` and
+  `record_turn` keeps the criteria while still appending the turn. A turn that
+  *names a subject* still replaces the criteria, so D3's protection against a
+  wrong carry is untouched. Falsified: restoring the old `record_turn` fails case
+  11 with `criteria['category'] is None, expected 'Copy paper'`.
+- **A14 — the turn number saturated at 21 and stopped distinguishing turns.**
+  `turn_index` derived from the retained turn list, which is capped at
+  `MAX_TURNS`. **Found by** running 25 turns and reading the numbers. Fixed with a
+  persisted `turns_seen` counter: `turn_index = max(turns_seen, len(turns)) + 1`.
+  25 turns now write 1…25.
 
 ### Added — 2026-10-26 · `add-observability` (Tier 2, third of three)
 
@@ -180,7 +275,8 @@ loopback and embedding ones), and 937 online (4 skip); eval 24/24 on v1 and
 21/21 on v2; `--self-check` exit 0; negative control exit 1; `verify-refresh`
 exit 0 with all 12 changes verified; `./run.sh similarity` exit 0. Every command
 in `docs/observability.md` was run as written and its quoted output copied from
-the run.
+the run. *(Count as at this entry; conversation memory later took the suite to
+1095 — see the entry at the top of this section.)*
 
 ### Added — 2026-10-26 · `add-semantic-tiebreak` (Tier 2, second of three)
 
@@ -346,6 +442,8 @@ the crawl timestamps recorded in provenance columns.
 
 #### Repository documentation
 
+> **Historical — as at planning.** The two counts that later changed are corrected here rather than in place: `TEST.md` now documents **eight** test layers and a per-module inventory of **1095** tests; `BUG.md` now carries **9** analysis defects (Part 2, A1–A9) and **5** shipped-code defects (Part 2b, A10–A14). The list is left as written so the planning inventory stays auditable.
+
 - `AGENTS.md` — sources of truth in priority order, the brief's non-negotiable constraints, scope discipline, workflow boundary, code conventions, verification expectations.
 - `ARCHITECTURE.md` — component view, the four load-bearing design decisions, data model, pricing pipeline, API surface, snapshot lifecycle, verified site facts, known architectural limitations.
 - `DESIGN.md` — the two users, the interaction problem created by budget-depends-on-quantity, the four-part reply structure, the four outcomes as distinct designed states, deliberate omissions.
@@ -494,9 +592,33 @@ recorded for each.
   static site, not the assistant. Corrected to 8001 with the reason.
 
 
+### 0.8.0 — Tier 2 extras and conversation memory · shipped
+
+- `tasks.md` group 10 plus the brief's nice-to-haves, each cut as its own OpenSpec
+  change and independently droppable: `add-mutated-site-refresh-harness` (27/27),
+  `add-semantic-tiebreak` (26/26), `add-observability` (28/28), and
+  `add-conversation-memory` (54/54). **221 tasks closed across the five archived
+  changes, none open.**
+- The version was carried at 0.7.0 while the three Tier 2 changes landed. It is
+  cut to 0.8.0 here because conversation memory added a *capability* — a new spec,
+  `conversation-memory` (8 requirements, 27 scenarios), and a new evaluation set —
+  rather than closing an item the plan had already named. That is the same test
+  the earlier milestones used.
+- Rationale for landing conversation memory last: it changes the shape of a
+  request, so every earlier layer had to be correct and pinned first. The merge
+  sits **after** interpretation and re-validates through the same check a fresh
+  request uses, so a merged value the catalog cannot stock is caught by the path
+  that already existed.
+- Closed by: **1095 tests** green (online 4 skip, offline 7 skip), eval 24/24 on
+  v1 and 21/21 on v2, conversation eval 11/11 over 24 turns, single-turn replay
+  22/22 comparable cases unchanged, both negative controls exit 1,
+  `verify-refresh` 12/12 exit 0, and `./run.sh ask` exit 0. The full accounting of
+  each is in the `[Unreleased]` entries above; the defects found afterwards are in
+  `BUG.md` Part 2b and are summarised with their falsification evidence there.
+
 ### 1.0.0 — Tier 2 extras · partial
 
-> **Historical — superseded.** Three of six items were shipped when this was written; the other three were built on 2026-10-26 and are recorded in the `[Unreleased]` entries above. This entry is left as it was written so the sequence of reasoning stays auditable.
+> **Historical — superseded.** Three of six items were shipped when this was written; the other three were built on 2026-10-26 and are recorded in the `[Unreleased]` entries above, along with conversation memory. This entry is left as it was written so the sequence of reasoning stays auditable.
 
 `tasks.md` group 10, each item independently droppable. Gate: no Tier 2 work starts while a Tier 1 task is unfinished. Three of six items are shipped; three are not, and the three open ones are the reason 1.0.0 is not cut.
 
@@ -523,7 +645,7 @@ The honest summary is that the three shipped items were built because the core m
 
 ## Not yet started
 
-> **Historical — superseded 2026-10-26.** This section described the state before the three Tier 2 changes were built. All three are now shipped and archived: 10.5 by `add-semantic-tiebreak`, 10.6 and 10.7 by `add-observability`. `tasks.md` reads 86 of 86, and no change is active. Kept rather than deleted because the reasoning about *why* they were deferred is part of the record; see the `[Unreleased]` entries above for what closed each.
+> **Historical — superseded 2026-10-26, and again 2026-10-27.** This section described the state before the three Tier 2 changes were built. All three are now shipped and archived: 10.5 by `add-semantic-tiebreak`, 10.6 and 10.7 by `add-observability`. Conversation memory — a brief nice-to-have, not a `tasks.md` item — was then built by `add-conversation-memory`. `tasks.md` reads 86 of 86, all five archived changes total 221 closed tasks, and no change is active. Kept rather than deleted because the reasoning about *why* they were deferred is part of the record; see the `[Unreleased]` entries above for what closed each.
 
 Three `tasks.md` items remain, all Tier 2, all named rather than omitted:
 
