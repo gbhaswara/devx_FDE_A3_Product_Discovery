@@ -635,10 +635,10 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A26 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A27 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
-from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A26 came from
+from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A27 came from
 the section-by-section review of the brief's five "what we look for" areas. Both
 probed the running service and the stored snapshot rather than reading the
 modules — the same method as A12–A19. Each was reproduced before being written
@@ -939,6 +939,38 @@ would change the response shape and lose which line was which.
 and `test_splitting_a_sku_never_costs_more_than_one_line` in
 `tests/test_api.py`, plus `TestTiersArePerSku::test_a_split_line_is_priced_on_the_total_quantity`
 in `tests/test_pricing.py`: the first fails on 4,042.00 against 3,784.00 today.
+
+### A27 — The free-delivery threshold is named only to the customer who has already met it
+
+```
+subtotal 4,136.00  ->  Delivery      0.00  (free from 3,000.00)
+subtotal 2,340.00  ->  Delivery      150.00
+```
+
+`assistant._render_breakdown` names `FREE_DELIVERY_THRESHOLD` in the branch where
+delivery is already zero (`:342`) and says nothing in the branch where the
+customer is paying it (`:346`). The rule is published to the customer it costs
+nothing and withheld from the customer it costs 150.00.
+
+**Why it matters.** This is the business-sense criterion rather than a pricing
+error: every number is right, and the customer is not misled. But the reply is
+meant to be forwardable to a buyer, and the single most useful sentence a
+salesperson would add is missing — *"660.00 more and delivery is free"*. The
+threshold is on every page banner, so a customer who knows the site can work it
+out; a buyer reading a forwarded quote cannot. The asymmetry is the tell: a rule
+that appears in a reply only when it does not apply is being used as an
+explanation, not as information.
+
+**Fix direction.** State the threshold in the charged branch too, with the
+shortfall as a computed amount — `Money` subtraction of two figures `pricing`
+already produced, so nothing is derived in prose. The shortfall must be added to
+the allowed set in `_quote_reply` or guard G2 will strip it as an uncomputed
+number, which is the one way this fix can go wrong.
+
+**Falsification.** `TestReplyContract::test_a_charged_delivery_states_the_threshold`
+and `test_the_free_delivery_shortfall_is_exact` — the charged case currently
+fails because the threshold string is absent, and the second recomputes
+3,000.00 − 2,340.00 = 660.00 from the quote, not from the reply.
 
 ---
 
