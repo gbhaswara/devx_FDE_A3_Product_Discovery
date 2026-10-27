@@ -635,10 +635,10 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A27 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A28 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
-from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A27 came from
+from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A28 came from
 the section-by-section review of the brief's five "what we look for" areas. Both
 probed the running service and the stored snapshot rather than reading the
 modules — the same method as A12–A19. Each was reproduced before being written
@@ -971,6 +971,45 @@ number, which is the one way this fix can go wrong.
 and `test_the_free_delivery_shortfall_is_exact` — the charged case currently
 fails because the threshold string is absent, and the second recomputes
 3,000.00 − 2,340.00 = 660.00 from the quote, not from the reply.
+
+### A28 — "I could not find anything close" is said about an item that exists and is out of stock
+
+```
+"A4 120gsm ivory paper 4 packs"  ->  no_match
+  Nothing in the catalog satisfies every requirement you gave.
+  I also could not find anything close, so I would rather ask than offer you
+  something that does not fit.
+```
+
+`Heritage Ivory A4 100gsm` (`PL-CL-A4-100-IVY`) is the only A4 ivory sheet in
+the catalog and it differs from the request in weight alone — but it is out of
+stock until 20 November, so `search._relax` discards it (`available = [c for c in
+_ranked(found, similarity) if c.available]`, `:597`) and, when every relaxation
+is empty of available items, returns `(), None`. `assistant._no_match` then falls
+into its else branch and states that nothing close exists.
+
+**Why it matters.** The sentence is not a ranking opinion, it is a factual claim
+about the assortment, and here it is false. A salesperson would say the opposite
+thing — *"we do stock an A4 ivory, but it is out until 20 November"* — which is
+also the more useful answer, because it tells the customer to come back rather
+than to look elsewhere. The same mechanism hides a closer unavailable item
+behind a looser available one: `"A4 coloured paper ivory 80gsm"` relaxes the
+weight, finds only the out-of-stock ivory, discards it, and answers with
+colour-relaxed 80gsm papers instead — never mentioning that the right colour
+exists.
+
+**Fix direction.** Keep the first relaxation's ranked set even when it is all
+unavailable, and if no relaxation yields an available item, report that set
+labelled as unavailable with the restock date instead of claiming nothing is
+close. That reuses the refusal wording rather than inventing a third vocabulary.
+
+**Falsification.** `TestNoMatch::test_an_unavailable_near_match_is_reported_not_denied`
+in `tests/test_search.py` (the search side: the alternatives must survive the
+availability filter), and
+`TestNoMatch::test_the_near_match_carries_its_restock_date` in
+`tests/test_assistant.py` (the sentence must name the item and its date). Both
+run over the real snapshot; the assistant test fails today because the reply
+contains "could not find anything close" and no `PL-CL-A4-100-IVY`.
 
 ---
 
