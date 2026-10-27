@@ -255,7 +255,7 @@ What shipped instead: `request_chars` (a length) and `request_digest` (16 hex ch
 
 ## Part 2b — Defects found in the shipped code
 
-Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. All three are in conversation memory. Registered before being fixed, per the rule at the end of this file. **A12 and A14 are FIXED; A13 is OPEN and needs a decision** (it is D3 working as written, so fixing it means amending a recorded decision).
+Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. All three are in conversation memory. Registered before being fixed, per the rule at the end of this file. **All three are now FIXED** — A13 required answering a question D3 left open, which is recorded in its entry.
 
 ### A12 — A first turn that states only a quantity or a budget cannot be continued
 
@@ -304,7 +304,11 @@ It compounds with A12: after the wipe the conversation has no filterable constra
 
 **Guard:** a conversation case with a mid-conversation no-understanding turn asserting that the following turn still continues from the earlier subject.
 
-**Status: OPEN.**
+**Status: FIXED, by amending D3's implementation rather than D3.** D3 says such a turn is answered **fresh** — it must not re-answer the previous question — and that still holds. What it never said, and what the code did, is that the retained criteria are *discarded*. `MergeResult` now carries `empty`, and `record_turn` keeps the conversation's criteria on an empty turn while still appending the turn, so the history and the turn count include it. A turn that names a subject still replaces the criteria, so the rule that protects against a wrong carry is untouched.
+
+Answered the question D3 left open: an empty turn is fresh *for the reply*, and transparent *for the state*. The alternative reading — discard, as originally implemented — makes one unparseable sentence end the customer's ability to refine, which is the failure mode memory exists to prevent.
+
+**Guard in place:** `eval/conversation-cases.json` case 11 asserts both halves (turn 2 answered from an empty request, turn 3 still carrying the subject); `tests/test_conversation.py::TestAnEmptyTurnDoesNotForget` and `tests/test_conversation_api.py::TestAnEmptyTurnDoesNotForget` pin the store rule and the wiring. Proven falsifiable: restoring the old `record_turn` fails case 11 and exits 1.
 
 ### A14 — `turn_index` saturates at 21 and stops distinguishing turns
 
