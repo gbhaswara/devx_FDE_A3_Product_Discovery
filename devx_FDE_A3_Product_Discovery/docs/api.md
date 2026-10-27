@@ -292,6 +292,12 @@ Charging delivery per line was measured at `3,542.02` on this exact basket —
 321.00 too high — which is why the threshold is tested against the aggregate, not
 per line.
 
+The same SKU may appear on more than one line. The **quantity is summed per SKU
+before the volume tier is chosen**, so 10 + 10 of one item is priced at its 20+
+tier exactly as 20 on one line would be; the response keeps one line per requested
+line. Pricing each line from its own quantity cost 258.00 more for the same basket
+(`BUG.md` A26).
+
 An unknown SKU is a `422` naming it:
 
 ```json

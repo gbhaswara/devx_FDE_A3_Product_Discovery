@@ -190,16 +190,25 @@ class OrderQuote:
         return self.delivery.satang == 0 and self.subtotal >= FREE_DELIVERY_THRESHOLD
 
 
-def price_line(request: LineRequest) -> LineQuote:
-    """Price a single line at its requested quantity."""
-    unit = unit_price(request.facts, request.quantity)
+def price_line(request: LineRequest, tier_quantity: int | None = None) -> LineQuote:
+    """Price a single line.
+
+    ``tier_quantity`` is the quantity the **tier** is selected from, which is
+    the order's total for that SKU rather than this line's own quantity. The
+    tier is a property of the item, so a caller that splits one SKU across two
+    lines must not thereby lose the tier the order as a whole earns (BUG.md
+    A26). The line still reports its own quantity and is still priced at
+    ``unit × quantity``; only the tier lookup is shared.
+    """
+    quantity_for_tier = request.quantity if tier_quantity is None else tier_quantity
+    unit = unit_price(request.facts, quantity_for_tier)
     return LineQuote(
         sku=request.sku,
         quantity=request.quantity,
         unit_price=unit,
         line_total=unit * request.quantity,
         list_price=request.facts.list_price,
-        tier_applied=applied_tier(request.facts, request.quantity),
+        tier_applied=applied_tier(request.facts, quantity_for_tier),
         on_sale=request.facts.on_sale,
     )
 
@@ -212,11 +221,24 @@ def quote(requests: Sequence[LineRequest]) -> OrderQuote:
     threshold but whose combined subtotal clears it pays no delivery. Charging
     per line is invisible on every single-item test and only surfaces on a
     mixed basket.
+
+    The same rule applies to a SKU's volume tier: the quantity per SKU is
+    summed **before** the tier is chosen, so one SKU split across two lines is
+    priced as the total the customer is buying, not per line. One output line
+    per requested line is preserved — the caller's line structure is theirs.
     """
     if not requests:
         raise ValueError("cannot quote an empty order")
 
-    lines = tuple(price_line(r) for r in requests)
+    ordered_per_sku: dict[str, int] = {}
+    for request in requests:
+        ordered_per_sku[request.sku] = (
+            ordered_per_sku.get(request.sku, 0) + request.quantity
+        )
+
+    lines = tuple(
+        price_line(r, ordered_per_sku[r.sku]) for r in requests
+    )
     subtotal = Money.zero()
     for line in lines:
         subtotal = subtotal + line.line_total

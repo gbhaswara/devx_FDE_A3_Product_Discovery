@@ -39,6 +39,16 @@ each does not reach a 20+ tier.
 Selection order inside a SKU: the tier with the largest `min_qty` that is
 `<= quantity`.
 
+### The quantity is the item's, not the line's
+
+`quote` sums the quantity **per SKU** before choosing the tier, so a caller that
+asks for 10 + 10 of one SKU is priced at the 20+ tier, exactly as if it had asked
+for 20 on one line. The caller's line structure is preserved — one output line
+per requested line — because the order's shape is theirs; only the tier lookup is
+shared. Pricing each line from its own quantity charged 4,042.00 for a basket
+that costs 3,784.00 as a single line, and charged it in the customer's
+disadvantage (`BUG.md` A26).
+
 ### The line that goes wrong
 
 ```python

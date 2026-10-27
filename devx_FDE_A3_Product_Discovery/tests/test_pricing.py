@@ -171,6 +171,25 @@ class TestTiersArePerSku:
         assert unit_price(single, 10) == baht("202.10")
         assert unit_price(double, 10) == baht("281.06")
 
+    def test_a_split_line_is_priced_on_the_total_quantity(self):
+        # BUG.md A26. The tier belongs to the item, not to the way the caller
+        # sliced the order: 10 + 10 of one SKU is 20 of that SKU.
+        single = PriceFacts(
+            sku="PL-PR-A4-GL-100-40",
+            list_price=baht("215.00"),
+            tiers=(PriceTier(5, baht("202.10")), PriceTier(20, baht("189.20"))),
+        )
+        q = quote([
+            LineRequest("PL-PR-A4-GL-100-40", 10, single),
+            LineRequest("PL-PR-A4-GL-100-40", 10, single),
+        ])
+        # 20 x 189.20, not 20 x 202.10.
+        assert q.subtotal == baht("3784.00")
+        # The caller's two lines survive; only the price is shared.
+        assert [line.quantity for line in q.lines] == [10, 10]
+        assert [line.unit_price for line in q.lines] == [baht("189.20")] * 2
+        assert all(line.tier_applied.min_qty == 20 for line in q.lines)
+
 
 class TestQuantityValidation:
     @pytest.mark.parametrize("bad", [0, -1])

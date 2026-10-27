@@ -494,6 +494,36 @@ class TestMultiLine:
         assert body["outcome"] == "quoted"
         assert body["figures"]["lines"][0]["sku"] == "PL-CP-A4-80"
 
+    def test_a_sku_split_across_lines_reaches_its_tier(self, client):
+        # BUG.md A26. 10 + 10 of one SKU is 20 of that SKU, and the 20+ tier is
+        # the item's, not the line's. Before the fix the split order paid the
+        # 5+ price twice: 4,042.00 against 3,784.00 for the same basket.
+        one = client.post("/api/quote/lines", json={"lines": [
+            {"sku": "PL-PR-A4-GL-100-40", "quantity": 20},
+        ]}).json()
+        split = client.post("/api/quote/lines", json={"lines": [
+            {"sku": "PL-PR-A4-GL-100-40", "quantity": 10},
+            {"sku": "PL-PR-A4-GL-100-40", "quantity": 10},
+        ]}).json()
+        assert split["figures"]["subtotal"] == one["figures"]["subtotal"]
+        # The caller's two lines survive: the structure is theirs, the price is
+        # the item's.
+        units = [line["unit_price"] for line in split["figures"]["lines"]]
+        assert units == [one["figures"]["lines"][0]["unit_price"]] * 2
+        assert [line["quantity"] for line in split["figures"]["lines"]] == [10, 10]
+
+    def test_splitting_a_sku_never_costs_more_than_one_line(self, client):
+        # The direction matters: the pre-fix bug charged the customer more for
+        # having ordered the same thing in two lines.
+        one = client.post("/api/quote/lines", json={"lines": [
+            {"sku": "PL-PR-A4-GL-100-40", "quantity": 20},
+        ]}).json()
+        split = client.post("/api/quote/lines", json={"lines": [
+            {"sku": "PL-PR-A4-GL-100-40", "quantity": 15},
+            {"sku": "PL-PR-A4-GL-100-40", "quantity": 5},
+        ]}).json()
+        assert split["figures"]["total"] == one["figures"]["total"]
+
 
 # ---------------------------------------------------------------------------
 # docs/api.md (6.8)
