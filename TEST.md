@@ -18,7 +18,7 @@ So the strategy has two rules that are not negotiable:
 
 ## Test layers
 
-Five layers, each answering a different question. They are deliberately separate, because a failure in one should not be attributable to another.
+Eight layers, each answering a different question. They are deliberately separate, because a failure in one should not be attributable to another.
 
 | Layer | Question it answers | Runs without network | Runs without model |
 |---|---|---|---|
@@ -27,6 +27,9 @@ Five layers, each answering a different question. They are deliberately separate
 | 3. Integration | Does the whole path produce this quote? | yes (fixtures) | yes for `/quote` |
 | 4. Refresh verification | Does a declared mutation of the site get reported correctly? | loopback only | yes |
 | 5. Evaluation | Does the system answer these 28 real requests correctly? | no (needs model for `/chat` cases) | partially |
+| 6. Semantic tiebreak | Does similarity reorder without changing which products qualify? | no (needs an embedding provider) | yes |
+| 7. Observability | Can each recorded measure be shown to move when it should? | yes | yes |
+| 8. Conversation memory | Is a turn merged, disclosed and numbered the way the rule says? | yes | yes |
 
 Of the 28 recorded cases, **24 run against v1** and **4 run against v2** — cases 21 (discontinued), 22 (injected instruction), 23 (`28 lb`) and 24 (`32 lb`). v1 has zero discontinued items (T4), no prompt injection, and no `28 lb` or `32 lb` product (T7); the mutated v2 catalog that `./run.sh verify-refresh` builds has all four, so those cases now **run and pass** there rather than being marked inapplicable.
 
@@ -221,6 +224,94 @@ No network. The layer is built around one question: **can this metric fail?**
 - Stage timings sum to no more than the total, each is non-negative, and a stage that did not run is `0.0` rather than absent
 - The eval log and the live log are separate files, and two harness runs are told apart by `run_id` — so re-running the harness, or running the negative control, cannot change what the next read reports
 
+### Layer 8 — Conversation memory
+
+`tests/test_conversation.py`, `tests/test_conversation_api.py`,
+`tests/test_conversation_eval.py`, plus `tests/test_single_turn_unchanged.py`. No
+network, no model.
+
+A conversation is the one place where the reply for one request depends on an
+earlier request, so the layer is built around the two ways that can go wrong: a
+turn that should have continued and did not, and a turn that should not have
+inherited something and did.
+
+- **The merge rule, field by field.** The current turn's value wins where it
+  stated one; the conversation's is used where it did not. A subject — category or
+  size — replaces the criteria; a refinement does not
+- **Weight is not a subject.** *Make it 100 gsm* adjusts the paper under
+  discussion rather than naming a new one — the first version of the rule got this
+  wrong and discarded the size, which is recorded in `docs/conversation-memory.md`
+- **A bare number is a quantity only in a refinement.** *A4 80gsm* must not become
+  quantity 80, and a bare number in a turn that also states a budget resolves to
+  *not stated* rather than quoting 130 reams
+- **The reply discloses what it remembered**, name for name, and a fresh request
+  says nothing about earlier turns
+- **Nothing that is not remembered is called remembered.** A restated field is not
+  a carried field
+- **No request text is stored**, asserted by iterating every string the store holds
+  — inspection of the guarantee, not of the schema
+- **The turn number always advances** past the retained-turn cap (`BUG.md` A14):
+  25 turns number 1…25, and the CLI reports turn 22 at 22
+- **A first turn that states only a quantity, or only a budget, is still a
+  continuation basis** (`BUG.md` A12), so the next turn extends it
+- **A turn that understood nothing is answered fresh but does not erase the
+  conversation** (`BUG.md` A13): the turn is answered from an empty request and is
+  still recorded, and the next turn continues from the last thing actually asked
+- **The single-turn path is byte-identical to before the feature existed.**
+  `tests/test_single_turn_unchanged.py` pins a SHA-256 of every case's
+  `{outcome, text}`, recorded from the commit before conversation memory
+  (`d4a67db`). A digest failure is not "update the digest" — it is "which reply
+  changed, and why"
+
+The harness is shown able to fail: `eval/conversation-negative-control.json` is
+five conversations each wrong in exactly one way — a quantity not carried, a new
+subject wrongly inheriting, a missing disclosure, a restated field called
+remembered, a wrong outcome — and the run exits 1 with all five rejected. The
+three `BUG.md` regressions (A12, A13, A14) were each proven falsifiable by
+reverting the fix and watching the corresponding case fail, then restoring it.
+
+The pricing axis of a conversation case compares a fresh turn against the
+standalone run of the same request, and both go through the same code, so it is
+**not** falsifiable from a case file and is not claimed to be; a `quoted` outcome
+carrying a total is checked structurally instead.
+
+## Test module inventory
+
+25 modules, gathered by `--collect-only`. Counts are tests, not lines. The layer column names a module's **primary** layer; several span more than one (for example `test_api.py` exercises the conversation wiring as well as the quote path).
+
+| Module | Tests | Layer |
+|---|---|---|
+| `test_aliases.py` | 99 | 1 |
+| `test_api.py` | 68 | 3 |
+| `test_ask_cli.py` | 32 | 3 |
+| `test_assistant.py` | 67 | 3 |
+| `test_catalog.py` | 48 | 3 |
+| `test_conversation.py` | 63 | 8 |
+| `test_conversation_api.py` | 35 | 8 |
+| `test_conversation_eval.py` | 19 | 8 |
+| `test_crawl.py` | 13 | 2 |
+| `test_embeddings.py` | 66 | 6 |
+| `test_evaluate.py` | 52 | 5 |
+| `test_extract.py` | 49 | 2 |
+| `test_hygiene.py` | 13 | 7 |
+| `test_ingest.py` | 14 | 2 |
+| `test_metrics.py` | 59 | 7 |
+| `test_model.py` | 42 | 3 |
+| `test_money.py` | 25 | 1 |
+| `test_mutate.py` | 77 | 4 |
+| `test_normalize.py` | 37 | 1 |
+| `test_observability_api.py` | 37 | 7 |
+| `test_pricing.py` | 49 | 1 |
+| `test_records.py` | 73 | 7 |
+| `test_search.py` | 40 | 1 |
+| `test_semantic_api.py` | 15 | 6 |
+| `test_single_turn_unchanged.py` | 3 | 8 |
+| **Total** | **1095** | |
+
+Online: 1095 collected, 4 skip (provider- and loopback-dependent). Offline
+(`unshare -rn`): 1095 collected, 7 skip — the same four plus the three loopback
+tests that legitimately cannot run without a network interface.
+
 ## What is tested where
 
 | Requirement area | Unit | Extraction | Integration | Evaluation |
@@ -249,6 +340,11 @@ No network. The layer is built around one question: **can this metric fail?**
 | Untrusted text | | ● | ● | ● |
 | Mutated-site refresh verification | | | ● | |
 | Observability: records, metrics, no credentials | ● | | ● | ● |
+| Conversation merge rule, field by field | ● | | ● | ● |
+| Disclosure of what was remembered | ● | | ● | ● |
+| Turn numbering past the retained cap | ● | | ● | |
+| Single-turn replies unchanged (digest) | ● | | | |
+| Conversation negative control rejected | ● | | | |
 
 ## Deliberately not tested
 
@@ -259,12 +355,14 @@ No network. The layer is built around one question: **can this metric fail?**
 | Load and concurrency beyond read-only serving | Single local user. One test asserts concurrent reads succeed against a consistent snapshot. |
 | Live network availability during unit tests | Tests must pass offline. Network is exercised only by a real ingest, and loopback-only by `verify-refresh` (whose loopback tests skip when loopback is down). |
 | Browser rendering | The reply is plain text by design (see `DESIGN.md`). |
+| A conversation's pricing axis from a case file | A fresh turn is compared against the standalone run of the same request, and both call the same pricing code, so the axis cannot disagree with itself. It is checked structurally instead — `quoted` must carry a total. Claiming a case file proves it would be false. |
 
 ## Running the tests
 
 ```
-./run.sh test             # 937 tests: unit + extraction + integration + observability; offline, no model
+./run.sh test             # 1095 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot
+./run.sh eval --cases eval/conversation-cases.json   # 11 conversations, 24 turns
 ./run.sh metrics          # the five operational measures, derived from request records
 ./run.sh metrics --eval   # the same measures over the most recent evaluation run
 ./run.sh verify-refresh   # mutate a copy of the site, refresh against it, verify (~55s)
@@ -272,8 +370,12 @@ No network. The layer is built around one question: **can this metric fail?**
 
 The unit and integration layers must pass with the network disconnected and no credentials present. If a test needs either, it belongs in the evaluation layer instead.
 
+Two layers are scored by their own harness rather than by pytest: the 28-case evaluation (`./run.sh eval`, 24 run against v1, 4 against v2) and the conversation set (`./run.sh eval --cases eval/conversation-cases.json`, 11 conversations / 24 turns, with a single-turn replay digest across the 22 comparable cases). Both have a negative control that exits 1.
+
 ## Regression policy
 
 - A bug found during the demo round becomes a test before it becomes a fix.
 - A changed expectation is only legitimate if it was recomputed from source. If the recomputation and the old expectation disagree, one of them is a finding — establish which before changing anything.
 - The extraction fixtures are copies of real pages. When the site changes shape, add a fixture; do not edit an existing one to match.
+
+Three bugs found by probing the running service after the conversation-memory feature shipped are recorded in `BUG.md` Part 2b and follow this policy: A12 (a first turn that states only a quantity or only a budget), A13 (a turn that understood nothing erased the conversation), A14 (the turn number saturated at the retained cap). Each was registered before being fixed, each arrived with a test **and** a falsification check — the fix was reverted, the new test and eval case were confirmed to fail, and the fix restored. All three are FIXED, and Part 2b has no open entries.
