@@ -39,7 +39,7 @@ from .embeddings import (
     SemanticScorer,
 )
 from .money import Money
-from .pricing import PriceFacts, applied_tier, unit_price
+from .pricing import PriceFacts, applied_tier, comparable_unit_price, unit_price
 
 #: Ranking criteria, in priority order. The tuple is the sort key, so its order
 #: *is* the ranking rule and a test asserts the documented chain matches it.
@@ -319,9 +319,12 @@ def _evaluate(
             product.get("colour_mode") or "",
         ))
 
-    # --- budget at the requested quantity (PR6) ------------------------
+    # --- budget at the requested quantity (PR6, PR7) --------------------
     if criteria.budget_per_unit is not None:
-        unit = unit_price(facts, quantity)
+        # The comparison honours the stated basis: an inclusive ceiling is
+        # compared against the VAT-inclusive price, so "including VAT" is a rule
+        # and not a label (BUG.md A21).
+        unit = comparable_unit_price(facts, quantity, criteria.budget_basis)
         if unit > criteria.budget_per_unit:
             return False, ()
         tier = applied_tier(facts, quantity)

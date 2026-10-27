@@ -150,12 +150,29 @@ unit price exactly equal to the budget is within budget.
 
 **Requirement:** `pricing-engine` → "Budget comparison uses the unit price at the
 requested quantity, before tax"
-**Code:** `pricing.BudgetCheck.basis`, `.describe()`
+**Code:** `interpret._budget_basis`, `pricing.comparable_unit_price`,
+`pricing.BudgetCheck.basis`
 
-`BudgetCheck` carries a `basis` string defaulting to `"per pack, before VAT"`,
-and `describe()` always includes it. The reply therefore always states the
-assumption, so a customer who meant *including* VAT can correct it. The basis is
-a field, not a footnote — it travels with the verdict.
+The basis is **parsed from what the customer said, then applied**.
+
+- `interpret._budget_basis` assembles it from two independent questions — the
+  unit word (*pack*, *ream*, *sheet*) and the VAT qualifier (*"including VAT"*,
+  *"inclusive of VAT"*, *"incl. VAT"*). They were once one ordered list of
+  alternatives, which meant *"a pack including VAT"* matched the unit word first
+  and the qualifier was silently dropped (BUG.md A20).
+- `pricing.comparable_unit_price` returns the price the budget is compared
+  **against**: the ex-VAT unit price by default (PR6), or the VAT-inclusive one
+  when the stated basis says so. One function, so the engine, the search filter
+  and the clarification rule cannot disagree about what "within budget" means
+  (BUG.md A21).
+
+`BudgetCheck` carries the same `basis` string and `describe()` always includes
+it, so the reply always states the assumption it used. `unit_price` on the result
+is the number actually compared — 233.20 for an ex-VAT basis, 249.52 for an
+inclusive one on the same pack at 20.
+
+The default when the customer states nothing is `"per pack, before VAT"`, which
+is PR7's assumption and PR6's rule.
 
 ---
 

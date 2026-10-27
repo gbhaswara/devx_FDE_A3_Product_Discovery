@@ -426,3 +426,24 @@ class TestBudgetAtQuantity:
     def test_quantity_defaults_to_one(self):
         result = run(Criteria(size_code="A5"))
         assert result.matches[0].quantity == 1
+
+    def test_an_inclusive_budget_excludes_an_over_item(self):
+        # BUG.md A21. 233.20 at qty 20 is 249.52 once VAT is included, so a
+        # 240.00 inclusive ceiling excludes it. The basis was a label only, so
+        # search kept the item and the reply quoted it.
+        criteria = Criteria(
+            size_code="LTR",
+            budget_per_unit=b("240.00"),
+            budget_basis="per pack, including VAT",
+        )
+        result = run(criteria, quantity=20)
+        assert "PL-PR-LTR-GL-130-40" not in {c.sku for c in result.matches}
+
+    def test_an_inclusive_budget_includes_a_wider_ceiling(self):
+        criteria = Criteria(
+            size_code="LTR",
+            budget_per_unit=b("250.00"),
+            budget_basis="per pack, including VAT",
+        )
+        result = run(criteria, quantity=20)
+        assert "PL-PR-LTR-GL-130-40" in {c.sku for c in result.matches}

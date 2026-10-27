@@ -227,7 +227,7 @@ def _quantity_changes_the_answer(
     if criteria.budget_per_unit is None:
         return False
 
-    from .pricing import unit_price
+    from .pricing import comparable_unit_price
 
     budget = criteria.budget_per_unit
 
@@ -244,7 +244,7 @@ def _quantity_changes_the_answer(
             facts = _facts_for(product)
             if facts is None:
                 continue
-            if unit_price(facts, quantity) <= budget:
+            if comparable_unit_price(facts, quantity, criteria.budget_basis) <= budget:
                 passing.add(product["sku"])
         return passing
 
@@ -734,6 +734,9 @@ def _quote_reply(
         check = check_budget(
             best.facts, quantity, criteria.budget_per_unit, basis=criteria.budget_basis
         )
+        # The number the budget was actually compared against: the ex-VAT unit
+        # price, or the VAT-inclusive one when the customer stated that basis.
+        allowed.add(check.unit_price.format())
         allowed.add(check.difference.format().lstrip("-"))
     text, mismatches = check_figures_match(text, allowed)
     errors.extend(mismatches)

@@ -45,13 +45,36 @@ _BUDGET_PATTERNS = (
     re.compile(r"([\d,]+(?:\.\d+)?)\s*(?:thb|baht)\s*(?:max|max\.|or less)", re.I),
 )
 
-#: "a pack", "per pack", "each pack" — the basis of a budget.
-_BASIS_PATTERNS = (
-    (re.compile(r"\b(?:per|a|each)\s+pack\b", re.I), "per pack, before VAT"),
-    (re.compile(r"\b(?:per|a|each)\s+ream\b", re.I), "per ream, before VAT"),
-    (re.compile(r"\b(?:per|a|each)\s+sheet\b", re.I), "per sheet, before VAT"),
-    (re.compile(r"\bincluding\s+vat\b", re.I), "per pack, including VAT"),
+#: The unit a budget is stated against, and the VAT qualifier on it. The unit is
+#: matched first and the VAT qualifier separately, because "a pack including VAT"
+#: contains *both* — testing them as one ordered list of alternatives made the
+#: unit word win and silently dropped the qualifier the customer added (BUG.md
+#: A20).
+_UNIT_PATTERNS = (
+    (re.compile(r"\b(?:per|a|each)\s+pack\b", re.I), "per pack"),
+    (re.compile(r"\b(?:per|a|each)\s+ream\b", re.I), "per ream"),
+    (re.compile(r"\b(?:per|a|each)\s+sheet\b", re.I), "per sheet"),
 )
+
+#: "including VAT", "inclusive of VAT", "incl. VAT", "inc VAT". The absence of
+#: any of these is the PR7 default: budgets exclude VAT unless stated otherwise.
+_INCLUSIVE_VAT = re.compile(
+    r"\b(?:incl|inc|including|inclusive)\b[^.]{0,12}?\bvat\b", re.I
+)
+
+#: The basis when the customer said nothing, and the one the brief assumes (PR7).
+DEFAULT_BASIS = "per pack, before VAT"
+
+
+def _budget_basis(text: str) -> str:
+    """The basis to state, assembled from the unit word and the VAT qualifier."""
+    unit = "per pack"
+    for pattern, label in _UNIT_PATTERNS:
+        if pattern.search(text):
+            unit = label
+            break
+    qualifier = "including VAT" if _INCLUSIVE_VAT.search(text) else "before VAT"
+    return f"{unit}, {qualifier}"
 
 
 def parse_quantity(text: str) -> int | None:
@@ -75,7 +98,7 @@ def parse_budget(text: str) -> tuple[Money | None, str]:
     conflated — the budget is compared at the quantity, not at one unit.
     """
     if not text:
-        return None, "per pack, before VAT"
+        return None, DEFAULT_BASIS
 
     for pattern in _BUDGET_PATTERNS:
         m = pattern.search(text)
@@ -86,14 +109,9 @@ def parse_budget(text: str) -> tuple[Money | None, str]:
             amount = Decimal(raw)
         except Exception:  # noqa: BLE001
             continue
-        basis = "per pack, before VAT"
-        for basis_pattern, label in _BASIS_PATTERNS:
-            if basis_pattern.search(text):
-                basis = label
-                break
-        return Money.from_baht(amount), basis
+        return Money.from_baht(amount), _budget_basis(text)
 
-    return None, "per pack, before VAT"
+    return None, DEFAULT_BASIS
 
 
 def interpret_rules(text: str) -> Criteria:

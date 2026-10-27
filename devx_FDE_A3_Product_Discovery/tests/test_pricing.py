@@ -401,6 +401,22 @@ class TestBudget:
         )
         assert "including VAT" in check.describe()
 
+    def test_inclusive_basis_compares_the_gross_price(self):
+        # BUG.md A21. The 20+ tier is 233.20 *before* VAT; the same pack is
+        # 249.52 including it, which is over a 240.00 inclusive ceiling. Carrying
+        # the basis as a label while comparing ex-VAT quoted the item anyway.
+        check = check_budget(
+            LTR_FLYER_130, 20, baht("240.00"), basis="per pack, including VAT"
+        )
+        assert check.unit_price == baht("249.52")
+        assert check.within_budget is False
+
+    def test_inclusive_basis_still_passes_under_the_ceiling(self):
+        check = check_budget(
+            LTR_FLYER_130, 20, baht("250.00"), basis="per pack, including VAT"
+        )
+        assert check.within_budget is True
+
     def test_difference_is_quantified(self):
         check = check_budget(A5_FLYER, 1, baht("60.00"))
         assert check.within_budget is False

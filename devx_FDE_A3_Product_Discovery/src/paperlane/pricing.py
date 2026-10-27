@@ -274,6 +274,30 @@ class BudgetCheck:
         )
 
 
+def _basis_includes_vat(basis: str) -> bool:
+    """Whether a stated basis compares against the VAT-inclusive price.
+
+    PR6 fixes the comparison at *before VAT*; PR7 lets the customer say
+    otherwise, and when they do the comparison must honour it rather than merely
+    echo the label back (BUG.md A21).
+    """
+    lowered = basis.lower()
+    return "including vat" in lowered or "inclusive" in lowered
+
+
+def comparable_unit_price(facts: PriceFacts, quantity: int, basis: str) -> Money:
+    """The per-unit price a budget should be compared against, given its basis.
+
+    One function, so the pricing engine, the search filter and the clarification
+    rule cannot disagree about what "within budget" means. Returning the gross
+    price here is what makes the basis a *rule* rather than a footnote.
+    """
+    unit = unit_price(facts, quantity)
+    if _basis_includes_vat(basis):
+        return unit + percent_of(unit, VAT_RATE)
+    return unit
+
+
 def check_budget(
     facts: PriceFacts,
     quantity: int,
@@ -293,8 +317,12 @@ def check_budget(
     Comparing against the list price gets the brief's own example wrong. The
     bound is inclusive: PR6 says "maximum price per pack", so a unit price
     exactly equal to the budget is within budget.
+
+    When the customer states an inclusive basis the comparison is against the
+    gross price, so ``unit_price`` on the result is the number actually compared
+    (233.20 before VAT, 249.52 including it).
     """
-    unit = unit_price(facts, quantity)
+    unit = comparable_unit_price(facts, quantity, basis)
     return BudgetCheck(
         budget=budget,
         unit_price=unit,

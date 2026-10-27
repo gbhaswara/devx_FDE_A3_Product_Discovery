@@ -213,6 +213,20 @@ class TestRuleInterpretation:
         _, basis = parse_budget("under 250 per ream")
         assert "ream" in basis
 
+    def test_a_vat_qualifier_beats_the_unit_word(self):
+        # BUG.md A20. "a pack including VAT" says *including*; the unit pattern
+        # matched first and the reply stated the opposite assumption.
+        _, basis = parse_budget("letter flyers, under 240 a pack including VAT, 20 packs")
+        assert basis == "per pack, including VAT"
+
+    def test_a_vat_qualifier_combines_with_the_unit_word(self):
+        _, basis = parse_budget("under 60 per ream including VAT")
+        assert basis == "per ream, including VAT"
+
+    def test_an_exclusive_qualifier_stays_before_vat(self):
+        _, basis = parse_budget("under 240 a pack excluding VAT")
+        assert basis == "per pack, before VAT"
+
     def test_no_budget(self):
         assert parse_budget("A4 paper") == (None, "per pack, before VAT")
 

@@ -35,8 +35,15 @@ from paperlane.interpret import interpret_rules, validate
 
 #: SHA-256 of the JSON of every case's {outcome, text}, sorted and compact.
 #: Recorded from the tree at `d4a67db`, before conversation memory existed.
+#:
+#: **Retaken 2026-10-27** for the PR7 fix (BUG.md A21), which is not a memory
+#: change: case 18 (*"budget 1500 including VAT"*) now compares against the
+#: VAT-inclusive unit price, so its reply states 111.96 where it stated 104.64.
+#: Case 18 is the only one of the 28 whose reply changed, and it changed because
+#: the basis is now applied rather than labelled. Every other case is unchanged,
+#: which is the property this digest exists to protect.
 PRE_CHANGE_DIGEST = (
-    "25dfa99c58af3d6765d9eac11bcec211680a4169e7e257444f10f44e4619a431"
+    "bc42a65324ddac01110b48e4ffe7afdf53704f31ecaa1d6f086e2e32fdd256b7"
 )
 
 

@@ -259,7 +259,7 @@ reproducible byte for byte.
 | `sides` | `single`/`double` or `one-sided`/`two-sided` |
 | `quantity` | 1–100000, default 1 |
 | `budget_per_unit` | decimal baht; compared at the requested quantity |
-| `budget_basis` | free text, default `per pack, before VAT` |
+| `budget_basis` | free text, default `per pack, before VAT`; a basis containing `including VAT` compares against the VAT-inclusive price (PR7) |
 
 Vocabulary is **resolved, not trusted**. `"size": "letter"` and `"size": "LTR"`
 reach the same product, because the two entry points must not disagree about the

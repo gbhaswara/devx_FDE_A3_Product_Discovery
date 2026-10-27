@@ -635,15 +635,19 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · REGISTERED, OPEN
+## Part 2c — Gaps found by the brief audit · A20–A21 FIXED, A22 FIXED
 
-Three requirements that PR6–PR8 state and the shipped code does not yet meet.
-They were found by a compliance audit against `00_START_HERE_All_Briefs.md`,
-probing the running service rather than reading the modules — the same method as
+Three requirements that PR6–PR8 state and the shipped code did not meet. They
+were found by a compliance audit against `00_START_HERE_All_Briefs.md`, probing
+the running service rather than reading the modules — the same method as
 A12–A19. Each was reproduced before being written down, with the reproduction in
 `/tmp/opencode/a3-gap-probe.py`. Registered before being fixed, per the rule at
-the end of this file; the status changes to FIXED only when the guard named in
-its entry has been seen to fail first and then pass.
+the end of this file; each entry below now carries the failing run it was seen
+to produce first, and the verification that closed it.
+
+A20 and A21 were fixed together — they are one requirement (PR7) failing at two
+stages — and A22 separately. Both fixes were checked against the full suite,
+`./run.sh eval`, and the single-turn digest.
 
 ### A20 — A budget's basis is read by pattern order, not by what the customer said
 
@@ -662,9 +666,24 @@ was used**; here it states the opposite of the one the customer gave.
 the ceiling they gave was interpreted the way they meant. Stating `before VAT`
 for an inclusive budget is worse than stating nothing: it is confidently wrong.
 
-**Falsification.** `TestBudgetBasis::test_a_vat_qualifier_beats_the_unit_word`
+**Falsification.** `TestRuleInterpretation::test_a_vat_qualifier_beats_the_unit_word`
 and `test_a_vat_qualifier_combines_with_the_unit_word`, both calling
-`parse_budget` directly. Both fail against the current `_BASIS_PATTERNS` order.
+`parse_budget` directly. Both failed against the old `_BASIS_PATTERNS` order:
+
+```
+FAILED TestRuleInterpretation::test_a_vat_qualifier_beats_the_unit_word
+FAILED TestRuleInterpretation::test_a_vat_qualifier_combines_with_the_unit_word
+```
+
+**Fix.** The single ordered list is split into two independent questions.
+`_UNIT_PATTERNS` still resolves the unit word; `_INCLUSIVE_VAT` matches the VAT
+qualifier on its own; `_budget_basis` composes them (`"per pack, including VAT"`,
+`"per ream, including VAT"`, else `before VAT`). A qualifier can no longer be
+swallowed by the unit word, because they are no longer alternatives in one scan.
+
+**Verification.** All four basis tests pass: the two above, an exclusive
+qualifier (`"excluding VAT"` stays `before VAT`), and the original ream case.
+`./run.sh eval` 24/24 unchanged.
 
 ### A21 — An inclusive-VAT budget is labelled, never applied
 
@@ -685,9 +704,33 @@ wrong number — reached from the other direction. The arithmetic is exact; the
 number it is exact about is the wrong number.
 
 **Falsification.** `TestBudget::test_inclusive_basis_compares_the_gross_price`
-(pricing) and `TestBudgetFilter::test_an_inclusive_budget_excludes_an_over_item`
-(search). Both assert `within_budget is False` for a gross price over the
-ceiling and both fail against the current comparison.
+(pricing), `test_inclusive_basis_still_passes_under_the_ceiling` (the bound stays
+inclusive), and `TestBudgetAtQuantity::test_an_inclusive_budget_excludes_an_over_item`
+(search). The first and third failed against the old comparison:
+
+```
+FAILED TestBudget::test_inclusive_basis_compares_the_gross_price
+E  assert Money(satang=23320) == Money(satang=24952)
+FAILED TestBudgetAtQuantity::test_an_inclusive_budget_excludes_an_over_item
+E  assert 'PL-PR-LTR-GL-130-40' not in {'PL-PR-LTR-GL-130-40'}
+```
+
+**Fix.** `pricing.comparable_unit_price(facts, quantity, basis)` returns the price
+the budget is compared against — the ex-VAT unit price, or the VAT-inclusive one
+when the basis says so. `check_budget` compares that, and `search._evaluate` and
+`assistant._quantity_changes_the_answer` both call the same function instead of
+`unit_price`, so the filter, the reply and the clarification rule agree by
+construction rather than by three copies of the same condition. `BudgetCheck`
+keeps the field it compared (`check.unit_price`), so the number in the reply is
+the number that was tested.
+
+**Verification.** All the above pass, plus the original PR6 cases at an exclusive
+basis (unchanged). One evaluation reply changed, as intended: case 18 (*"budget
+1500 including VAT"*) now states 111.96, the VAT-inclusive figure it compared,
+where it stated 104.64. The single-turn digest was retaken with that
+justification recorded in `tests/test_single_turn_unchanged.py`, and case 18 is
+the only one of the 28 whose reply differs. `./run.sh eval` 24/24; `./run.sh
+test` 1203 passed, 3 skipped.
 
 ### A22 — The multi-line endpoint quotes an out-of-stock item as available
 
