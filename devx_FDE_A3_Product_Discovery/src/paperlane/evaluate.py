@@ -65,8 +65,14 @@ DEFAULT_CASES_PATH = Path(__file__).resolve().parents[2] / "eval" / "cases.json"
 V1 = "v1"
 V2 = "v2"
 
-#: The four axes. Reported separately, always in this order.
-AXES = ("retrieval", "match", "pricing", "reply")
+#: The axes. Reported separately, always in this order.
+#:
+#: ``interpretation`` comes first because it is the earliest thing that can go
+#: wrong. Validating criteria is not the same as validating the *reading* of
+#: them: an A4 request misread as A3 produces typed, valid criteria and a
+#: perfectly correct quote for the wrong request. Without this axis that shows up
+#: as a retrieval failure, which names the symptom and hides the cause.
+AXES = ("interpretation", "retrieval", "match", "pricing", "reply")
 
 #: Axis outcomes. ``n/a`` is distinct from ``pass`` and from ``fail``: it means
 #: the axis could not be assessed for this case, and saying so is the honest
@@ -217,6 +223,17 @@ class Case:
     expect_skus: tuple[str, ...] = ()
     #: Expected questions, by field, for a clarification.
     expect_questions: tuple[str, ...] = ()
+    #: The criteria the request must be *understood as*. A declared subset, not
+    #: the engine's full output: recording `criteria.describe()` here would be
+    #: transcribing the engine's answer into its own expectation, which is the
+    #: anti-pattern `recompute_totals` avoids for money. Only the fields that
+    #: carry the case's meaning are listed.
+    expect_criteria: dict[str, Any] = field(default_factory=dict)
+    #: Fields the request must NOT produce. This is the mirror of the subset and
+    #: catches an *invented* requirement — "under 250 a pack" must not become
+    #: "80 gsm or lighter", which is a defect the system already guards against
+    #: and which a subset check alone would not see.
+    expect_absent_criteria: tuple[str, ...] = ()
     #: Expected figures. Recomputed from the catalog at run time, then compared
     #: with what the engine produced.
     expect_lines: tuple[dict[str, Any], ...] = ()
@@ -288,6 +305,8 @@ class Case:
             "skus": self.expect_skus,
             "questions": self.expect_questions,
             "relaxed": self.expect_relaxed,
+            "criteria": self.expect_criteria,
+            "absent_criteria": self.expect_absent_criteria,
         }
         if override:
             base.update(override)
@@ -308,6 +327,10 @@ def load_cases(path: Path | None = None) -> list[Case]:
             expect_outcome=entry["expect"]["outcome"],
             expect_skus=tuple(entry["expect"].get("skus", ())),
             expect_questions=tuple(entry["expect"].get("questions", ())),
+            expect_criteria=dict(entry["expect"].get("criteria", {})),
+            expect_absent_criteria=tuple(
+                entry["expect"].get("absent_criteria", ())
+            ),
             expect_lines=tuple(entry.get("lines", ())),
             expect_relaxed=entry["expect"].get("relaxed"),
             not_applicable=entry.get("not_applicable"),
@@ -371,6 +394,71 @@ def _scoring_products(result: "CaseResult") -> list[dict[str, Any]]:
     catalog "invented" — a false failure that looks like a hallucinated reply.
     """
     return result.products if result.products is not None else catalog.load_products()
+
+
+def _score_interpretation(case: Case, result: CaseResult) -> str:
+    """Did we read the request as the customer meant it?
+
+    Validating criteria is not the same as validating the reading of them. Every
+    criterion can be typed, in range, and drawn from a known vocabulary while the
+    *set* of them is wrong: an A4 request understood as A3 produces a valid quote
+    for something nobody asked for. That is the failure this axis exists to name,
+    and no other axis can, because the answer is internally consistent.
+
+    Two directions, because they are different defects:
+
+    * a criterion the request implies but the reading misses — ``expect_criteria``
+      is a subset of the derived criteria;
+    * a criterion the request does not imply but the reading invents —
+      ``expect_absent_criteria`` must not appear at all. "under 250 a pack" must
+      not become "80 gsm or lighter".
+
+    The expectation is a declared subset rather than the engine's full output. A
+    transcription of ``criteria.describe()`` would be the engine agreeing with
+    itself, the same anti-pattern ``recompute_totals`` exists to avoid for money.
+
+    Reports ``n/a`` when a case records no expectation: it was not written to
+    test this, and counting that as a pass would inflate the axis.
+    """
+    if not case.expect_criteria and not case.expect_absent_criteria:
+        return NA
+
+    described = result.criteria
+    for field, want in case.expect_criteria.items():
+        got = described.get(field)
+        if _same_value(got, want):
+            continue
+        result.notes.append(
+            f"interpretation: {field} expected {want!r}, read as {got!r}"
+        )
+        return FAIL
+
+    invented = [f for f in case.expect_absent_criteria if f in described]
+    if invented:
+        result.notes.append(
+            f"interpretation: read {invented}, which the request does not state"
+        )
+        return FAIL
+
+    return PASS
+
+
+def _same_value(got: Any, want: Any) -> bool:
+    """Compare a derived criterion with an expected one, tolerantly.
+
+    Amounts arrive as formatted strings from the engine and are written in the
+    case file as strings, so an exact comparison is right. Ints and strings are
+    normalised so ``20`` and ``"20"`` agree without the case file having to know
+    the engine's spelling — while a genuinely different value still fails.
+    """
+    if isinstance(want, (int, float)) and not isinstance(want, bool):
+        try:
+            return int(got) == int(want)
+        except (TypeError, ValueError):
+            return False
+    if isinstance(got, str) and isinstance(want, str):
+        return got.strip() == want.strip()
+    return got == want
 
 
 def _score_retrieval(case: Case, result: CaseResult) -> str:
@@ -519,6 +607,8 @@ def _resolved_case(case: Case, catalog_name: str) -> Case:
         and tuple(effective["skus"]) == case.expect_skus
         and tuple(effective["questions"]) == case.expect_questions
         and effective["relaxed"] == case.expect_relaxed
+        and dict(effective["criteria"]) == case.expect_criteria
+        and tuple(effective["absent_criteria"]) == case.expect_absent_criteria
     ):
         return case
     return dataclasses.replace(
@@ -527,6 +617,8 @@ def _resolved_case(case: Case, catalog_name: str) -> Case:
         expect_skus=tuple(effective["skus"]),
         expect_questions=tuple(effective["questions"]),
         expect_relaxed=effective["relaxed"],
+        expect_criteria=dict(effective["criteria"]),
+        expect_absent_criteria=tuple(effective["absent_criteria"]),
     )
 
 
@@ -591,6 +683,7 @@ def run_case(case: Case, *, products=None, facts=None, strategy: str = "rules",
             for line in order.lines
         )
         result.axes = {
+            "interpretation": NA,
             "retrieval": _score_retrieval(case, result),
             "match": NA,
             "pricing": _score_pricing(case, result),
@@ -671,6 +764,7 @@ def run_case(case: Case, *, products=None, facts=None, strategy: str = "rules",
             )
 
     result.axes = {
+        "interpretation": _score_interpretation(case, result),
         "retrieval": _score_retrieval(case, result),
         "match": _score_match(case, result),
         "pricing": _score_pricing(case, result),
@@ -901,6 +995,8 @@ def _result_dict(result: CaseResult) -> dict[str, Any]:
             "outcome": result.case.expect_outcome,
             "skus": list(result.case.expect_skus),
             "total": (result.expected_figures or {}).get("total"),
+            "criteria": result.case.expect_criteria,
+            "absent_criteria": list(result.case.expect_absent_criteria),
         },
         "actual": {
             "outcome": result.outcome,
@@ -962,15 +1058,16 @@ def _render_text(payload: dict[str, Any], *, out: Any = None) -> None:
               "reported as not run.", file=out)
     print(file=out)
 
-    header = f"{'#':>3}  {'verdict':8} {'retr':5} {'match':5} {'price':5} {'reply':5}  request"
+    header = (f"{'#':>3}  {'verdict':8} {'interp':6} {'retr':5} {'match':5} "
+              f"{'price':5} {'reply':5}  request")
     print(header, file=out)
     print("-" * len(header), file=out)
     for case in payload["cases"]:
         axes = case["axes"]
         print(
             f"{case['number']:>3}  {case['verdict']:8} "
-            f"{axes['retrieval']:5} {axes['match']:5} "
-            f"{axes['pricing']:5} {axes['reply']:5}  {case['request'][:52]}",
+            f"{axes['interpretation']:6} {axes['retrieval']:5} {axes['match']:5} "
+            f"{axes['pricing']:5} {axes['reply']:5}  {case['request'][:50]}",
             file=out,
         )
     print(file=out)
@@ -993,7 +1090,7 @@ def _render_text(payload: dict[str, Any], *, out: Any = None) -> None:
           f"passed: {s['passed']}  failed: {s['failed']}", file=out)
     for axis in AXES:
         counts = s["by_axis"][axis]
-        print(f"  {axis:9} pass {counts[PASS]:>2}  fail {counts[FAIL]:>2}  "
+        print(f"  {axis:<14} pass {counts[PASS]:>2}  fail {counts[FAIL]:>2}  "
               f"n/a {counts[NA]:>2}", file=out)
     if s["not_run_numbers"]:
         print(f"  not run: {s['not_run_numbers']}", file=out)
@@ -1133,6 +1230,49 @@ def self_check(*, out: Any = None) -> int:
             outcome.skipped_reason is not None and outcome.verdict == "not run",
             outcome.skipped_reason or "",
         )
+
+    # --- a misread request must be caught, and only here ---------------
+    # Case 1 is the brief's own example. Its expected criteria are declared, so
+    # the axis has something to check; the corruption is the failure the axis
+    # exists for — a reading that is typed, valid and wrong for a different
+    # request.
+    case1 = cases[1]
+    misread = run_case(case1, products=products, facts=facts)
+    misread.criteria = dict(misread.criteria, size="A3")
+    misread.axes["interpretation"] = _score_interpretation(case1, misread)
+    report(
+        "a request read as a different size fails interpretation only",
+        misread.axes["interpretation"] == FAIL
+        and misread.axes["retrieval"] == PASS
+        and misread.axes["pricing"] == PASS
+        and misread.axes["reply"] == PASS,
+        f"interpretation={misread.axes['interpretation']} "
+        f"retrieval={misread.axes['retrieval']} pricing={misread.axes['pricing']}",
+    )
+
+    # The mirror defect: an invented requirement. "under 250 a pack" must not
+    # become a weight constraint, which is the documented near-miss the case
+    # records as absent.
+    invented_field = run_case(case1, products=products, facts=facts)
+    invented_field.criteria = dict(invented_field.criteria, weight_gsm=80)
+    invented_field.axes["interpretation"] = _score_interpretation(
+        case1, invented_field
+    )
+    report(
+        "an invented requirement fails interpretation",
+        invented_field.axes["interpretation"] == FAIL,
+        invented_field.notes[-1] if invented_field.notes else "",
+    )
+
+    # A case with no recorded criteria must be n/a, not a pass: counting the
+    # unexamined as correct is how an axis reports a clean sweep it did not earn.
+    unrecorded = run_case(cases[16], products=products, facts=facts)
+    unrecorded.axes["interpretation"] = _score_interpretation(cases[16], unrecorded)
+    report(
+        "a case with no recorded criteria is n/a, not a pass",
+        unrecorded.axes["interpretation"] == NA,
+        f"interpretation={unrecorded.axes['interpretation']}",
+    )
 
     # --- an invented product must be caught ---------------------------
     case4 = cases[4]

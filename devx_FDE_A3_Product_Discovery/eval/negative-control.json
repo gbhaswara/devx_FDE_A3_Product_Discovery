@@ -1,11 +1,12 @@
 {
   "_comment": [
-    "Negative control: the recorded set with three deliberate corruptions, one per",
+    "Negative control: the recorded set with four deliberate corruptions, one per",
     "checkable axis, used to show that the harness actually fails when it should.",
     "Run with: ./run.sh eval --cases eval/negative-control.json",
     "",
     "  case  4 - expected quantity moved off the 10+ tier boundary (10 -> 9)",
     "  case  6 - expected product set given an extra SKU (right price, wrong set)",
+    "  case 10 - expected weight moved off the lb->gsm conversion (75 -> 70)",
     "  case 14 - expected outcome flipped from no_match to quoted",
     "",
     "These are not real defects. They are a fixture proving the scoring detects",
@@ -29,6 +30,16 @@
           "PL-PR-LTR-MT-130-40",
           "PL-PR-LTR-GL-130-40",
           "PL-PR-LTR-MT-170-40"
+        ],
+        "criteria": {
+          "size": "LTR",
+          "sides": "single",
+          "colour_mode": "Full colour (CMYK)",
+          "quantity": 20,
+          "budget_per_unit": "250.00"
+        },
+        "absent_criteria": [
+          "weight_gsm"
         ]
       },
       "lines": [
@@ -52,6 +63,16 @@
           "PL-PR-LTR-MT-100-40",
           "PL-PR-LTR-GL-100-40",
           "PL-PR-LTR-MT-130-40"
+        ],
+        "criteria": {
+          "size": "LTR",
+          "sides": "single",
+          "colour_mode": "Full colour (CMYK)",
+          "quantity": 4,
+          "budget_per_unit": "250.00"
+        },
+        "absent_criteria": [
+          "weight_gsm"
         ]
       },
       "lines": [
@@ -73,7 +94,14 @@
         "outcome": "quoted",
         "skus": [
           "PL-PR-LTR-GL-170-40"
-        ]
+        ],
+        "criteria": {
+          "size": "LTR",
+          "weight_gsm": 170,
+          "finish": "Gloss",
+          "sides": "single",
+          "quantity": 20
+        }
       },
       "lines": [
         {
@@ -96,7 +124,12 @@
           "PL-CP-A4-80-NUSA",
           "PL-CP-A4-80-ECO",
           "PL-CP-A4-80"
-        ]
+        ],
+        "criteria": {
+          "size": "A4",
+          "weight_gsm": 80,
+          "quantity": 10
+        }
       },
       "lines": [
         {
@@ -121,7 +154,12 @@
           "PL-CP-A4-80-NUSA",
           "PL-CP-A4-80",
           "PL-CP-A4-80-ECO"
-        ]
+        ],
+        "criteria": {
+          "size": "A4",
+          "weight_gsm": 80,
+          "quantity": 50
+        }
       },
       "lines": [
         {
@@ -145,7 +183,11 @@
         "skus": [
           "PL-CP-A5-80",
           "PL-CP-A4-70"
-        ]
+        ],
+        "criteria": {
+          "size": "A5",
+          "quantity": 1
+        }
       },
       "lines": [
         {
@@ -168,7 +210,11 @@
         "outcome": "quoted",
         "skus": [
           "PL-CP-A5-80"
-        ]
+        ],
+        "criteria": {
+          "size": "A5",
+          "quantity": 3
+        }
       },
       "lines": [
         {
@@ -191,7 +237,12 @@
         "outcome": "quoted",
         "skus": [
           "PL-PH-A4-230-GL"
-        ]
+        ],
+        "criteria": {
+          "size": "A4",
+          "weight_gsm": 230,
+          "finish": "Gloss"
+        }
       },
       "lines": [
         {
@@ -213,7 +264,12 @@
         "outcome": "quoted",
         "skus": [
           "PL-CS-A4-250-BLK"
-        ]
+        ],
+        "criteria": {
+          "size": "A4",
+          "weight_gsm": 250,
+          "colour_shade": "black"
+        }
       },
       "lines": [
         {
@@ -234,7 +290,10 @@
         "outcome": "quoted",
         "skus": [
           "PL-CP-LGL-20"
-        ]
+        ],
+        "criteria": {
+          "weight_gsm": 70
+        }
       },
       "lines": [
         {
@@ -257,7 +316,10 @@
           "PL-CP-LTR-90-NUSA",
           "PL-CP-LTR-24",
           "PL-CL-LTR-24-BRT"
-        ]
+        ],
+        "criteria": {
+          "weight_gsm": 90
+        }
       },
       "lines": [
         {
@@ -278,7 +340,11 @@
         "outcome": "refused",
         "skus": [
           "PL-CL-A4-100-IVY"
-        ]
+        ],
+        "criteria": {
+          "colour_shade": "ivory",
+          "weight_gsm": 100
+        }
       },
       "note": "PL-CL-A4-100-IVY matches every requirement but is out of stock until 20 November 2026. A refusal is not a non-match: the product exists and matches, it just cannot be ordered. No total is given."
     },
@@ -293,7 +359,11 @@
         "outcome": "refused",
         "skus": [
           "PL-PR-A4-GL-170-44"
-        ]
+        ],
+        "criteria": {
+          "sides": "double",
+          "weight_gsm": 170
+        }
       },
       "note": "The double-sided 170 gsm gloss A4 flyer is out of stock while the single-sided sibling is available. Variants are separate SKUs with separate stock."
     },
@@ -306,7 +376,14 @@
       ],
       "expect": {
         "outcome": "quoted",
-        "relaxed": "budget"
+        "relaxed": "budget",
+        "criteria": {
+          "quantity": 2,
+          "budget_per_unit": "60.00"
+        },
+        "absent_criteria": [
+          "weight_gsm"
+        ]
       },
       "note": "The cheapest flyer is 79.00, so nothing is under 60. The alternatives are presented as non-matches with an empty match_reasons list, and no total is given. This case was originally written as 'under 200', which returned 15 products and could never fail."
     },
@@ -321,6 +398,13 @@
         "outcome": "clarified",
         "questions": [
           "requirements"
+        ],
+        "absent_criteria": [
+          "size",
+          "weight_gsm",
+          "quantity",
+          "budget_per_unit",
+          "category"
         ]
       },
       "note": "No size, weight, category or quantity was stated. Asking is correct; guessing a default and quoting it would not be."
@@ -362,7 +446,11 @@
         "outcome": "quoted",
         "skus": [
           "PL-PR-A5-GL-130-44"
-        ]
+        ],
+        "criteria": {
+          "size": "A5",
+          "sides": "double"
+        }
       },
       "lines": [
         {
@@ -387,7 +475,13 @@
           "PL-CP-A4-80-NUSA",
           "PL-CP-A4-80-ECO",
           "PL-CP-A4-80"
-        ]
+        ],
+        "criteria": {
+          "size": "A4",
+          "quantity": 10,
+          "budget_per_unit": "1,500.00",
+          "budget_basis": "per pack, including VAT"
+        }
       },
       "lines": [
         {
@@ -411,6 +505,13 @@
         "outcome": "clarified",
         "questions": [
           "quantity"
+        ],
+        "criteria": {
+          "size": "LTR",
+          "budget_per_unit": "250.00"
+        },
+        "absent_criteria": [
+          "weight_gsm"
         ]
       },
       "note": "A budget with no quantity. Some LTR items are over 250 at qty 1 and under it at a volume tier, so the qualifying set differs by quantity and the question is worth asking."
@@ -435,7 +536,13 @@
           "PL-CL-A4-80-PPK",
           "PL-CL-A4-80-PYL",
           "PL-CL-A4-80-RED"
-        ]
+        ],
+        "criteria": {
+          "size": "A4",
+          "weight_gsm": 80,
+          "quantity": 1,
+          "budget_per_unit": "250.00"
+        }
       },
       "lines": [
         {
@@ -455,7 +562,12 @@
         "unavailable items"
       ],
       "expect": {
-        "outcome": "refused"
+        "outcome": "refused",
+        "criteria": {
+          "size": "A4",
+          "weight_gsm": 200,
+          "colour_shade": "white"
+        }
       },
       "not_applicable": "The v1 catalog has no discontinued products: all 72 SKUs are current. The behaviour runs against the mutated catalog, where PL-CS-A4-200-WH is discontinued.",
       "note": "Recorded as not applicable rather than omitted. Silently dropping it would misrepresent the coverage.",
@@ -469,7 +581,11 @@
         "synonym and notation handling"
       ],
       "expect": {
-        "outcome": "quoted"
+        "outcome": "quoted",
+        "criteria": {
+          "size": "A4",
+          "weight_gsm": 80
+        }
       },
       "not_applicable": "No page in the v1 catalog contains a prompt-injection attempt (verified: 0 of 36 pages). The defence is implemented and unit-tested. The behaviour runs against the mutated catalog, whose PL-CP-A4-80-NOTE page carries an instruction addressed to an automated reader.",
       "note": "The reply is rendered deterministically from pricing output, so a model has no path into it in the first place. That is the structural defence; the case records that it could not be exercised end to end.",
@@ -484,7 +600,10 @@
       ],
       "expect": {
         "outcome": "no_match",
-        "relaxed": "weight"
+        "relaxed": "weight",
+        "criteria": {
+          "weight_gsm": 105
+        }
       },
       "not_applicable": "No 28 lb (105 gsm) product exists in the v1 catalog. The conversion is implemented and unit-tested, but a no-match result would not prove it works — only that 105 gsm is absent. The behaviour runs against the mutated catalog, which stocks PL-CP-LTR-28.",
       "note": "The interpretation is still exercised: 28 lb converts to 105 gsm and the search correctly finds nothing. Recorded as not applicable because a pass here would be a pass for the wrong reason.",
@@ -499,7 +618,10 @@
       ],
       "expect": {
         "outcome": "no_match",
-        "relaxed": "weight"
+        "relaxed": "weight",
+        "criteria": {
+          "weight_gsm": 120
+        }
       },
       "not_applicable": "No 32 lb (120 gsm) product exists in the v1 catalog. The conversion is implemented and unit-tested, but a no-match result would not prove it works — only that 120 gsm is absent. The behaviour runs against the mutated catalog, which stocks PL-CP-LTR-32.",
       "note": "Same reasoning as case 23. The honest statement is that the conversion is implemented and unit-tested but not demonstrated end to end on live data.",
@@ -522,6 +644,12 @@
           "PL-CL-A4-80-PPK",
           "PL-CL-A4-80-PYL",
           "PL-CL-A4-80-RED"
+        ],
+        "criteria": {
+          "category": "Coloured paper"
+        },
+        "absent_criteria": [
+          "colour_mode"
         ]
       },
       "lines": [
@@ -547,6 +675,12 @@
           "PL-CP-A4-80-NUSA",
           "PL-CP-A4-80-ECO",
           "PL-CP-A4-80"
+        ],
+        "criteria": {
+          "size": "A4"
+        },
+        "absent_criteria": [
+          "sides"
         ]
       },
       "lines": [
@@ -601,6 +735,16 @@
           "PL-PR-LTR-MT-130-40",
           "PL-PR-LTR-GL-130-40",
           "PL-PR-LTR-MT-170-40"
+        ],
+        "criteria": {
+          "size": "LTR",
+          "sides": "single",
+          "colour_mode": "Full colour (CMYK)",
+          "quantity": 20,
+          "budget_per_unit": "250.00"
+        },
+        "absent_criteria": [
+          "weight_gsm"
         ]
       },
       "lines": [

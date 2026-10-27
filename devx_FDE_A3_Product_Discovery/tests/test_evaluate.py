@@ -27,6 +27,7 @@ from paperlane.evaluate import (
     Case,
     CaseResult,
     _load_facts,
+    _score_interpretation,
     _score_pricing,
     _score_reply,
     _score_retrieval,
@@ -291,8 +292,8 @@ class TestCoverage:
 
 
 class TestScoring:
-    def test_all_four_axes_are_reported_for_a_runnable_case(self, cases, products,
-                                                            facts):
+    def test_every_axis_is_reported_for_a_runnable_case(self, cases, products,
+                                                        facts):
         result = run_case(cases[4], products=products, facts=facts)
         assert set(result.axes) == set(AXES)
         for axis in AXES:
@@ -379,6 +380,114 @@ class TestScoring:
         # would be lower than the 5+ tier they actually earn.
         units = [line["unit_price"] for line in result.actual_figures["lines"]]
         assert units == ["202.10", "234.06"]
+
+
+# ---------------------------------------------------------------------------
+# 8.x The interpretation axis: a misread is not a mis-rank
+# ---------------------------------------------------------------------------
+
+
+class TestInterpretationAxis:
+    """Validating criteria is not validating the reading of them.
+
+    Every criterion can be typed, in range and drawn from a known vocabulary
+    while the *set* of them is wrong — an A4 request read as A3 yields a valid,
+    internally consistent quote for something nobody asked for. The four
+    original axes cannot see that, which is why this one exists.
+    """
+
+    def test_it_is_a_first_class_axis(self):
+        assert "interpretation" in AXES
+        assert AXES[0] == "interpretation"
+
+    def test_a_case_records_what_it_expects_and_what_it_forbids(self):
+        cases = {c.number: c for c in load_cases()}
+        # Case 1 is the brief's own example: "under 250 a pack" is a budget, not
+        # a weight, and the case says so explicitly rather than by omission.
+        one = cases[1]
+        assert one.expect_criteria["quantity"] == 20
+        assert "weight_gsm" in one.expect_absent_criteria
+
+    def test_a_misread_derivation_fails(self, cases, products, facts):
+        case = cases[1]
+        result = run_case(case, products=products, facts=facts)
+        assert result.axes["interpretation"] == PASS
+
+        result.criteria = dict(result.criteria, size="A3")
+        assert _score_interpretation(case, result) == FAIL
+        assert "size" in result.notes[-1]
+
+    def test_an_invented_requirement_fails(self, cases, products, facts):
+        """The mirror defect: adding a constraint the request never stated."""
+        case = cases[1]
+        result = run_case(case, products=products, facts=facts)
+        result.criteria = dict(result.criteria, weight_gsm=80)
+        assert _score_interpretation(case, result) == FAIL
+
+    def test_a_missing_expected_field_fails(self, cases, products, facts):
+        case = cases[1]
+        result = run_case(case, products=products, facts=facts)
+        result.criteria = {k: v for k, v in result.criteria.items()
+                           if k != "quantity"}
+        assert _score_interpretation(case, result) == FAIL
+
+    def test_a_case_with_no_recorded_criteria_is_not_applicable(
+        self, cases, products, facts
+    ):
+        # Case 16 is a multi-line basket priced through a different endpoint; it
+        # was not written to test interpretation, and calling that a pass would
+        # inflate the axis.
+        case = cases[16]
+        result = run_case(case, products=products, facts=facts)
+        assert _score_interpretation(case, result) == NA
+
+    def test_a_corrupted_reading_does_not_move_the_other_axes(
+        self, cases, products, facts
+    ):
+        """The property that makes the axis worth having.
+
+        If corrupting the reading also failed retrieval, every misreading would
+        be reported as a search failure — naming the symptom and hiding the
+        cause, which is the one thing the separate-axes design exists to avoid.
+        """
+        case = cases[1]
+        result = run_case(case, products=products, facts=facts)
+        result.criteria = dict(result.criteria, size="A3")
+        assert _score_interpretation(case, result) == FAIL
+        assert _score_retrieval(case, result) == PASS
+        assert _score_pricing(case, result) == PASS
+        assert _score_reply(case, result) == PASS
+
+    def test_the_expectation_is_a_declared_subset_not_the_engines_output(
+        self, cases, products, facts
+    ):
+        """Guards the anti-pattern the design records.
+
+        Recording `criteria.describe()` would be the engine agreeing with
+        itself — the same defect `recompute_totals` avoids for money. A case's
+        declared criteria must be smaller than what the engine derives, or the
+        axis measures nothing.
+        """
+        for case in load_cases():
+            if not case.expect_criteria:
+                continue
+            derived = run_case(case, products=products, facts=facts)
+            if not derived.ran:
+                # A case skipped on this catalog derives nothing, so there is
+                # nothing for the declared set to be a subset of.
+                continue
+            # Either the declared subset is smaller than the derived criteria,
+            # or the case declares fields the request must *not* produce — both
+            # leave the axis able to disagree with the engine independently.
+            independent = (
+                len(case.expect_criteria) < len(derived.criteria)
+                or bool(case.expect_absent_criteria)
+            )
+            assert independent, (
+                f"case {case.number} records the engine's full output with "
+                "nothing it must not read, so the interpretation axis cannot "
+                "independently disagree with it"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -604,7 +713,7 @@ class TestNegativeControl:
 
     def test_the_control_fails_on_exactly_the_corrupted_cases(self, products, facts):
         control = {case.number: case for case in load_cases(self.CONTROL)}
-        corrupted = {4, 6, 14}
+        corrupted = {4, 6, 10, 14}
 
         for number, case in control.items():
             result = run_case(case, products=products, facts=facts,
@@ -648,12 +757,25 @@ class TestNegativeControl:
         assert fourteen.axes["retrieval"] == FAIL
         assert fourteen.axes["pricing"] == FAIL
 
+        # Case 10: the request's unit conversion is stated as 70 gsm when the
+        # request says 20 lb (75 gsm). The products and the price are the
+        # engine's own and correct; only the *reading* is corrupted, which is
+        # the defect the interpretation axis exists to name. Retrieval and
+        # pricing must both stay put, or the axis is measuring the symptom.
+        ten = run_case(control[10], products=products, facts=facts)
+        assert ten.axes["interpretation"] == FAIL
+        assert ten.axes["retrieval"] == PASS, (
+            "a corrupted reading must not be reported as a retrieval failure — "
+            "the engine found the right products for the criteria it derived"
+        )
+        assert ten.axes["pricing"] == PASS
+
     def test_the_control_runs_through_the_cli_path(self):
         # The file is referenced in results.md as runnable; keep that true.
         buffer = io.StringIO()
         code = run_eval(cases_path=self.CONTROL, out=buffer)
         assert code == 1, "a failing case must produce a non-zero exit"
-        assert "failed: 3" in buffer.getvalue()
+        assert "failed: 4" in buffer.getvalue()
 
 
 # ---------------------------------------------------------------------------
