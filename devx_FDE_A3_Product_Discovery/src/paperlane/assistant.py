@@ -287,13 +287,26 @@ def _facts_for(product: dict[str, Any]) -> PriceFacts | None:
 # ---------------------------------------------------------------------------
 
 
-def _unit_phrase(candidate: Candidate) -> str:
-    """The unit the product is actually sold in, from its sheet count."""
-    sheets = candidate.product.get("pack_sheets")
+def unit_phrase(product: dict[str, Any]) -> str:
+    """The unit a product is sold in, from its sheet count.
+
+    ``pack_sheets`` is the machine-readable field and wins whenever it exists.
+    ``unit_word`` is the site's own display text and is not trustworthy: on four
+    SKUs it holds "No volume pricing for this item." because that page's price
+    box had no unit element at all (``BUG.md`` A16).
+
+    Public because the browse column in ``ui.py`` renders the same sentence. Two
+    copies of this rule would eventually disagree, and the disagreement would be
+    a page that calls something a ream while the quote beside it says pack.
+    """
+    sheets = product.get("pack_sheets")
     if sheets:
         return f"pack of {sheets} sheets"
-    word = candidate.product.get("unit_word")
-    return word or "pack"
+    return str(product.get("unit_word") or "pack")
+
+
+def _unit_phrase(candidate: Candidate) -> str:
+    return unit_phrase(candidate.product)
 
 
 def _describe_candidate(candidate: Candidate) -> str:

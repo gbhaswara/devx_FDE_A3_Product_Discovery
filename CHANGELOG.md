@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1150 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 11/11 over 24 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1169 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 11/11 over 24 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,57 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Changed — 2026-10-27 · the page is a catalog list beside the assistant
+
+The interface was one narrow column: a search box and a result. It is now two —
+the catalog on the left, the assistant on the right — because the brief asks for
+product discovery, and someone who does not yet know the catalog's vocabulary had
+no way to find out what exists short of guessing a phrasing.
+
+**Scope, stated plainly.** The brief's only UI requirement is must-have 6, *"An
+API … and a simple UI or CLI"*; no capability spec constrains layout. A browsable
+list is therefore an addition, not a compliance fix, and it earns its place in one
+line: the catalog is the thing being searched, so showing it is the cheapest way
+to make an unknown catalog legible. It is presentation over data the API already
+served — no new endpoint, no new query shape, no new dependency.
+
+**What a click does, and what it deliberately does not.** A row fills the search
+box and stops. It does not submit, so it cannot spend a model call or invent a
+quantity, and there is still exactly one way an answer is produced. The name in
+`data-request` is the product's own name, verified for **all 72** to resolve back
+to that product through the interpreter: 70 quote it, and the 2 out-of-stock items
+are refused by name. A test holds that, because "most names work" is the kind of
+claim that rots the moment the catalog changes.
+
+**The price on a row is the quote's price.** It is `pricing.unit_price` at
+quantity 1, not `list_price_satang`, because a sale price replaces the list price
+*and* every tier (PR3). One SKU sells at 259.00 against a 299.00 list; a column
+built from the stored list price would advertise a figure the assistant then
+refuses to honour. The agreement with `/api/quote/lines` is asserted, not
+intended. The column says "each, before VAT, at quantity 1" for the reason
+recorded as **T1**: the one misreading it must not invite is comparing a unit
+price against a budget at another quantity.
+
+- `render_catalog` in `ui.py`: grouped by category, every field escaped, an
+  out-of-stock label, and three states — products, empty snapshot, no snapshot.
+- `GET /` loads the list. With no snapshot it renders the remedy on the page
+  instead of failing, because the page is where someone looks; a corrupt or
+  unreadable snapshot still raises, which is an operational fault rather than a
+  state to paper over.
+- CSS grid, collapsing to one column below 900 px with the search first. No new
+  asset, no CDN, no framework: the vendored htmx is still the only script.
+- `tests/test_ui_catalog.py`, 19 tests. **Falsification:** pricing from the stored
+  list price fails 2, dropping the escape fails 1, removing the missing-snapshot
+  branch fails 2 — each verified and restored.
+- While building it, `unit_word` was found to hold "No volume pricing for this
+  item." on four SKUs: those price boxes have no unit element, so the extractor's
+  `.muted` fallback picks up the volume note and never reaches the `/ pack` tail.
+  The column uses `pack_sheets` — the rule the reply already used, now shared as
+  `assistant.unit_phrase` so the two cannot drift. The extraction defect is
+  registered as **A16** in `BUG.md` and left **OPEN**, because fixing it changes
+  the committed snapshot and belongs in its own change.
+- The suite is 1169 tests, up from 1150.
 
 ### Fixed — 2026-10-27 · the page no longer depends on a CDN, and its deployment is documented
 

@@ -100,6 +100,16 @@ with `HTTP 404` on `index.html`.
 the crawler reads; 8001 serves the *assistant*. Binding the assistant to 8000
 collides with the site. `./run.sh serve` defaults to 8001 for that reason.
 
+**What the page gives you.** Two columns: the catalog on the left, the assistant
+on the right. The catalog lists every product in the snapshot, grouped by
+category, with size, weight, pack size, the effective unit price and an
+out-of-stock label. Clicking a row fills the search box — it never submits and
+never quotes, so a click cannot spend a model call or invent a quantity; you
+still press **Ask**. A row's price is what a one-unit quote returns for that SKU,
+which is why the one sale item shows 259.00 rather than its 299.00 list price:
+the quote would not honour the list price, so the column must not advertise it.
+Below 900 px the two columns collapse to one, search first.
+
 ### Deploying the UI
 
 `./run.sh serve` **is** the deployment. One process serves the page, the fragment
@@ -275,7 +285,7 @@ Module map:
 | `search.py` | Hard filtering, deterministic ranking, justification |
 | `assistant.py` | Four outcomes and reply rendering, with guards |
 | `conversation.py` | The continuation rule, the two bounded stores, no text retained |
-| `api.py` / `ui.py` | JSON endpoints, the single page, and the route that serves the vendored script |
+| `api.py` / `ui.py` | JSON endpoints, the two-column page, and the route that serves the vendored script |
 | `evaluate.py` | The recorded evaluation harness |
 | `conversation_eval.py` | The conversation harness and the single-turn replay digest |
 | `records.py` / `metrics.py` | One request record; five measures derived on read, never counted |
@@ -507,6 +517,7 @@ a reply — those are deterministic code paths with their own tests.
 | The crawler is faithful | `./run.sh diff`, `tests/test_extract.py`, `docs/ingestion.md` |
 | The documented API is real | `tests/test_api.py::TestDocumentedExamples` executes every example |
 | The page works with no internet | `tests/test_ui_offline.py` — no external host in the markup, and `GET /static/htmx.min.js` serves the vendored build |
+| The catalog column cannot drift from the quote | `tests/test_ui_catalog.py` — every row's price is compared against `/api/quote/lines` at quantity 1, and every product name is resolved back through the interpreter |
 | The vendored script is the CDN artefact, not a lookalike | SHA-384 in `src/paperlane/static/VENDOR.md` equals the SRI value the page carried before vendoring |
 | No credential is committed | `.gitignore`; `./run.sh test` includes a scan |
 | No credential reaches a record | `tests/test_records.py::TestNoCredentialInRecords` sets a sentinel key, makes a model call, and scans the log |
@@ -516,7 +527,7 @@ a reply — those are deterministic code paths with their own tests.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The three conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1150) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1169) |
 
 ---
 
@@ -539,7 +550,7 @@ under `openspec/changes/archive/`, with its own capability spec:
 | Item | State |
 |---|---|
 | Multi-item basket quoting | Built — `POST /api/quote/lines`, evaluation cases 16 and 27 |
-| Single-page interface | Built — `ui.py`, all four outcomes rendered |
+| Single-page interface | Built — `ui.py`, all four outcomes rendered, plus a catalog column that prefills the search |
 | Snapshot diff as a demo artefact | Built — `GET /api/diff`, `./run.sh diff` |
 | Mutated-site refresh demonstration | Built — `./run.sh verify-refresh` mutates a copy of the site, ingests it, and verifies all 12 injected changes are reported under the correct kind. Closed by `add-mutated-site-refresh-harness` |
 | Hybrid semantic tiebreak | Built — `embeddings.py`, optional `PAPERLANE_EMBED_*` configuration, similarity term after price; measured with `./run.sh similarity`. Closed by `add-semantic-tiebreak` |

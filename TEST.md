@@ -107,6 +107,11 @@ Whole-path tests through the API, no network, no model.
   origin, and the bytes match the vendored build's recorded SHA-384
   (`test_ui_offline.py` — it also asserts the form is still htmx-only, which is
   what makes a missing script a silent no-op rather than a server round-trip)
+- The catalog column lists every product exactly once, escapes crawled text,
+  prices each row at the same figure `/api/quote/lines` returns for one unit,
+  and resolves every one of the 72 names back to its own product through the
+  interpreter — the property the click-to-prefill behaviour rests on. With no
+  snapshot it renders the remedy instead of failing (`test_ui_catalog.py`)
 
 ### Layer 4 — Refresh verification
 
@@ -317,11 +322,12 @@ carrying a total is checked structurally instead.
 | `test_single_turn_unchanged.py` | 3 | 8 |
 | `test_snapshot_cli.py` | 5 | 3 |
 | `test_snapshot_path.py` | 26 | 7 |
+| `test_ui_catalog.py` | 19 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1150** | |
+| **Total** | **1169** | |
 
-Online: 1150 collected, 4 skip (provider- and loopback-dependent). Offline
-(`unshare -rn`): 1150 collected, 7 skip — the same four plus the three loopback
+Online: 1169 collected, 4 skip (provider- and loopback-dependent). Offline
+(`unshare -rn`): 1169 collected, 7 skip — the same four plus the three loopback
 tests that legitimately cannot run without a network interface.
 
 ## What is tested where
@@ -375,7 +381,7 @@ tests that legitimately cannot run without a network interface.
 ## Running the tests
 
 ```
-./run.sh test             # 1150 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1169 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design
 ./run.sh eval --cases eval/conversation-cases.json   # 11 conversations, 24 turns

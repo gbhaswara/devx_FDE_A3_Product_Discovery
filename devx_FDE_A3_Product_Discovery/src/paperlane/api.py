@@ -973,12 +973,23 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     def index():
-        from .ui import PAGE
+        from .ui import PAGE, render_catalog
 
         # Each page load starts a conversation with a fresh id. "Start over" is
         # simply a link back here, so abandoning a conversation needs no request
         # and leaves no state behind beyond the store's own bound.
-        return HTMLResponse(PAGE.replace("__CONVERSATION_ID__", uuid.uuid4().hex))
+        page = PAGE.replace("__CONVERSATION_ID__", uuid.uuid4().hex)
+
+        # The catalog column is a convenience, not a precondition: a page with no
+        # snapshot still has to render, because the remedy belongs on screen. So
+        # this is the one API surface that answers 200 when the others answer
+        # 503 — and it says the same sentence they do, on the page.
+        try:
+            column = render_catalog(products(), facts())
+        except catalog.SnapshotMissing as exc:
+            column = render_catalog(None, snapshot_path=str(exc.path))
+
+        return HTMLResponse(page.replace("__CATALOG__", column))
 
     @app.post("/ask", response_class=HTMLResponse)
     def ask_fragment(

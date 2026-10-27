@@ -255,7 +255,7 @@ What shipped instead: `request_chars` (a length) and `request_digest` (16 hex ch
 
 ## Part 2b — Defects found in the shipped code
 
-Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. A12–A14 are in conversation memory. A15 is separate: it was found later, while answering "how is the UI deployed?", and it is in the page rather than in the assistant. Registered before being fixed, per the rule at the end of this file — except A15, which says so in its own entry. **All four are now FIXED** — A13 required answering a question D3 left open, which is recorded in its entry.
+Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. A12–A14 are in conversation memory. A15 is separate: it was found later, while answering "how is the UI deployed?", and it is in the page rather than in the assistant. A16 was found by building the catalog column and noticing a product's unit read "No volume pricing for this item." Registered before being fixed, per the rule at the end of this file — except A15, which says so in its own entry. **A12–A15 are FIXED; A16 is OPEN** — A13 required answering a question D3 left open, which is recorded in its entry.
 
 ### A12 — A first turn that states only a quantity or a budget cannot be continued
 
@@ -375,6 +375,56 @@ writing the deployment section, so unlike A12–A14 it was not written down befo
 the change. Recorded anyway, because an unregistered defect is indistinguishable
 from one that never existed, and because the *reason it was invisible* is the
 transferable part.
+
+### A16 — `unit_word` holds a sentence about volume pricing instead of a unit
+
+```json
+{"sku": "PL-CS-A4-160-AST", "pack_sheets": 100,
+ "unit_word": "No volume pricing for this item."}
+```
+
+Four SKUs carry that string — `PL-CS-A4-160-AST`, `PL-CS-A4-250-BLK`,
+`PL-PH-A4-230-MT`, `PL-CL-LTR-24-BRT`. It reaches `/api/products` unchanged.
+
+**Root cause.** `extract._unit_word` takes `box.css_first(".muted")` from the
+price box, and only falls back to the text after a slash when there is no
+`.muted` at all. These four product pages have no unit element in the price box:
+
+```html
+<div class="pricebox"><div>Price: <span class="big">159.00 THB</span> / pack</div>
+<p><span class="stock-in">In stock</span></p>
+<p class="muted">No volume pricing for this item.</p>...</div>
+```
+
+The only `.muted` is the volume note, so it wins — and the `/ pack` tail that
+holds the real unit is never reached, because the `.muted` branch returns first.
+
+**Why it was invisible.** `assistant._unit_phrase` prefers `pack_sheets` and only
+falls back to `unit_word`, so every reply already says "pack of 100 sheets" and
+never shows the bad string. The field is documented in `extract.py` as
+*"deliberately unreliable … display text only"*, which is true and also the
+reason nobody looked. The browse column added in this change nearly rendered it
+as `A4 · 160 gsm · No volume pricing for this item.`; it uses the same
+`pack_sheets` rule instead, now shared as `assistant.unit_phrase` so the page and
+the reply cannot drift apart.
+
+| Path | Shows the value? |
+|---|---|
+| `/api/ask`, `/api/quote` replies | no — `pack_sheets` wins |
+| `/` catalog column | no — `unit_phrase`, same rule |
+| `/api/products` | **yes**, verbatim |
+
+**Status: OPEN.** Not fixed here, deliberately: the fix is in extraction, so it
+changes the committed snapshot and needs a re-ingest, and it belongs in its own
+change with its own before/after on the four SKUs. The candidate fix is to prefer
+the slash tail over `.muted` (the branch order is the bug), with a test on this
+price-box shape. Severity is low — no answer is affected, and the field is
+display-only — but it is a wrong value in a published field, which is the class
+this file exists to catch.
+
+**Guard:** `test_ui_catalog.py::test_no_unit_phrase_leaks_from_the_price_box`
+fails if the column ever renders the string. That guards the display, not the
+extraction.
 
 ---
 
