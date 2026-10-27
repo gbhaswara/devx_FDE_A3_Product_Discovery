@@ -1049,7 +1049,29 @@ number, which is the one way this fix can go wrong.
 **Falsification.** `TestReplyContract::test_a_charged_delivery_states_the_threshold`
 and `test_the_free_delivery_shortfall_is_exact` — the charged case currently
 fails because the threshold string is absent, and the second recomputes
-3,000.00 − 2,340.00 = 660.00 from the quote, not from the reply.
+3,000.00 − 2,340.00 = 660.00 from the quote, not from the reply. A third,
+`test_a_free_delivery_order_does_not_state_a_shortfall`, guards the mirror.
+
+**Fix.** `_render_breakdown` names the threshold in both branches, and
+`_delivery_shortfall` returns the difference only when delivery is charged:
+
+```
+  Delivery      150.00  (free from 3,000.00 — 2,100.00 more)
+```
+
+The shortfall is `FREE_DELIVERY_THRESHOLD - order.subtotal`, one subtraction of
+two `pricing` values, and both it and the threshold are added to the allowed set
+in `_quote_reply` — the failure mode the entry named. The free branch is
+unchanged, so a customer who does not pay delivery is told nothing new.
+
+**Verification.** `./run.sh test` 1232 collected / 1229 passed + 3 skipped;
+`./run.sh eval` 24/24; `verify-refresh --keep` 12/12 (12 injected changes);
+`./run.sh eval --catalog v2` 21/21. The recorded single-turn digest moved by
+exactly one line in the fifteen cases whose order pays delivery (2, 4, 6–11,
+17, 18, 20–22, 25, 26); every other figure in those replies is identical, and
+no case that clears the threshold changed at all.
+
+**Status: FIXED.**
 
 ### A28 — "I could not find anything close" is said about an item that exists and is out of stock
 
