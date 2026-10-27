@@ -237,6 +237,32 @@ class TestRuleInterpretation:
         assert c.budget_per_unit == b("250.00")
         assert c.quantity == 20
 
+    def test_two_products_do_not_merge_into_a_phantom(self):
+        # BUG.md A29. "Gloss" belongs to the flyers clause; applying it to the
+        # copy paper half produced a product in neither clause and answered
+        # no_match for an item that is in stock at 121.50.
+        c = interpret_rules("A4 80gsm copy paper and A4 gloss flyers")
+        assert any(n.startswith("compound:") for n in c.notes), c.notes
+
+    def test_a_second_item_is_never_dropped_silently(self):
+        # The same parse quoted the copy paper and discarded the card without
+        # a word, so the reply read as a complete answer.
+        c = interpret_rules(
+            "A4 80gsm copy paper, 20 packs, and 5 packs of A4 250gsm white card"
+        )
+        assert any(n.startswith("compound:") for n in c.notes), c.notes
+
+    def test_one_product_with_several_clauses_is_not_compound(self):
+        # The guard must not fire on a request that merely states its
+        # requirements in separate clauses.
+        for text in [
+            "A4 80gsm copy paper, 20 packs, under 250 a pack",
+            "letter-size flyers, one side, colour, under 250 a pack, 20 packs",
+            "A4 80gsm and 90gsm copy paper",
+        ]:
+            c = interpret_rules(text)
+            assert not any(n.startswith("compound:") for n in c.notes), text
+
 
 class TestModelMerge:
     def test_model_values_win_where_present(self):
@@ -417,6 +443,23 @@ class TestClarification:
         criteria = validate(interpret_rules("A4 copy paper 80 gsm under 9999 a pack"))
         questions = decide_questions(criteria, PRODUCTS)
         assert not any(q.field == "quantity" for q in questions)
+
+    def test_a_compound_request_asks_which_item_first(self):
+        # BUG.md A29. Two products in one request: asking is the only honest
+        # answer, because a single-item quote silently covers half of it.
+        criteria = validate(interpret_rules("A4 copy paper and A4 card"))
+        reply = answer(criteria, PRODUCTS, FACTS)
+        assert reply.outcome == OUTCOME_CLARIFIED
+        assert any(q.field == "compound" for q in reply.questions)
+
+    def test_a_compound_clarification_does_not_restate_the_merged_reading(self):
+        # The criteria behind this question are the merged reading of two
+        # products; printing them back would assert the phantom the question
+        # exists to avoid — here "Gloss" taken from the flyers half.
+        criteria = validate(interpret_rules("A4 80gsm copy paper and A4 gloss flyers"))
+        reply = answer(criteria, PRODUCTS, FACTS)
+        assert "Gloss" not in reply.text
+        assert "So far I have" not in reply.text
 
     def test_ambiguous_colour_is_asked(self):
         # "colour" with no noun that settles it is a genuine question.

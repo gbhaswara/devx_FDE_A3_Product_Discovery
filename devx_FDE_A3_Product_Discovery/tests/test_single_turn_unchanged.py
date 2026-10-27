@@ -42,8 +42,22 @@ from paperlane.interpret import interpret_rules, validate
 #: Case 18 is the only one of the 28 whose reply changed, and it changed because
 #: the basis is now applied rather than labelled. Every other case is unchanged,
 #: which is the property this digest exists to protect.
+#:
+#: change (BUG.md A29): two cases are requests for two products, and both were
+#: being answered as though they were one.
+#:   case 16 "20 reams A4 copy paper plus 5 packs A4 matte flyer, single sided"
+#:           was `no_match` — "matte" from the flyer half was applied to the copy
+#:           paper, so it relaxed the finish and found nothing. Now `clarified`:
+#:           the request names two products.
+#:   case 27 "10 packs of the 100gsm A4 gloss flyers and 10 packs of the 130gsm"
+#:           was `quoted` for the 100gsm flyers alone, with the 130gsm half
+#:           silently dropped. Now `clarified`.
+#: Case 27's *pricing* expectation is untouched: it is scored as a multi_line
+#: case through POST /api/quote/lines, which still returns 4,666.91. Only the
+#: single-item assistant path changed, and it changed to stop answering half a
+#: request. Every other case is unchanged.
 PRE_CHANGE_DIGEST = (
-    "bc42a65324ddac01110b48e4ffe7afdf53704f31ecaa1d6f086e2e32fdd256b7"
+    "14371e4288fee707a06e974a58561c25c78e0597ff124a7759d0876026c1c79f"
 )
 
 

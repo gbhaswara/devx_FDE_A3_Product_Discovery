@@ -65,6 +65,43 @@ _INCLUSIVE_VAT = re.compile(
 #: The basis when the customer said nothing, and the one the brief assumes (PR7).
 DEFAULT_BASIS = "per pack, before VAT"
 
+#: What separates two product requests. A comma is included because a request
+#: can state its second item after one — "copy paper, 20 packs, and card" —
+#: and the comma is the only thing between the two halves in the last clause.
+_CLAUSE_SPLIT = re.compile(r"\s*(?:;|,|&|\band\b|\bplus\b)\s*", re.I)
+
+def count_product_clauses(text: str) -> int:
+    """How many distinct products the text asks for.
+
+    A clause counts when it names a category, or — failing that — when it
+    describes an item without naming its type but carries its own quantity and
+    weight (*"10 packs of the 130gsm"*). The second rule exists because that is
+    how a two-item request erodes into a one-item one: the type is elided after
+    the first item, and a category-only test would let the assistant quote the
+    first and silently discard the second (BUG.md A29).
+
+    Neither rule fires on a single product's own clauses: *"A4 80gsm copy paper,
+    20 packs, under 250 a pack"* names the category once and the bare quantity
+    carries no weight, while *"A4 80gsm and 90gsm copy paper"* names it once and
+    the bare weight carries no quantity.
+
+    The count exists so a compound request can be **asked about** rather than
+    merged. Parsing each field from the whole string silently combined
+    attributes from different products — "Gloss" from the flyers half applied to
+    the copy paper — and dropped the second item entirely.
+    """
+    count = 0
+    for fragment in _CLAUSE_SPLIT.split(text):
+        if not fragment.strip():
+            continue
+        if resolve_category(fragment) is not None:
+            count += 1
+            continue
+        exact, minimum, maximum = resolve_weight(fragment)
+        if (exact or minimum or maximum) and parse_quantity(fragment) is not None:
+            count += 1
+    return count
+
 
 def _budget_basis(text: str) -> str:
     """The basis to state, assembled from the unit word and the VAT qualifier."""
@@ -127,6 +164,13 @@ def interpret_rules(text: str) -> Criteria:
         return criteria
 
     notes: tuple[str, ...] = ()
+
+    # A request naming two products must be asked about, not merged. Checked
+    # first so the note leads, and recorded as a note rather than a flag so it
+    # survives `merge_model_and_rules` the same way the size note does.
+    clauses = count_product_clauses(text)
+    if clauses > 1:
+        notes = notes + (f"compound: {clauses} product requests",)
 
     criteria = replace(criteria, category=resolve_category(text))
 

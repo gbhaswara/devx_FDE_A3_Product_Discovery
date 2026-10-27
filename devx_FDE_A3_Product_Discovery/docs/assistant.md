@@ -78,6 +78,20 @@ not become a constraint.
 **Why:** silently dropping it would quote A4 to a customer who asked for B5.
 **Produces:** `clarified`, naming the sizes the catalog carries.
 
+### R1b — More than one product in one request → `clarified`
+
+**Trigger:** two clauses that each name a product — *"A4 copy paper and A4 card"* —
+or one that names a product and one that describes another without naming it
+(*"10 packs of the 130gsm"*).
+**Why:** the rule parser reads each field from the whole string, so a compound
+request merged into a phantom product (*"A4 80gsm copy paper **and** A4 gloss
+flyers"* became an A4 80 gsm **gloss** copy paper, and answered `no_match` for
+an item in stock) or quoted the first item and discarded the second with no
+sentence saying so. `BUG.md` A29.
+**Produces:** `clarified`, asking which item to price first. The merged criteria
+are deliberately **not** restated in the reply — they are the phantom this rule
+exists to avoid. Multi-item pricing lives at `POST /api/quote/lines`.
+
 ### R2 — Ambiguous "colour" → `clarified`
 
 **Trigger:** "colour" with no noun disambiguating paper shade from print mode.

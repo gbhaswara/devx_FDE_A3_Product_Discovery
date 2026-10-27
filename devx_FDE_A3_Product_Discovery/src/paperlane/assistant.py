@@ -166,6 +166,21 @@ def decide_questions(criteria: Criteria, products: Sequence[dict[str, Any]]) -> 
     """
     questions: list[Question] = []
 
+    # --- more than one product in one request --------------------------
+    # Asked before everything else, for the same reason as the size note: a
+    # single-item quote would answer half the request and read as complete.
+    # Measured (BUG.md A29): the merge also took "Gloss" from the flyers half
+    # and applied it to the copy paper, so the alternative was a phantom
+    # product answered `no_match`.
+    for note in criteria.notes:
+        if note.startswith("compound:"):
+            questions.append(Question(
+                "compound",
+                "That reads as more than one product. I quote one item per "
+                "request — which should I price first?",
+            ))
+            break
+
     # --- a requirement was stated but could not be mapped --------------
     # This is asked first because it invalidates every other answer: if the
     # customer asked for B5 and we quietly dropped it, the quote would be for a
@@ -575,7 +590,11 @@ def _disclose_carried(reply: AssistantReply, criteria: Criteria) -> AssistantRep
 
 
 def _render_clarification(questions: Sequence[Question], criteria: Criteria) -> str:
-    understood = criteria.describe()
+    # A compound request is not restated: the criteria it produced are the
+    # merged reading of two products, so printing them back would assert the
+    # phantom this question exists to avoid (BUG.md A29).
+    compound = any(note.startswith("compound:") for note in criteria.notes)
+    understood = {} if compound else criteria.describe()
     lines = []
     if understood:
         lines.append(
