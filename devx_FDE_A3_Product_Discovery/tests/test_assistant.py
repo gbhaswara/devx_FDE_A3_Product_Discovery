@@ -378,6 +378,30 @@ class TestReplyContract:
         assert line["quantity"] == 20
         assert line["unit_price"] == "122.55"
 
+    def test_a_cheaper_larger_quantity_is_named(self):
+        # BUG.md A30. 19 packs of this flyer pay the 5+ price (211.50); 20 packs
+        # reach the 20+ tier (198.00) and cost less in total. Withholding that
+        # invites the customer to discover it themselves.
+        reply = ask("letter-size matte flyers 100gsm single sided full colour, "
+                    "19 packs")
+        assert reply.outcome == OUTCOME_QUOTED
+        assert "20 packs would come to 4,237.20" in reply.text
+
+    def test_no_hint_when_the_larger_quantity_costs_more(self):
+        # 6 packs is past the 5+ tier; the next tier is 20 packs, which costs
+        # more. Nothing to point out, so nothing is said.
+        reply = ask("letter-size matte flyers 100gsm single sided full colour, "
+                    "6 packs")
+        assert reply.outcome == OUTCOME_QUOTED
+        assert "would come to" not in reply.text
+
+    def test_no_hint_when_no_larger_tier_exists(self):
+        # 20 packs is already the top tier.
+        reply = ask("letter-size matte flyers 100gsm single sided full colour, "
+                    "20 packs")
+        assert reply.outcome == OUTCOME_QUOTED
+        assert "would come to" not in reply.text
+
     def test_list_price_case_identified_as_list(self):
         reply = ask("A5 paper")
         assert "list price" in reply.text

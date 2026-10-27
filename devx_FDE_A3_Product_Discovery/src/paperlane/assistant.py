@@ -347,6 +347,27 @@ def _describe_candidate(candidate: Candidate) -> str:
     return "\n".join(lines)
 
 
+def _cheaper_at_a_larger_quantity(
+    candidate: Candidate, order: OrderQuote
+) -> tuple[int, OrderQuote] | None:
+    """The next tier up, when buying it costs **less** than this order.
+
+    One step only, deliberately: the tier whose ``min_qty`` is the next one above
+    what was asked for. A "best quantity" optimiser would have to explain itself
+    and could recommend a quantity the customer did not want; the next published
+    tier is a fact on the site and one sentence in the reply (BUG.md A30).
+    """
+    requested = order.lines[0].quantity
+    higher = [t for t in candidate.facts.tiers if t.min_qty > requested]
+    if not higher:
+        return None
+    nxt = min(higher, key=lambda t: t.min_qty)
+    bigger = quote([LineRequest(candidate.sku, nxt.min_qty, candidate.facts)])
+    if bigger.total >= order.total:
+        return None
+    return nxt.min_qty, bigger
+
+
 def _render_breakdown(order: OrderQuote) -> str:
     """The full cost breakdown, with the discount identified per line."""
     parts = ["Breakdown"]
@@ -712,6 +733,9 @@ def _quote_reply(
     """Quote the best match, with justification and a full breakdown."""
     best = result.matches[0]
     order = quote([LineRequest(best.sku, quantity, best.facts)])
+    # Computed here so the figure guard below can allow the two extra amounts
+    # this sentence publishes (BUG.md A30).
+    hint = _cheaper_at_a_larger_quantity(best, order)
 
     lines = [f"Best match — {best.name} ({best.sku})"]
     lines.append(f"  {best.unit_price.format()} per {_unit_phrase(best)}"
@@ -742,6 +766,15 @@ def _quote_reply(
     lines.append("")
     lines.append(_render_breakdown(order))
 
+    hint = _cheaper_at_a_larger_quantity(best, order)
+    if hint is not None:
+        bigger_quantity, bigger = hint
+        lines.append("")
+        lines.append(
+            f"{bigger_quantity} packs would come to {bigger.total.format()}"
+            f" — {(order.total - bigger.total).format()} less than this order."
+        )
+
     text = "\n".join(lines)
 
     # --- guards, run before the reply is returned ----------------------
@@ -759,6 +792,14 @@ def _quote_reply(
         allowed.add(candidate.unit_price.format())
         allowed.add(candidate.line_total.format())
         allowed.add(candidate.facts.list_price.format())
+    if hint is not None:
+        # The larger-order sentence publishes a total and a saving; both are
+        # produced by pricing.quote above, never by the model.
+        _, bigger = hint
+        allowed.add(bigger.total.format())
+        allowed.add(bigger.subtotal.format())
+        allowed.add(bigger.vat.format())
+        allowed.add((order.total - bigger.total).format())
     if criteria.budget_per_unit is not None:
         allowed.add(criteria.budget_per_unit.format())
         check = check_budget(

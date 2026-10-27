@@ -153,6 +153,23 @@ names what was dropped.
 * the budget verdict, when a budget was stated
 * up to three other options that also match
 * a full breakdown: lines, subtotal, delivery, VAT, total
+* the next volume tier, when buying it would cost **less** (see below)
+
+### A larger order that costs less is named
+
+A volume tier is a step function: 19 packs at 202.10 is 4,108.69, and 20 packs
+at 189.20 is 4,048.88. Quoting the first number silently invites the customer to
+find the second themselves, so the reply states it (`BUG.md` A30):
+
+```
+20 packs would come to 4,048.88 — 59.81 less than this order.
+```
+
+The tier named is **one step up** — the smallest published `min_qty` above what
+was asked for — re-priced through `pricing.quote`, and printed only when that
+total is lower. A "best quantity" optimiser was rejected: it would have to
+justify a quantity the customer did not ask for. The two amounts are added to
+the figures guard's allowed set, because they are computed, never paraphrased.
 
 ---
 
