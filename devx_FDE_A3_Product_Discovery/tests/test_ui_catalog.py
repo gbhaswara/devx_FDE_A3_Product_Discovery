@@ -12,6 +12,11 @@ keeps it one:
 * the price on the row is the price a one-unit quote returns for that SKU, so
   the column and the quote beside it cannot disagree — including the sale item,
   whose effective price is 259.00 while its list price is 299.00;
+* every category is a native `<details>`, all closed on arrival, so the column
+  shows the whole catalog's shape at once instead of the part that fits a
+  scroller;
+* the two columns are equal tracks, and a narrow screen still stacks the search
+  first;
 * a page with no snapshot still renders, carrying the remedy.
 
 The escaping tests drive `render_catalog` directly with hostile text rather than
@@ -101,7 +106,7 @@ class TestItListsTheCatalog:
         groups = dict(
             (html_module.unescape(name), int(count))
             for name, count in re.findall(
-                r'<h3>([^<]+)<span>(\d+)</span></h3>', page
+                r"<summary>([^<]+)<span>(\d+)</span></summary>", page
             )
         )
         assert groups == expected
@@ -126,6 +131,117 @@ class TestItListsTheCatalog:
     def test_no_unit_phrase_leaks_from_the_price_box(self, page) -> None:
         """`unit_word` holds the site's non-volume note on four SKUs (BUG.md A16)."""
         assert "No volume pricing" not in page
+
+
+# ---------------------------------------------------------------------------
+# The column collapses, so the whole catalog fits
+# ---------------------------------------------------------------------------
+
+
+class TestTheCatalogIsCollapsible:
+    """Every category is a native `<details>`, all closed on arrival.
+
+    Asked for directly: the left column should be a drop-down so all categories
+    and items can be seen. The column used to be a fixed-height scroller with a
+    sticky panel; on a 900-pixel window the first category filled it and the rest
+    were below an inner scrollbar, so "which categories exist" was a question
+    answered by scrolling. Collapsed to headings, all of them are on screen.
+
+    `<details>` is deliberate over a scripted accordion. The page has exactly one
+    script and it only fills the search box; a browser-implemented disclosure
+    needs no code, is keyboard operable, and announces its expanded state.
+    """
+
+    def test_every_category_is_a_disclosure_with_its_count(self, page, products) -> None:
+        expected: dict[str, int] = {}
+        for product in products:
+            expected[product["category"]] = expected.get(product["category"], 0) + 1
+
+        blocks = page.split('<details class="group"')[1:]
+        assert len(blocks) == len(expected), "one disclosure per category"
+
+        found = {}
+        for block in blocks:
+            summary = re.search(
+                r"<summary>([^<]+)<span>(\d+)</span></summary>", block
+            )
+            assert summary is not None, "every disclosure needs a summary"
+            found[html_module.unescape(summary.group(1))] = int(summary.group(2))
+        assert found == expected
+
+    def test_every_row_sits_inside_its_disclosure(self, page, products) -> None:
+        """Otherwise closing a group would leave its items on screen."""
+        blocks = page.split('<details class="group"')[1:]
+        inside = sum(
+            block.split("</details>", 1)[0].count("<li><button") for block in blocks
+        )
+        assert inside == len(products)
+
+    def test_no_group_starts_open(self, page, products) -> None:
+        """Collapsed on arrival is the whole point.
+
+        Opening the first category reads friendlier, but it pushes the remaining
+        headings below the bottom of the panel — the state this change exists to
+        leave. Closed, every category is on screen at once.
+        """
+        headings = re.findall(r'<details class="group"( open)?>', page)
+        assert len(headings) == len({product["category"] for product in products})
+        assert all(flag == "" for flag in headings), "no group may start expanded"
+
+    def test_the_column_has_no_height_of_its_own_to_run_out_of(self) -> None:
+        """The old panel was `max-height: calc(100vh - 2rem)` with `overflow-y`.
+
+        That is what clipped the catalog: the first category filled the box and
+        the others sat below an inner scrollbar. A container with no fixed height
+        cannot hide anything — the page scrolls instead.
+        """
+        style = ui.PAGE.split("<style>", 1)[1].split("</style>", 1)[0]
+        catalog = re.search(r"\.catalog \{([^}]*)\}", style)
+        assert catalog is not None
+        assert "max-height" not in catalog.group(1)
+        assert "overflow-y" not in catalog.group(1)
+        assert "catalog-scroll" not in ui.PAGE
+
+    def test_a_click_inside_a_collapsed_group_still_fills_the_box(self, page) -> None:
+        """The handler is delegated to `document`, so disclosure cannot break it.
+
+        A listener bound per row at load would also work, but delegation is what
+        makes collapse irrelevant: opening a group later needs no rebinding, and
+        a row hidden on arrival behaves exactly like a visible one.
+        """
+        script = page.split("<script>", 1)[1].split("</script>", 1)[0]
+        assert "document.addEventListener('click'" in script
+        assert "closest('[data-request]')" in script
+        assert "onclick" not in page
+
+
+class TestTheSplitIsHalfAndHalf:
+    """The two columns are equal tracks, and a narrow screen still stacks."""
+
+    @staticmethod
+    def _style() -> str:
+        return ui.PAGE.split("<style>", 1)[1].split("</style>", 1)[0]
+
+    def test_the_two_columns_are_equal_tracks(self) -> None:
+        style = self._style()
+        layout = re.search(r"main\.layout\s*\{([^}]*)\}", style)
+        assert layout is not None
+        assert re.search(
+            r"grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)",
+            layout.group(1),
+        ), "the split must be 50-50, and must not be widenable by its content"
+        assert "minmax(15rem, 19rem)" not in style, "the old fixed track is gone"
+
+    def test_a_narrow_screen_stacks_the_search_above_the_catalog(self) -> None:
+        """Two 50% columns on a phone would be two unreadable slivers."""
+        narrow = re.search(
+            r"@media \(max-width: 900px\)\s*\{(.*?)\n  \}", self._style(), re.S
+        )
+        assert narrow is not None
+        block = narrow.group(1)
+        assert "grid-template-columns: 1fr" in block
+        assert ".workspace { order: 1; }" in block
+        assert ".catalog { order: 2;" in block
 
 
 # ---------------------------------------------------------------------------

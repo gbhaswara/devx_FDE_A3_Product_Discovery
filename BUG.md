@@ -255,7 +255,7 @@ What shipped instead: `request_chars` (a length) and `request_digest` (16 hex ch
 
 ## Part 2b — Defects found in the shipped code
 
-Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. A12–A14 are in conversation memory. A15 is separate: it was found later, while answering "how is the UI deployed?", and it is in the page rather than in the assistant. A16 was found by building the catalog column and noticing a product's unit read "No volume pricing for this item." Registered before being fixed, per the rule at the end of this file — except A15, which says so in its own entry. **A12–A15 are FIXED; A16 is OPEN** — A13 required answering a question D3 left open, which is recorded in its entry.
+Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. A12–A14 are in conversation memory. A15 is separate: it was found later, while answering "how is the UI deployed?", and it is in the page rather than in the assistant. A16 was found by building the catalog column and noticing a product's unit read "No volume pricing for this item." Registered before being fixed, per the rule at the end of this file — except A15, which says so in its own entry. **A12–A15, A17 and A18 are FIXED; A16 is OPEN** — A13 required answering a question D3 left open, which is recorded in its entry. A17 and A18 were reported from use after the submission was complete; both were reproduced against the running service before anything was changed.
 
 ### A12 — A first turn that states only a quantity or a budget cannot be continued
 
@@ -489,6 +489,57 @@ the helper returns `None` the moment a unit word is present.
 Reverting the merge change makes 4 of those tests fail; the guard for an explicit
 weight keeps passing, which is the distinction the fix has to preserve. The suite
 went from 1169 to 1182.
+
+---
+
+### A18 — The catalog column hid most of the catalog it was added to show
+
+Reported from use, as a request: make the page 50-50 and make the left column a
+drop-down, *so we can see all categories and item*.
+
+The cause of the second half was a defect, not a missing feature. The column was
+`max-height: calc(100vh - 2rem)` with `overflow-y: auto` inside a sticky panel.
+At 1440×900 it showed the catalog heading, the hint, and the first category's
+nine rows — and then an inner scrollbar. The other three categories, and the
+counts that say how large they are, were below that scrollbar with nothing on
+screen to suggest they existed. The catalog column could show one of its four
+categories.
+
+**Why it was invisible.** `test_ui_catalog.py` asserted that every product appears
+exactly once in the served HTML, escaped, with the right price and the right
+category count. All of that was true. Every row was in the response; most were
+not on the screen. A DOM assertion cannot see a scrollbar, and the suite had no
+browser, so the one property the column existed for — that the catalog is
+legible — was never asserted and never looked at.
+
+This is the A15 lesson in a different place: present in the payload, absent from
+the interface. `curl` cannot tell the difference either.
+
+**Fix.** Three changes, each the smallest that answers the report:
+
+* The two tracks are `minmax(0, 1fr) minmax(0, 1fr)`. The zero minimum is the
+  part that matters: a bare `1fr` is `minmax(auto, 1fr)`, so a long product name
+  would widen its own column past the half and the split would stop being 50-50.
+* A category is a native `<details>` with its count in the `<summary>`, all
+  closed on arrival. No script, keyboard operable, announced as expanded or
+  collapsed; the chevron is drawn with borders rather than a font glyph because
+  a stack without U+25B8 rendered it as a missing-character box.
+* The panel has no height of its own. `max-height`, `overflow-y`, the inner
+  `.catalog-scroll` element and `position: sticky` are gone, so content cannot be
+  clipped and the page scrolls instead. Sticky was also dropped because a panel
+  taller than the viewport cannot be scrolled to its bottom while stuck.
+
+**Verification.** `TestTheCatalogIsCollapsible` (5) and `TestTheSplitIsHalfAndHalf`
+(2) pin the structure, the closed state, the absence of `max-height`/`overflow-y`,
+the delegated click handler, the equal tracks and the ≤900 px stack. Checked in a
+browser at 1440×900 and at 390×844: four categories and their counts on screen at
+once; opening one shows its rows and pushes nothing out of the document; clicking
+a row inside it fills the search box and sends no request. The click contract,
+price parity and "every name resolves" tests were unchanged by the markup change
+and still pass.
+
+**Status: FIXED.** The 50-50 half of the report was a preference, not a defect;
+it is implemented but not claimed as a bug.
 
 ---
 

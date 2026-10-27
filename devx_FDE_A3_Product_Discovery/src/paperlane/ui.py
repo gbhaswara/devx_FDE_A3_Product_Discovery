@@ -1,8 +1,15 @@
 """The single page.
 
-Two columns: the catalog on the left, the assistant on the right. Server-rendered
-HTML fragments over htmx, same origin, no build step and no client-side state
-beyond "a click puts a product name in the search box".
+Two equal columns: the catalog on the left, the assistant on the right.
+Server-rendered HTML fragments over htmx, same origin, no build step and no
+client-side state beyond "a click puts a product name in the search box".
+
+The catalog's categories are native ``<details>`` disclosures. A fixed-height
+scroller could show only the part of the catalog that happened to be near the
+top, so "which categories exist" was a question answered by scrolling; collapsed
+groups put every category on screen at once, and each is one click from its
+items. No script is involved — the browser does the disclosure, so the page's
+one script is still the one that fills the search box.
 
 The page's job is to make the four outcomes *visibly* different, because the
 most likely misreading of a sales assistant is treating "nothing matched" as
@@ -74,17 +81,17 @@ PAGE = """<!doctype html>
     background: none; color: var(--accent); border: 1px solid var(--line);
     font-weight: 400; font-size: .86rem; padding: .35rem .7rem;
   }
-  /* Two columns: the catalog on the left, the assistant on the right. The
-     catalog is a fixed-width track that does not grow, so a long product name
-     wraps instead of pushing the reply panel narrower. */
+  /* Two equal columns: the catalog on the left, the assistant on the right.
+     `minmax(0, 1fr)` and not a bare `1fr` on both tracks — `1fr` is
+     `minmax(auto, 1fr)`, so a long product name would widen its own column past
+     the half and the split would stop being 50-50. With the minimum at 0 the
+     cells can shrink, and the name wraps instead. */
   main.layout {
-    display: grid; grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 2rem; align-items: start;
   }
   .workspace { min-width: 0; }
   .catalog {
-    position: sticky; top: 1rem; display: flex; flex-direction: column;
-    max-height: calc(100vh - 2rem);
     border: 1px solid var(--line); border-radius: 8px; background: #fff;
     overflow: hidden;
   }
@@ -98,16 +105,31 @@ PAGE = """<!doctype html>
     text-transform: uppercase; color: var(--muted);
   }
   .catalog-head .count { font-size: .75rem; color: var(--muted); }
-  .catalog-scroll {
-    flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  }
-  .group h3 {
-    position: sticky; top: 0; z-index: 1; margin: 0; padding: .45rem 1rem;
+  /* One disclosure per category. The summary is the old category heading plus
+     a chevron. `display: flex` replaces the native marker, so the chevron is
+     drawn here and both marker implementations are suppressed below. */
+  .group > summary {
+    display: flex; align-items: baseline; gap: .45rem;
+    padding: .5rem 1rem; cursor: pointer; list-style: none;
     font-size: .7rem; letter-spacing: .07em; text-transform: uppercase;
     color: var(--muted); background: var(--paper);
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--line); user-select: none;
   }
-  .group h3 span { float: right; font-weight: 400; }
+  .group > summary::-webkit-details-marker { display: none; }
+  /* Drawn with borders, not a glyph: a font without U+25B8 renders the marker as
+     a missing-character box, which is how this looked in testing. */
+  .group > summary::before {
+    content: ""; align-self: center; flex: none;
+    width: 0; height: 0; border-left: 5px solid currentColor;
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform .12s ease;
+  }
+  .group[open] > summary::before { transform: rotate(90deg); }
+  .group > summary:hover { color: var(--ink); }
+  .group > summary:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: -2px;
+  }
+  .group > summary span { margin-left: auto; font-weight: 400; }
   .group ul { list-style: none; margin: 0; padding: 0; }
   .group li + li { border-top: 1px solid #efefea; }
   .item {
@@ -135,7 +157,7 @@ PAGE = """<!doctype html>
   @media (max-width: 900px) {
     main.layout { grid-template-columns: 1fr; }
     .workspace { order: 1; }
-    .catalog { order: 2; position: static; max-height: 20rem; }
+    .catalog { order: 2; }
   }
   #result { margin-top: 2rem; }
   .panel {
@@ -399,7 +421,7 @@ def _catalog_shell(count: str, body: str, hint: str = "") -> str:
         '<div class="catalog-head"><h2>Catalog</h2>'
         f'<span class="count">{count}</span></div>'
         f"{hint}"
-        f'<div class="catalog-scroll">{body}</div>'
+        f"{body}"
         "</aside>"
     )
 
@@ -444,13 +466,27 @@ def render_catalog(
         category = str(product.get("category") or "Uncategorised")
         grouped.setdefault(category, []).append(product)
 
+    # Every category is a disclosure, and every one starts closed. Closed, the
+    # column is the catalog's map: four headings instead of a list longer than
+    # the window, so which categories exist is answerable at a glance. Opening
+    # one shows its rows in place and lets the page scroll.
+    #
+    # The previous version was a fixed-height scroller with a sticky panel. On a
+    # 900-pixel window that showed the first category and clipped the rest, which
+    # is the complaint this shape answers: the container no longer has a height
+    # of its own to run out of.
+    #
+    # `<details>` and not a scripted accordion. The page has one script, and it
+    # only fills the search box; a disclosure the browser implements is keyboard
+    # operable and announced as expanded or collapsed without any of that.
     sections = []
     for category in sorted(grouped):
         items = grouped[category]
         rows = "".join(_catalog_row(product, facts) for product in items)
         sections.append(
-            f'<section class="group"><h3>{escape(category)}'
-            f"<span>{len(items)}</span></h3><ul>{rows}</ul></section>"
+            '<details class="group">'
+            f"<summary>{escape(category)}<span>{len(items)}</span></summary>"
+            f"<ul>{rows}</ul></details>"
         )
 
     # The quantity matters. A row shows the price for *one* unit, and the one
@@ -458,8 +494,8 @@ def render_catalog(
     # the trap recorded as T1 in BUG.md. The quote applies tiers at whatever
     # quantity was asked for.
     hint = (
-        '<p class="catalog-hint">Click a product to put its name in the search '
-        "box. Prices are each, before VAT, at quantity 1; volume tiers are "
-        "applied when you ask for a quote.</p>"
+        '<p class="catalog-hint">Open a category to see its products, then click '
+        "one to put its name in the search box. Prices are each, before VAT, at "
+        "quantity 1; volume tiers are applied when you ask for a quote.</p>"
     )
     return _catalog_shell(f"{len(products)} products", "".join(sections), hint)

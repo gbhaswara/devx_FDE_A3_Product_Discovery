@@ -100,11 +100,14 @@ with `HTTP 404` on `index.html`.
 the crawler reads; 8001 serves the *assistant*. Binding the assistant to 8000
 collides with the site. `./run.sh serve` defaults to 8001 for that reason.
 
-**What the page gives you.** Two columns: the catalog on the left, the assistant
-on the right. The catalog lists every product in the snapshot, grouped by
-category, with size, weight, pack size, the effective unit price and an
-out-of-stock label. Clicking a row fills the search box — it never submits and
-never quotes, so a click cannot spend a model call or invent a quantity; you
+**What the page gives you.** Two equal columns — the catalog on the left, the
+assistant on the right — each half the page. The catalog lists every product in
+the snapshot under its category, with size, weight, pack size, the effective unit
+price and an out-of-stock label. Categories are collapsed on arrival, so all of
+them are visible at once instead of the first few and a scrollbar; opening one
+shows its products in place, and the page scrolls rather than clipping them
+inside a fixed-height box. Clicking a row fills the search box — it never submits
+and never quotes, so a click cannot spend a model call or invent a quantity; you
 still press **Ask**. A row's price is what a one-unit quote returns for that SKU,
 which is why the one sale item shows 259.00 rather than its 299.00 list price:
 the quote would not honour the list price, so the column must not advertise it.
@@ -527,7 +530,7 @@ a reply — those are deterministic code paths with their own tests.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The four conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1183) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1190) |
 
 ---
 
@@ -550,7 +553,7 @@ under `openspec/changes/archive/`, with its own capability spec:
 | Item | State |
 |---|---|
 | Multi-item basket quoting | Built — `POST /api/quote/lines`, evaluation cases 16 and 27 |
-| Single-page interface | Built — `ui.py`, all four outcomes rendered, plus a catalog column that prefills the search |
+| Single-page interface | Built — `ui.py`, all four outcomes rendered, plus a collapsible catalog column that prefills the search |
 | Snapshot diff as a demo artefact | Built — `GET /api/diff`, `./run.sh diff` |
 | Mutated-site refresh demonstration | Built — `./run.sh verify-refresh` mutates a copy of the site, ingests it, and verifies all 12 injected changes are reported under the correct kind. Closed by `add-mutated-site-refresh-harness` |
 | Hybrid semantic tiebreak | Built — `embeddings.py`, optional `PAPERLANE_EMBED_*` configuration, similarity term after price; measured with `./run.sh similarity`. Closed by `add-semantic-tiebreak` |

@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1183 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1190 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,36 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Changed — 2026-10-27 · the split is half and half, and the catalog is a set of drop-downs
+
+Reported from use: the left column could not show all of its categories. It was
+a fixed-height scroller inside a sticky panel, so on a 900-pixel window the first
+category filled the box and the other three sat below an inner scrollbar.
+
+Three changes, each the smallest one that answers the report:
+
+- **The two columns are equal tracks** — `minmax(0, 1fr) minmax(0, 1fr)`. The
+  zero minimum is the part that matters: `1fr` alone is `minmax(auto, 1fr)`, so a
+  long product name would widen its own column past the half and the split would
+  stop being 50-50.
+- **A category is a `<details>`** — native disclosure, no script, keyboard
+  operable and announced as expanded or collapsed. Every group starts closed, so
+  all four categories and their counts are on screen at once; opening one shows
+  its products.
+- **The panel has no height of its own** — the `max-height` / `overflow-y`
+  scroller and the sticky positioning are gone, so content is no longer clipped
+  and the page scrolls instead.
+
+The click contract is unchanged: a row fills the search box and stops. It now
+sits inside a disclosure, and the handler is delegated to `document`, so a row in
+a group opened after load behaves exactly like one open at load. No new endpoint,
+no dependency, and no client state beyond that prefill.
+
+`test_ui_catalog.py::TestTheCatalogIsCollapsible` (5) and
+`TestTheSplitIsHalfAndHalf` (2) pin the structure; the escaping, price-parity and
+"every name resolves" tests run against the new markup unchanged. Suite 1183 →
+1190.
 
 ### Fixed — 2026-10-27 · a bare quantity that is also a grammage no longer changes the paper
 

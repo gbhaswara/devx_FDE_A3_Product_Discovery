@@ -112,6 +112,11 @@ Whole-path tests through the API, no network, no model.
   and resolves every one of the 72 names back to its own product through the
   interpreter — the property the click-to-prefill behaviour rests on. With no
   snapshot it renders the remedy instead of failing (`test_ui_catalog.py`)
+- The page is two equal tracks, and the catalog is a `<details>` per category
+  with every group closed on arrival — the shape that puts all four categories
+  on screen instead of hiding three below an inner scrollbar. The panel has no
+  `max-height` or `overflow-y`, and a click inside a collapsed group still
+  fills the search box, because the handler is delegated to `document`
 
 ### Layer 4 — Refresh verification
 
@@ -333,12 +338,12 @@ carrying a total is checked structurally instead.
 | `test_single_turn_unchanged.py` | 3 | 8 |
 | `test_snapshot_cli.py` | 5 | 3 |
 | `test_snapshot_path.py` | 26 | 7 |
-| `test_ui_catalog.py` | 19 | 3 |
+| `test_ui_catalog.py` | 26 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1183** | |
+| **Total** | **1190** | |
 
-Online: 1183 collected, 4 skip (provider- and loopback-dependent). Offline
-(`unshare -rn`): 1183 collected, 7 skip — the same four plus the three loopback
+Online: 1190 collected, 4 skip (provider- and loopback-dependent). Offline
+(`unshare -rn`): 1190 collected, 7 skip — the same four plus the three loopback
 tests that legitimately cannot run without a network interface.
 
 ## What is tested where
@@ -392,7 +397,7 @@ tests that legitimately cannot run without a network interface.
 ## Running the tests
 
 ```
-./run.sh test             # 1183 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1190 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design
 ./run.sh eval --cases eval/conversation-cases.json   # 12 conversations, 27 turns
