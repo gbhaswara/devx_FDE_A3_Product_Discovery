@@ -322,6 +322,33 @@ def _resolve_bare_grammage(text: str) -> tuple[int | None, int | None, int | Non
     return None, None, None
 
 
+def bare_grammage(text: str) -> int | None:
+    """The exact weight this text states *without* a unit word, if any.
+
+    ``resolve_weight`` answers "which weight does this request state", whatever
+    form it takes. This answers the narrower question the merge layer needs: did
+    the weight come from a bare number ("A5 gloss 130") or from an explicit unit
+    ("130 gsm")? Both produce the same ``weight_gsm`` in ``Criteria``, so the
+    distinction is gone by the time the merge sees it — and the merge needs it,
+    because a bare number in a refinement is the quantity while "130 gsm" is a
+    weight correction.
+
+    Returns ``None`` for a unit-bearing weight, a pound weight, and a bounded
+    bare number ("at least 100"), which states a range rather than a value. A
+    bare number that is not a catalog grammage is already not read as a weight
+    at all, so it is ``None`` here too — consistent by construction, because
+    this delegates the decision to the same function ``resolve_weight`` uses.
+    """
+    if not text:
+        return None
+    if _POUND_PATTERN.search(text) or _WEIGHT_PATTERN.search(text):
+        return None
+    exact, minimum, maximum = _resolve_bare_grammage(text)
+    if exact is None or minimum is not None or maximum is not None:
+        return None
+    return exact
+
+
 # ---------------------------------------------------------------------------
 # Printing notation
 # ---------------------------------------------------------------------------

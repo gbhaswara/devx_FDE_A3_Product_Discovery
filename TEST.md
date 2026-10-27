@@ -258,6 +258,12 @@ inherited something and did.
 - **A bare number is a quantity only in a refinement.** *A4 80gsm* must not become
   quantity 80, and a bare number in a turn that also states a budget resolves to
   *not stated* rather than quoting 130 reams
+- **A bare number that is also a catalog grammage is still the quantity**
+  (`BUG.md` A17). *100* is a stocked weight, so interpretation files it as one; in
+  a refinement the merge reclaims it and the earlier weight is carried instead.
+  Without that, one turn changed both the quantity and the paper, and the wrong
+  weight outlived the turn that caused it — returning to a quantity that had
+  quoted before came back as no-match
 - **The reply discloses what it remembered**, name for name, and a fresh request
   says nothing about earlier turns
 - **Nothing that is not remembered is called remembered.** A restated field is not
@@ -281,7 +287,7 @@ The harness is shown able to fail: `eval/conversation-negative-control.json` is
 five conversations each wrong in exactly one way — a quantity not carried, a new
 subject wrongly inheriting, a missing disclosure, a restated field called
 remembered, a wrong outcome — and the run exits 1 with all five rejected. The
-three `BUG.md` regressions (A12, A13, A14) were each proven falsifiable by
+four `BUG.md` regressions (A12, A13, A14, A17) were each proven falsifiable by
 reverting the fix and watching the corresponding case fail, then restoring it.
 
 The pricing axis of a conversation case compares a fresh turn against the
@@ -295,13 +301,13 @@ carrying a total is checked structurally instead.
 
 | Module | Tests | Layer |
 |---|---|---|
-| `test_aliases.py` | 99 | 1 |
+| `test_aliases.py` | 106 | 1 |
 | `test_api.py` | 68 | 3 |
 | `test_ask_cli.py` | 32 | 3 |
 | `test_assistant.py` | 67 | 3 |
 | `test_catalog.py` | 48 | 3 |
-| `test_conversation.py` | 63 | 8 |
-| `test_conversation_api.py` | 35 | 8 |
+| `test_conversation.py` | 66 | 8 |
+| `test_conversation_api.py` | 38 | 8 |
 | `test_conversation_eval.py` | 19 | 8 |
 | `test_crawl.py` | 13 | 2 |
 | `test_embeddings.py` | 66 | 6 |
@@ -324,10 +330,10 @@ carrying a total is checked structurally instead.
 | `test_snapshot_path.py` | 26 | 7 |
 | `test_ui_catalog.py` | 19 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1169** | |
+| **Total** | **1182** | |
 
-Online: 1169 collected, 4 skip (provider- and loopback-dependent). Offline
-(`unshare -rn`): 1169 collected, 7 skip — the same four plus the three loopback
+Online: 1182 collected, 4 skip (provider- and loopback-dependent). Offline
+(`unshare -rn`): 1182 collected, 7 skip — the same four plus the three loopback
 tests that legitimately cannot run without a network interface.
 
 ## What is tested where
@@ -381,10 +387,10 @@ tests that legitimately cannot run without a network interface.
 ## Running the tests
 
 ```
-./run.sh test             # 1169 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1182 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design
-./run.sh eval --cases eval/conversation-cases.json   # 11 conversations, 24 turns
+./run.sh eval --cases eval/conversation-cases.json   # 12 conversations, 27 turns
 ./run.sh metrics          # the five operational measures, derived from request records
 ./run.sh metrics --eval   # the same measures over the most recent evaluation run
 ./run.sh verify-refresh   # mutate a copy of the site, refresh against it, verify (~55s)
@@ -392,7 +398,7 @@ tests that legitimately cannot run without a network interface.
 
 The unit and integration layers must pass with the network disconnected and no credentials present. If a test needs either, it belongs in the evaluation layer instead.
 
-Two layers are scored by their own harness rather than by pytest: the 28-case evaluation (`./run.sh eval`, 24 run against v1, 4 against v2) and the conversation set (`./run.sh eval --cases eval/conversation-cases.json`, 11 conversations / 24 turns, with a single-turn replay digest across the 22 comparable cases). Both have a negative control that exits 1. A third set is scored by the same harness but is deliberately **not** a regression set: `eval/held-out-cases.json` (11 requests, unseen phrasing, 3 known failures retained), run with `./run.sh eval --cases eval/held-out-cases.json`.
+Two layers are scored by their own harness rather than by pytest: the 28-case evaluation (`./run.sh eval`, 24 run against v1, 4 against v2) and the conversation set (`./run.sh eval --cases eval/conversation-cases.json`, 12 conversations / 27 turns, with a single-turn replay digest across the 22 comparable cases). Both have a negative control that exits 1. A third set is scored by the same harness but is deliberately **not** a regression set: `eval/held-out-cases.json` (11 requests, unseen phrasing, 3 known failures retained), run with `./run.sh eval --cases eval/held-out-cases.json`.
 
 ## Regression policy
 

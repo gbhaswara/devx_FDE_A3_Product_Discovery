@@ -11,6 +11,7 @@ import pytest
 
 from paperlane.aliases import (
     POUND_TO_GSM,
+    bare_grammage,
     resolve_category,
     resolve_colour,
     resolve_finish,
@@ -106,6 +107,50 @@ class TestWeightAliases:
 
     def test_no_weight_returns_nothing(self):
         assert resolve_weight("nice paper") == (None, None, None)
+
+
+class TestBareGrammage:
+    """Did the weight come from a bare number, or from a unit?
+
+    ``resolve_weight`` deliberately collapses both into one value. The merge
+    layer cannot: in a refinement a bare number is the quantity, while "100 gsm"
+    is a weight correction. This predicate is the distinction, kept next to the
+    parser that makes it so the two cannot drift.
+    """
+
+    def test_a_bare_catalog_grammage_is_bare(self):
+        assert bare_grammage("A5 gloss 130") == 130
+        assert bare_grammage("make it 100") == 100
+        assert bare_grammage("change it to 160") == 160
+
+    def test_a_number_the_catalog_does_not_stock_is_not_a_grammage(self):
+        # 60 is a plausible quantity and not a stocked weight, which is why the
+        # reported sequence only went wrong at the turn that said 100.
+        assert bare_grammage("change it to 60") is None
+        assert bare_grammage("change it to 50") is None
+
+    def test_a_unit_bearing_weight_is_not_bare(self):
+        assert resolve_weight("130 gsm") == (130, None, None)
+        assert bare_grammage("130 gsm") is None
+        assert bare_grammage("100 g/m2") is None
+
+    def test_a_pound_weight_is_not_bare(self):
+        assert bare_grammage("20 lb") is None
+
+    def test_a_bounded_bare_number_is_not_bare(self):
+        # A bound states a range, so it is a weight requirement and not a
+        # restated quantity.
+        assert bare_grammage("at least 100") is None
+        assert bare_grammage("under 130") is None
+
+    def test_a_quantity_is_not_a_grammage(self):
+        assert bare_grammage("20 reams") is None
+        # 50 is not a catalog grammage, so the weight parser never claims it.
+        assert bare_grammage("make it 50") is None
+
+    def test_a_budget_is_not_a_grammage(self):
+        assert bare_grammage("under 250 a pack") is None
+        assert bare_grammage("") is None
 
 
 class TestPrintingNotation:

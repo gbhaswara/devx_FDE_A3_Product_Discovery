@@ -44,7 +44,7 @@ rather than demonstrate it, and none is needed to see the system work:
 - `./run.sh similarity` measures the semantic tiebreak. It is the only command
   that needs an embedding provider, and it says `NOT MEASURED` when it cannot.
 - `./run.sh eval --cases eval/conversation-cases.json` scores the conversation
-  layer — 11 recorded conversations, 24 turns — and prints a single-turn replay
+  layer — 12 recorded conversations, 27 turns — and prints a single-turn replay
   digest: the 22 comparable cases must produce the same reply as before the
   feature existed. `eval/conversation-negative-control.json` is the same file
   wrong in five ways and exits 1, so the harness is shown able to fail.
@@ -240,7 +240,7 @@ environment variable only.
 
               ---------- what proves it ----------
 
-    evaluate.py (28 cases)  +  conversation_eval.py (11 conversations)
+    evaluate.py (28 cases)  +  conversation_eval.py (12 conversations)
         |
         v
     records.py (one per request)  ->  metrics.py (derived on read)
@@ -523,11 +523,11 @@ a reply — those are deterministic code paths with their own tests.
 | No credential reaches a record | `tests/test_records.py::TestNoCredentialInRecords` sets a sentinel key, makes a model call, and scans the log |
 | The metrics are derived, not counted | `tests/test_metrics.py::TestDerivedOnRead` deletes a record and asserts the metric moves |
 | The disagreement metric can fail | `tests/test_metrics.py::TestDisagreement` corrupts a stated total and asserts the count goes non-zero |
-| The conversation layer is scored | `./run.sh eval --cases eval/conversation-cases.json` — 11 conversations, 24 turns |
+| The conversation layer is scored | `./run.sh eval --cases eval/conversation-cases.json` — 12 conversations, 27 turns |
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
-| The three conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1169) |
+| The four conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1182) |
 
 ---
 

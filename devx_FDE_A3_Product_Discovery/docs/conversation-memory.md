@@ -94,6 +94,17 @@ budget. *Under 130 a pack* also contains a bare number, and reading the budget a
 the quantity would quote 130 reams — a wrong total, not a cosmetic slip.
 Ambiguity resolves to *not stated*, which leaves the earlier quantity in place.
 
+A lone number can also be one the catalog stocks as a weight, and there the rule
+interpreter claims it first: *100* is read as 100 gsm because in a fresh request
+that is the right reading (*A5 gloss 130*). Interpretation sees one turn and
+cannot know it is a refinement (D1), so the merge reclaims the number when it is
+the same one the turn adopted as its quantity, and carries the earlier weight
+instead. Without that, *change it to 100* after 160 gsm paper changed the paper as
+well as the quantity — and the wrong weight then survived every later turn, so
+returning to a quantity that had already quoted came back as no-match (`BUG.md`
+A17). An explicit *100 gsm* is still a weight correction: the helper returns
+nothing the moment a unit word is present.
+
 ### A refusal and a no-match are turns
 
 A refused or unmatched turn is still recorded, because the customer's next

@@ -82,6 +82,53 @@ class TestContinuation:
         assert second["criteria"].get("category") != "Copy paper"
 
 
+class TestABareNumberThatIsAlsoAGrammage:
+    """BUG.md A17 — the reported conversation, replayed end to end.
+
+    "100" and "60" are catalog grammages, so the rule interpreter read them as
+    weights. Turn three then changed two things at once — the quantity the
+    customer meant and the paper weight they did not — which produced a no-match,
+    and the bogus weight survived into every later turn. Returning to a quantity
+    that had already quoted therefore came back as no-match, which is the shape
+    the customer reported.
+
+    The merge fixes the reading; these tests pin that the whole path — interpret,
+    merge, validate, search, quote — agrees with it.
+    """
+
+    def test_the_reported_sequence_quotes_every_turn(self, client):
+        turns = [
+            ("PaperLane Card A4 160gsm Assorted Pastels, 10 reams", 10),
+            ("change it to 50", 50),
+            ("change it to 100", 100),
+            ("change it to 60", 60),
+            ("change it to 50", 50),
+        ]
+        for text, expected_quantity in turns:
+            reply = ask(client, text, "c1").json()
+            assert reply["outcome"] == "quoted", f"{text!r} did not quote"
+            assert reply["criteria"]["quantity"] == expected_quantity
+            assert reply["criteria"]["weight_gsm"] == 160, (
+                f"{text!r} changed the paper, not just the quantity"
+            )
+
+    def test_the_quoted_total_follows_the_quantity(self, client):
+        ask(client, "PaperLane Card A4 160gsm Assorted Pastels, 10 reams", "c1")
+        ask(client, "change it to 100", "c1")
+        reply = ask(client, "change it to 50", "c1").json()
+
+        (candidate,) = reply["candidates"]
+        assert candidate["sku"] == "PL-CS-A4-160-AST"
+        assert candidate["quantity"] == 50
+        # 50 × 159.00 = 7,950.00, free delivery, VAT 556.50, total 8,506.50.
+        assert reply["figures"]["total"] == "8,506.50"
+
+    def test_an_explicit_gsm_still_corrects_the_weight(self, client):
+        ask(client, "A4 80gsm copy paper, 20 reams", "c1")
+        reply = ask(client, "make it 100 gsm", "c1").json()
+        assert reply["criteria"]["weight_gsm"] == 100
+
+
 # ---------------------------------------------------------------------------
 # Disclosure
 # ---------------------------------------------------------------------------

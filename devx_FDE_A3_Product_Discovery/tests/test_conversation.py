@@ -207,6 +207,43 @@ class TestBareQuantity:
     def test_bare_quantity_ignores_a_weight(self):
         assert bare_quantity("make it 80 gsm") is None
 
+    def test_a_bare_number_that_is_also_a_grammage_is_the_quantity(self):
+        """BUG.md A17.
+
+        "100" is both a plausible quantity and a catalog grammage, so the rule
+        interpreter reads it as 100 gsm before the merge sees the turn. In a
+        refinement it is the quantity: the customer is changing the number they
+        have been changing, not swapping the paper.
+        """
+        previous = criterion_from(
+            "PaperLane Card A4 160gsm Assorted Pastels, 10 reams"
+        )
+        result = merge_turn(previous, criterion_from("change it to 100"))
+
+        assert result.continued
+        assert result.criteria.quantity == 100
+        assert result.criteria.weight_gsm == 160, "100 is the quantity, not a weight"
+        assert "weight_gsm" in result.carried
+
+    def test_the_weight_a_bare_quantity_kept_is_disclosed(self):
+        """The carried weight is visible, so a wrong reading can be corrected."""
+        previous = criterion_from(
+            "PaperLane Card A4 160gsm Assorted Pastels, 10 reams"
+        )
+        result = merge_turn(previous, criterion_from("change it to 130"))
+        assert result.criteria.quantity == 130
+        assert result.criteria.weight_gsm == 160
+        assert "weight_gsm" in result.carried
+        assert "quantity" not in result.carried
+
+    def test_an_explicit_weight_is_still_a_correction(self):
+        """A17 must not weaken D4: a unit word makes the number a weight."""
+        previous = criterion_from("A4 80gsm copy paper, 20 reams")
+        result = merge_turn(previous, criterion_from("make it 100 gsm"))
+
+        assert result.criteria.weight_gsm == 100
+        assert result.criteria.quantity == 20, "the quantity was not restated"
+
     def test_bare_quantity_reads_a_plain_number(self):
         assert bare_quantity("make it 50") == 50
         assert bare_quantity("no words here") is None

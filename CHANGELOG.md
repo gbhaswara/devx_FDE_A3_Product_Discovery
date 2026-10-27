@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1169 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 11/11 over 24 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1182 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,33 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Fixed — 2026-10-27 · a bare quantity that is also a grammage no longer changes the paper
+
+Reported from use, as a five-turn conversation. *Change it to 50* quoted; *change
+it to 100*, then *60*, then *50* again all came back as no-match — including the
+last turn, which restated a quantity that had already quoted.
+
+Two correct rules met on the number 100. The weight parser reads a bare number as
+a grammage when the catalog stocks it (*A5 gloss 130* needs no unit), and the merge
+reads a bare number in a refinement as the quantity. Turn three therefore set both:
+100 packs **and** 100 gsm. The weight stuck, so every later turn carried it;
+returning to 50 changed the quantity but not the paper.
+
+`aliases.bare_grammage` now exposes the question `Criteria` loses — was the weight
+read from a bare number or from a unit — and `merge_turn` reclaims the number when
+it is the one the turn just adopted as its quantity. Interpretation stays per-turn
+and model-independent (D1); the decision sits beside the bare-quantity rule that
+already lived there. An explicit *100 gsm* still corrects the weight.
+
+- `tests/test_aliases.py::TestBareGrammage` (7), three merge tests, and
+  `test_conversation_api.py::TestABareNumberThatIsAlsoAGrammage` (3), which replays
+  the reported sequence and asserts the recovered total.
+- `eval/conversation-cases.json` case 12 scores the same sequence.
+- **Falsification:** reverting the merge change fails 4 of the new tests and leaves
+  the explicit-weight guard passing.
+- The suite is 1182 tests, up from 1169; the conversation set is 12 conversations
+  over 27 turns.
 
 ### Changed — 2026-10-27 · the page is a catalog list beside the assistant
 

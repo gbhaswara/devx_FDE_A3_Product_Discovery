@@ -315,6 +315,37 @@
         }
       ],
       "note": "Turn 2 states nothing, so it is answered from an empty request rather than by re-answering turn 1 — D3, and the whole point of it. But the earlier requirements must survive it, or one unparseable sentence ends the conversation: turn 3 has to still know it was A4 80gsm copy paper. Both halves are asserted, and either one alone would miss the defect."
+    },
+    {
+      "number": 12,
+      "name": "a bare number that is also a grammage restates the quantity",
+      "proves": "the reported sequence: 100 is a quantity in a refinement even though it is also a catalog weight (BUG.md A17)",
+      "turns": [
+        {
+          "request": "PaperLane Card A4 160gsm Assorted Pastels, 10 reams",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"category": "Card and photo paper", "size": "A4", "weight_gsm": 160, "quantity": 10}
+          }
+        },
+        {
+          "request": "change it to 100",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"weight_gsm": 160, "quantity": 100},
+            "not_carried": ["quantity"],
+            "reply_contains": ["160 gsm"]
+          }
+        },
+        {
+          "request": "change it to 60",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"weight_gsm": 160, "quantity": 60}
+          }
+        }
+      ],
+      "note": "The rule interpreter reads a lone 100 as 100 gsm, which is right in a fresh request (\"A5 gloss 130\") and wrong in a refinement, where the number is the quantity. Interpretation sees one turn (D1), so the merge has to undo the reading. Without it, turn 2 changed the paper as well as the quantity, and the bogus weight then survived every later turn — so returning to a quantity that had already quoted came back as no-match. Turn 3 proves the weight was carried rather than replaced."
     }
   ]
 }

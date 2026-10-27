@@ -31,6 +31,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterator, Protocol
 
+from .aliases import bare_grammage
 from .criteria import Criteria
 
 #: How many distinct conversations are retained. A caller supplies the id, so
@@ -269,6 +270,26 @@ def merge_turn(
         restated = bare_quantity(merged.raw_text)
         if restated is not None:
             merged = replace(merged, quantity=restated)
+
+    # The same bare number can also be a grammage the catalog stocks, and there
+    # the rule interpreter has already claimed it: a lone "100" is read as 100 gsm
+    # because in a *fresh* request that is the right reading ("A5 gloss 130").
+    # Interpretation sees one turn and cannot know it is a refinement (D1), so the
+    # decision belongs here, exactly where the bare-quantity rule lives.
+    #
+    # Without this, "change it to 100" after 160 gsm paper set *both* quantity 100
+    # and weight 100 gsm: the turn silently changed the product and the wrong
+    # weight then survived every later turn, so even returning to a quantity that
+    # had quoted before came back as no-match (BUG.md A17). Dropping the weight
+    # here lets the earlier one be carried, which is the honest reading — the
+    # customer asked to change the quantity, not the paper.
+    if (
+        merged.quantity is not None
+        and merged.weight_gsm is not None
+        and merged.quantity == merged.weight_gsm
+        and bare_grammage(merged.raw_text) == merged.quantity
+    ):
+        merged = replace(merged, weight_gsm=None)
 
     for name in MERGEABLE_FIELDS:
         if _stated(merged, name):

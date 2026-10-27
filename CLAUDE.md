@@ -8,7 +8,7 @@ The **devx AI Labs AI Forward Deployed Engineer** take-home, **Option A3 — Pro
 
 A customer sends *"We need letter-size flyers, one side, colour, under 250 a pack, 20 packs."* The system reads the live catalog, finds matching products, explains why each matches, and returns a complete price breakdown — every figure computed in deterministic code.
 
-**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory and the gap-closure work. **221 tasks closed across the five earlier archived changes and none open** (86 Tier 1 + 26 + 27 + 28 + 54); `add-gap-closure` closed 5 more and is archived. 1169 tests pass offline under `unshare -rn` (7 skip) with no model configured. The version is `0.9.0`. Nothing is under construction.
+**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory and the gap-closure work. **221 tasks closed across the five earlier archived changes and none open** (86 Tier 1 + 26 + 27 + 28 + 54); `add-gap-closure` closed 5 more and is archived. 1182 tests pass offline under `unshare -rn` (7 skip) with no model configured. The version is `0.9.0`. Nothing is under construction.
 
 ## Read in this order
 
@@ -54,7 +54,7 @@ DEVXLABS/
     ├── paperlane/               READ-ONLY input — the site to crawl
     ├── run.sh                   the command surface (see below)
     ├── src/paperlane/           27 modules
-    ├── tests/                   29 modules, 1169 tests
+    ├── tests/                   29 modules, 1182 tests
     ├── eval/                    cases.json, held-out-cases.json, conversation-cases.json,
     │                            the three negative/control sets, results.md
     ├── docs/                    11 documents, one per layer or capability

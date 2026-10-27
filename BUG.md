@@ -428,6 +428,70 @@ extraction.
 
 ---
 
+### A17 — A bare quantity that is also a catalog grammage changed the paper, then stuck
+
+Reported as a five-turn conversation. Turns 1 and 2 quote; turns 3, 4 and 5 all
+come back as no-match — including turn 5, which restates the quantity that had
+already quoted on turn 2.
+
+```
+1  PaperLane Card A4 160gsm Assorted Pastels, 10 reams  -> quoted  160 gsm, 10
+2  change it to 50                                     -> quoted  160 gsm, 50
+3  change it to 100                                    -> no_match  100 gsm, 100
+4  change it to 60                                     -> no_match  100 gsm, 60
+5  change it to 50                                     -> no_match  100 gsm, 50
+```
+
+**Root cause.** Two rules that are each right composed into one that is wrong.
+
+* `aliases._resolve_bare_grammage` reads a bare number as a weight when the
+  number is one the catalog stocks, so that "A5 gloss 130" needs no unit. `100`
+  is a stocked grammage.
+* `conversation.merge_turn` reads a bare number in a refinement as the quantity —
+  the rule the conversation spec states ("a bare number in a refinement is the
+  quantity").
+
+Nothing decided which rule owns the number when both apply. Turn 3 therefore set
+*both*: quantity 100 from the merge, weight 100 gsm from interpretation. A
+100 gsm card in assorted pastels does not exist, so the turn was a no-match — and
+because the merged criteria now held the weight, it was carried into turns 4 and
+5. Every later number changed the quantity only; the weight stayed wrong, which
+is why returning to 50 could not recover.
+
+`50` and `60` were never misread: neither is a catalog grammage. The defect fires
+only on numbers that are both a plausible quantity and a stocked weight — 70, 75,
+80, 90, 100, 130, 160, 170, 180, 200, 230, 250 — which is why the sequence only
+broke at the turn that said 100.
+
+**Why it was invisible.** Every existing test of this rule used `50`, and 50 is
+not a grammage, so the ambiguity never arose. The merge test also asserted only
+that the quantity was 50; it never asserted what happened to the weight. The
+eval case used 50 as well. A rule tested only at a value where it cannot conflict
+with another rule is not tested.
+
+**Fix.** `aliases.bare_grammage(text)` answers the question `Criteria` cannot:
+was this weight read from a bare number, or from a unit? `merge_turn` then drops
+the weight when it is the same number the turn adopted as its quantity and the
+text supports the bare reading. Interpretation stays per-turn and stateless
+(D1); the context-sensitive decision is made where the context is, next to the
+existing bare-quantity rule. An explicit "100 gsm" still corrects the weight —
+the helper returns `None` the moment a unit word is present.
+
+**Verification.**
+
+| Level | Test |
+|---|---|
+| Parser | `test_aliases.py::TestBareGrammage` — 7 cases, including a unit-bearing weight, a pound weight, a bounded bare number, and a number the catalog does not stock |
+| Merge | `test_conversation.py` — bare 100 is the quantity and 160 gsm is carried; explicit "100 gsm" still corrects |
+| Endpoint | `test_conversation_api.py::TestABareNumberThatIsAlsoAGrammage` — the reported five turns, plus the recovered total (8,506.50) |
+| Evaluation | `eval/conversation-cases.json` case 12 — the same sequence, scored on memory, retrieval, pricing and reply |
+
+Reverting the merge change makes 4 of those tests fail; the guard for an explicit
+weight keeps passing, which is the distinction the fix has to preserve. The suite
+went from 1169 to 1182.
+
+---
+
 ## Part 3 — Accepted risks in the design
 
 Carried deliberately. Each is stated in the README as a known limitation.
