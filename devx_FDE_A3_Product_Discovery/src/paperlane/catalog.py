@@ -36,6 +36,21 @@ from .money import to_satang
 #: Where the committed snapshot lives, and where a build is staged.
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "catalog.duckdb"
 
+#: An alternative snapshot, named by the environment. The demo round supplies an
+#: updated site and asks for a live re-ingest; pointing that at a named snapshot
+#: keeps the committed catalog — the one every recorded expectation is written
+#: against — from being overwritten by an unreviewed build. Precedence is
+#: explicit argument, then this, then :data:`DEFAULT_DB_PATH`.
+DB_PATH_ENV = "PAPERLANE_DB"
+
+#: How old a snapshot may be before it is reported stale, in hours. A starting
+#: point for a merchant whose prices and stock move daily, not a universal
+#: constant — overridable by ``PAPERLANE_STALE_AFTER_HOURS``. Staleness is
+#: *reported and never gating*: refusing to answer is a worse failure than
+#: answering from a catalog whose age is stated.
+STALE_AFTER_HOURS = 24.0
+STALE_AFTER_ENV = "PAPERLANE_STALE_AFTER_HOURS"
+
 SCHEMA_VERSION = 1
 
 SCHEMA_SQL = """
@@ -144,12 +159,19 @@ def _connect_readonly(db_path: Path) -> duckdb.DuckDBPyConnection:
 
 
 def resolve_db_path(db_path: Path | None = None) -> Path:
-    """The snapshot path a caller means, defaulting to the committed one.
+    """The snapshot path a caller means.
 
-    One place for the fallback, so a caller that needs only the path (to check
-    existence, or to key a cache) does not re-implement it and drift.
+    Precedence is an explicit argument, then ``PAPERLANE_DB``, then the committed
+    snapshot. This is the *only* place the fallback is spelled: every reader and
+    writer routes through it, because two spellings of "which snapshot" is how one
+    code path ends up serving from a named snapshot while another reports the
+    committed one — a mix-up that presents as a wrong price rather than as a
+    configuration error.
     """
-    return Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+    if db_path is not None:
+        return Path(db_path)
+    named = os.environ.get(DB_PATH_ENV)
+    return Path(named) if named else DEFAULT_DB_PATH
 
 
 @contextmanager
@@ -161,7 +183,7 @@ def open_readonly(db_path: Path | None = None) -> Iterator[duckdb.DuckDBPyConnec
     A fresh read-only connection per request costs milliseconds and removes the
     whole class of failure.
     """
-    path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+    path = resolve_db_path(db_path)
     if not path.exists():
         raise SnapshotMissing(path)
     con = _connect_readonly(path)
@@ -172,8 +194,7 @@ def open_readonly(db_path: Path | None = None) -> Iterator[duckdb.DuckDBPyConnec
 
 
 def snapshot_exists(db_path: Path | None = None) -> bool:
-    path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
-    return path.exists()
+    return resolve_db_path(db_path).exists()
 
 
 def snapshot_meta(db_path: Path | None = None) -> dict[str, Any]:
@@ -195,12 +216,107 @@ def snapshot_meta(db_path: Path | None = None) -> dict[str, Any]:
         "price_tiers": info.get("price_tiers"),
         "built_at": last.get("finished_at"),
         "base_url": last.get("base_url"),
+        # Age travels with the figures, because "computed against snapshot X" is
+        # not a complete answer without "X is nine hours old".
+        "freshness": info.get("freshness"),
+    }
+
+
+def stale_after_hours() -> float:
+    """The staleness threshold, from the environment or the documented default.
+
+    A bad value falls back rather than raising: a misspelled override must not
+    take down the health endpoint whose job is to report that something is wrong.
+    """
+    raw = os.environ.get(STALE_AFTER_ENV)
+    if raw:
+        try:
+            value = float(raw)
+        except ValueError:
+            return STALE_AFTER_HOURS
+        if value > 0:
+            return value
+    return STALE_AFTER_HOURS
+
+
+def parse_stored_timestamp(value: Any) -> datetime | None:
+    """Read an ingest timestamp back as an aware UTC datetime.
+
+    DuckDB returns a ``TIMESTAMP`` as a naive string. The crawl stamps it with
+    ``datetime.now(timezone.utc)``, so the value *is* UTC and the zone was lost on
+    the way out — not omitted because it was local. Attaching local time here
+    would make a nine-hour-old catalog look fresh in a UTC+7 timezone, which is
+    precisely the reading the freshness signal exists to prevent.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    text = str(value).strip()
+    if not text or text == "None":
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f",
+                "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def age_of(built_at: Any) -> float | None:
+    """Seconds since the catalog was built, or ``None`` when it is unknown."""
+    stamped = parse_stored_timestamp(built_at)
+    if stamped is None:
+        return None
+    return (datetime.now(timezone.utc) - stamped).total_seconds()
+
+
+def humanise_age(seconds: float | None) -> str | None:
+    """A short, readable age. ``None`` stays ``None`` rather than "0s"."""
+    if seconds is None:
+        return None
+    if seconds < 0:
+        # A clock skew between the ingest host and the reader is not staleness.
+        return "just now"
+    minutes = int(seconds // 60)
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = minutes / 60
+    if hours < 48:
+        return f"{int(hours)}h"
+    return f"{int(hours / 24)}d"
+
+
+def staleness(built_at: Any, *, threshold_hours: float | None = None) -> dict[str, Any]:
+    """The age of a snapshot, and whether it exceeds the stated threshold.
+
+    Reported on every surface that describes the catalog. Never a gate: see
+    :data:`STALE_AFTER_HOURS`.
+    """
+    threshold = threshold_hours if threshold_hours is not None else stale_after_hours()
+    age = age_of(built_at)
+    return {
+        "built_at": str(built_at) if built_at is not None else None,
+        "age_seconds": round(age, 1) if age is not None else None,
+        "age_human": humanise_age(age),
+        "stale_after_hours": threshold,
+        # ``None`` when the age is unknown: "not stale" and "cannot tell" must not
+        # read the same, for the same reason every rate in metrics.py is None on
+        # an empty log.
+        "stale": (age > threshold * 3600) if age is not None else None,
     }
 
 
 def health(db_path: Path | None = None) -> dict[str, Any]:
-    """Counts and provenance for the health endpoint."""
-    path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+    """Counts, provenance and age for the health endpoint."""
+    path = resolve_db_path(db_path)
     if not path.exists():
         return {"snapshot_present": False, "path": str(path)}
 
@@ -223,6 +339,7 @@ def health(db_path: Path | None = None) -> dict[str, Any]:
         ).fetchone()
         meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
 
+    built_at = last[1] if last else None
     return {
         "snapshot_present": True,
         "path": str(path),
@@ -241,6 +358,10 @@ def health(db_path: Path | None = None) -> dict[str, Any]:
         }
         if last
         else None,
+        # Age is reported beside the counts because a stale catalog and a fresh
+        # one are otherwise indistinguishable here — the exact condition a
+        # correct engine cannot detect for itself.
+        "freshness": staleness(built_at),
     }
 
 
@@ -535,8 +656,7 @@ def _unresolved_reviews(db_path: Path | None) -> list[dict[str, Any]]:
 
 
 def _staging_path(db_path: Path | None = None) -> Path:
-    path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
-    return path.with_suffix(".tmp.duckdb")
+    return resolve_db_path(db_path).with_suffix(".tmp.duckdb")
 
 
 def _checkpoint_clean(path: Path) -> None:
@@ -561,7 +681,7 @@ def swap_into_place(staged: Path, db_path: Path | None = None) -> Path:
     the swap, so ``run.sh diff`` would always answer "no new snapshot to
     compare", which is useless precisely when someone wants to know what changed.
     """
-    target = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+    target = resolve_db_path(db_path)
     target.parent.mkdir(parents=True, exist_ok=True)
 
     if target.exists():
@@ -578,8 +698,7 @@ def swap_into_place(staged: Path, db_path: Path | None = None) -> Path:
 
 def previous_path(db_path: Path | None = None) -> Path:
     """Where the snapshot displaced by the last refresh is kept."""
-    path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
-    return path.with_suffix(".previous.duckdb")
+    return resolve_db_path(db_path).with_suffix(".previous.duckdb")
 
 
 # ---------------------------------------------------------------------------
@@ -602,7 +721,7 @@ def diff_snapshots(
     only one of them is reassuring.
     """
     old = Path(old_path) if old_path is not None else previous_path()
-    new = Path(new_path) if new_path is not None else DEFAULT_DB_PATH
+    new = Path(new_path) if new_path is not None else resolve_db_path()
 
     if not old.exists():
         return {

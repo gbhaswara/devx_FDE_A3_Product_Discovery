@@ -377,6 +377,11 @@ def derive(
             "path": info.get("path"),
             "products": info.get("products"),
             "built_at": (info.get("last_ingest") or {}).get("finished_at"),
+            # The catalog's age, reported beside the review backlog — the other
+            # snapshot-derived measure. Not a sixth metric: the brief asks for the
+            # measures worth watching, and "how old is this catalog" is a fact
+            # about the snapshot rather than a rate over records.
+            "freshness": info.get("freshness"),
         },
         counts=records_mod.summarise(everything),
         source=source,
@@ -433,6 +438,16 @@ def render(metrics: Metrics, *, out=None) -> None:
                 "service handles a request.",
                 file=out,
             )
+        fresh = (metrics.snapshot or {}).get("freshness") or {}
+        if fresh.get("age_human"):
+            # The catalog's age does not depend on traffic, so it is reported
+            # here too rather than being hidden behind an empty record log.
+            flag = "  STALE" if fresh.get("stale") else ""
+            print(
+                f"  catalog age: {fresh['age_human']}"
+                f"  (stale above {fresh['stale_after_hours']:g}h){flag}",
+                file=out,
+            )
         return
 
     print(f"Records: {metrics.record_count}  (p95 window: {metrics.window})", file=out)
@@ -470,6 +485,16 @@ def render(metrics: Metrics, *, out=None) -> None:
     )
 
     print(file=out)
+    fresh = (metrics.snapshot or {}).get("freshness") or {}
+    if fresh.get("age_human"):
+        # Reported even when no requests have been recorded: how old the catalog
+        # is does not depend on traffic.
+        flag = "  STALE" if fresh.get("stale") else ""
+        print(
+            f"  catalog age: {fresh['age_human']}"
+            f"  (stale above {fresh['stale_after_hours']:g}h){flag}",
+            file=out,
+        )
     by_outcome = metrics.counts.get("by_outcome") or {}
     if by_outcome:
         summary = ", ".join(f"{k}={v}" for k, v in sorted(by_outcome.items()))

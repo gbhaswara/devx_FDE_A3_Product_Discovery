@@ -33,10 +33,6 @@ from .crawl import Crawler, CrawlError, FetchedPage
 from .extract import ExtractedProduct, ReviewRow, extract
 from .money import to_satang
 
-#: The four category entry points, discovered from the home page rather than
-#: hard-coded, but listed here as the expected set for the reference site.
-EXPECTED_CATEGORIES = 4
-
 #: Words a card uses when it is claiming an item is unavailable.
 _CARD_OUT_RE = re.compile(r"out of stock", re.I)
 _CARD_DISCONTINUED_RE = re.compile(r"discontinued", re.I)
@@ -163,7 +159,7 @@ def run_ingest(
     the artefact under review is not a demonstration.
     """
     result = IngestResult()
-    target_db = Path(db_path) if db_path is not None else catalog.DEFAULT_DB_PATH
+    target_db = catalog.resolve_db_path(db_path)
 
     try:
         crawler = Crawler(base_url, rate_per_second=rate)

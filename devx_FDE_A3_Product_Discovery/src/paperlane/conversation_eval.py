@@ -421,7 +421,7 @@ def run_conversation_eval(
 ) -> int:
     """Run the conversation set and the single-turn replay. Returns a process code."""
     out = out if out is not None else sys.stdout
-    snapshot_path = Path(db_path) if db_path is not None else catalog.DEFAULT_DB_PATH
+    snapshot_path = catalog.resolve_db_path(db_path)
     if not catalog.snapshot_exists(snapshot_path):
         print(
             f"No catalog snapshot at {snapshot_path}.\n"

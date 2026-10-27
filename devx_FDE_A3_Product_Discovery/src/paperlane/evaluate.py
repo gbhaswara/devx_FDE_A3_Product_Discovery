@@ -182,7 +182,7 @@ def _load_facts(db_path: Path | None = None) -> dict[str, PriceFacts]:
     every second-catalog case silently score against the wrong prices.
     """
     global _FACTS_CACHE
-    key = str(Path(db_path) if db_path is not None else catalog.DEFAULT_DB_PATH)
+    key = str(catalog.resolve_db_path(db_path))
     if _FACTS_CACHE is None or _FACTS_CACHE[0] != key:
         _FACTS_CACHE = (key, catalog.load_price_facts(db_path))
     return _FACTS_CACHE[1]
@@ -761,7 +761,7 @@ def _record_eval_run(
                 # so an eval-only log reports no latency rather than a fake one.
                 timings={},
                 snapshot={
-                    "path": str(Path(db_path or catalog.DEFAULT_DB_PATH)),
+                    "path": str(catalog.resolve_db_path(db_path)),
                 },
                 request_chars=len(result.case.request),
                 request_digest=records_mod.digest_of(result.case.request),
@@ -797,7 +797,7 @@ def run_eval(
     out = out if out is not None else sys.stdout
     cases = load_cases(cases_path)
 
-    snapshot_path = Path(db_path) if db_path is not None else catalog.DEFAULT_DB_PATH
+    snapshot_path = catalog.resolve_db_path(db_path)
     if not catalog.snapshot_exists(snapshot_path):
         print(
             f"No catalog snapshot at {snapshot_path}.\n"

@@ -49,6 +49,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=1.0,
         help="Requests per second (the site permits 2; default 1)",
     )
+    ingest.add_argument(
+        "--db",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Snapshot to build (default: PAPERLANE_DB, else data/catalog.duckdb). "
+            "Point an unseen-site re-ingest here so the committed catalog — the "
+            "one the recorded expectations are written against — is not overwritten."
+        ),
+    )
 
     serve = sub.add_parser("serve", help="Run the HTTP API")
     serve.add_argument(
@@ -58,6 +68,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Port to listen on (default 8001; 8000 is the served site)",
     )
     serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument(
+        "--db",
+        default=None,
+        metavar="PATH",
+        help="Snapshot to serve (default: PAPERLANE_DB, else data/catalog.duckdb)",
+    )
 
     evaluate = sub.add_parser("eval", help="Run the recorded evaluation cases")
     evaluate.add_argument("--json", action="store_true", help="Machine-readable output")
@@ -71,6 +87,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--self-check",
         action="store_true",
         help="Verify the scoring detects the defects it claims to",
+    )
+    evaluate.add_argument(
+        "--db",
+        default=None,
+        metavar="PATH",
+        help="Snapshot to score against (default: PAPERLANE_DB, else the committed one)",
     )
 
     sub.add_parser("diff", help="Compare the current snapshot with the previous")
@@ -123,6 +145,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Discard the conversation named by --conversation, then exit",
     )
+    ask.add_argument(
+        "--db",
+        default=None,
+        metavar="PATH",
+        help="Snapshot to read (default: PAPERLANE_DB, else the committed one)",
+    )
 
     similarity = sub.add_parser(
         "similarity",
@@ -158,6 +186,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--run",
         default=None,
         help="With --eval: the run id to report (default: the most recent run)",
+    )
+    metrics.add_argument(
+        "--db",
+        default=None,
+        metavar="PATH",
+        help="Snapshot to describe (default: PAPERLANE_DB, else the committed one)",
     )
 
     refresh = sub.add_parser(
@@ -195,11 +229,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ingest":
         from .ingest import run_ingest
 
-        return run_ingest(args.base_url, args.rate)
+        return run_ingest(args.base_url, args.rate, db_path=args.db)
     if args.command == "serve":
         from .api import run_server
 
-        return run_server(host=args.host, port=args.port)
+        return run_server(host=args.host, port=args.port, db_path=args.db)
     if args.command == "eval":
         from pathlib import Path
 
@@ -212,8 +246,10 @@ def main(argv: list[str] | None = None) -> int:
         if cases_path is not None and _is_conversation_file(cases_path):
             from .conversation_eval import run_conversation_eval
 
-            return run_conversation_eval(as_json=args.json, cases_path=cases_path)
-        return run_eval(as_json=args.json, cases_path=cases_path)
+            return run_conversation_eval(
+                as_json=args.json, cases_path=cases_path, db_path=args.db
+            )
+        return run_eval(as_json=args.json, cases_path=cases_path, db_path=args.db)
     if args.command == "diff":
         from .catalog import run_diff
 
@@ -229,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
             verbose=args.verbose,
             conversation_id=args.conversation,
             forget=args.forget,
+            db_path=args.db,
         )
     if args.command == "similarity":
         from pathlib import Path
@@ -250,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
             as_json=args.json, writer=writer,
             source="eval" if args.eval else "live",
             run_id=args.run,
+            db_path=args.db,
         )
     if args.command == "verify-refresh":
         from .refresh_cli import run_verify_refresh

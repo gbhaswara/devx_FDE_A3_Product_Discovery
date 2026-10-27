@@ -1111,7 +1111,7 @@ def create_app(
 app = create_app()
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8000) -> int:
+def run_server(host: str = "127.0.0.1", port: int = 8000, db_path=None) -> int:
     """Serve the API and the page. Entry point for ``./run.sh serve``.
 
     Fails early and legibly when there is no snapshot, rather than starting a
@@ -1119,26 +1119,37 @@ def run_server(host: str = "127.0.0.1", port: int = 8000) -> int:
     """
     import uvicorn
 
-    if not catalog.snapshot_exists():
+    if not catalog.snapshot_exists(db_path):
         print(
-            f"No catalog snapshot at {catalog.DEFAULT_DB_PATH}.\n"
+            f"No catalog snapshot at {catalog.resolve_db_path(db_path)}.\n"
             f"Build one with: "
             f"./run.sh ingest --base-url http://localhost:8000/paperlane/",
             flush=True,
         )
         return 1
 
-    report = catalog.health()
+    report = catalog.health(db_path)
     print(
         f"Serving {report['products']} products, "
         f"{report['price_tiers']} price tiers from {report['path']}",
         flush=True,
     )
+    fresh = report.get("freshness") or {}
+    if fresh.get("age_human"):
+        # Stated at startup, not gated on: a server that refuses to start because
+        # the catalog is old is worse than one that says how old it is.
+        print(
+            f"Catalog is {fresh['age_human']} old "
+            f"(stale above {fresh['stale_after_hours']:g}h"
+            f"{'; STALE' if fresh.get('stale') else ''})",
+            flush=True,
+        )
     if report.get("open_review_items"):
         print(
             f"Warning: {report['open_review_items']} open review item(s); "
             f"see ./run.sh diff",
             flush=True,
         )
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    serving = app if db_path is None else create_app(db_path=db_path)
+    uvicorn.run(serving, host=host, port=port, log_level="warning")
     return 0

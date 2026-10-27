@@ -143,7 +143,7 @@ def run_ask(
         return 2
 
     if not catalog.snapshot_exists(db_path):
-        checked = db_path if db_path is not None else catalog.DEFAULT_DB_PATH
+        checked = catalog.resolve_db_path(db_path)
         print(
             f"ask: no catalog snapshot at {checked}\n"
             "Build one with: "
