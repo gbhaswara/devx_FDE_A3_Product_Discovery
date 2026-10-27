@@ -635,15 +635,17 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A21 FIXED, A22 FIXED
+## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23 OPEN
 
-Three requirements that PR6–PR8 state and the shipped code did not meet. They
-were found by a compliance audit against `00_START_HERE_All_Briefs.md`, probing
-the running service rather than reading the modules — the same method as
-A12–A19. Each was reproduced before being written down, with the reproduction in
-`/tmp/opencode/a3-gap-probe.py`. Registered before being fixed, per the rule at
-the end of this file; each entry below now carries the failing run it was seen
-to produce first, and the verification that closed it.
+Requirements the brief states that the shipped code did not meet. A20–A22 came
+from a compliance audit against `00_START_HERE_All_Briefs.md`; A23 came from the
+section-by-section review of the brief's five "what we look for" areas. Both
+probed the running service and the stored snapshot rather than reading the
+modules — the same method as A12–A19. Each was reproduced before being written
+down, with the reproduction in `/tmp/opencode/a3-gap-probe.py`. Registered
+before being fixed, per the rule at the end of this file; each closed entry
+carries the failing run it was seen to produce first, and the verification that
+closed it.
 
 A20 and A21 were fixed together — they are one requirement (PR7) failing at two
 stages — and A22 separately. Both fixes were checked against the full suite,
@@ -783,6 +785,41 @@ under the new rule — and still compares every row against the endpoint.
 `./run.sh test` 1207 passed, 3 skipped; `./run.sh eval` 24/24; `--catalog v2`
 21/21; `verify-refresh --keep` 12/12; the audit probe `/tmp/opencode/a3-gap-probe.py`
 now reports PASS on all four checks.
+
+### A23 — A sibling variant's restock date is copied onto in-stock rows
+
+```
+GET /api/products?size=A4&category=Flyer printing
+  PL-PR-A4-GL-100-40   in_stock   12 November 2026    <- wrong
+  PL-PR-A4-GL-100-44   in_stock   12 November 2026    <- wrong
+  PL-PR-A4-GL-130-40   in_stock   12 November 2026    <- wrong
+  PL-PR-A4-GL-130-44   in_stock   12 November 2026    <- wrong
+  PL-PR-A4-GL-170-40   in_stock   12 November 2026    <- wrong
+```
+
+`flyers-a4-gloss.html` marks exactly one row unavailable, `PL-PR-A4-GL-170-44`
+(*"Out of stock — expected back 12 November 2026"*). Five of its six siblings are
+in stock and have no date on the page, yet all five records carry that date.
+
+**Root cause.** `extract._extract_variant_table` seeds every row from the
+whole-page scan — `product.stock_status, product.back_in_stock_date = page_stock,
+page_restock` — where `page_stock`/`page_restock` come from `_stock_state(html)`
+run over the entire document. The per-row availability cell then overrides
+`stock_status` but never clears `back_in_stock_date`, so a row that is explicitly
+in stock keeps the date found in its sibling's cell.
+
+**Why it matters.** This is the Data criterion in the brief — *"complete,
+correctly typed records, including what is hidden in variants"* — failing in the
+one place it is hardest to see: a value that is present, plausible, and attached
+to the wrong record. `in_stock` plus a restock date is a self-contradicting
+record, and it is exposed on `/api/products` and in every `/api/quote` line. The
+refusal prose is unaffected today only because `assistant._refuse` runs for
+unavailable items alone; the contradiction is in the data, not in the sentence.
+
+**Falsification.** `TestVariantAvailability::test_an_in_stock_row_carries_no_restock_date`
+and `test_the_out_of_stock_row_still_carries_its_own`, extracted from the real
+`flyers-a4-gloss.html`. The first fails on five SKUs against the current
+extractor.
 
 ---
 
