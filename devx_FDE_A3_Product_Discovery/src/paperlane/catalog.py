@@ -268,6 +268,22 @@ def parse_stored_timestamp(value: Any) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
+def stored_timestamp(value: datetime) -> datetime:
+    """A timestamp in the form the database stores it: UTC, zone dropped.
+
+    DuckDB's ``TIMESTAMP`` carries no zone, and it converts an aware value into
+    the *session* timezone before storing it. Binding ``datetime.now(timezone.utc)``
+    directly therefore stored local wall time while every reader treats the
+    stored value as UTC (BUG.md A19): the catalog reported itself seven hours
+    younger than it was, and a snapshot built moments earlier had a negative
+    age — so it could never look stale. Converting here makes the stored value
+    UTC by construction, whatever timezone the host or session happens to be in.
+    """
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def age_of(built_at: Any) -> float | None:
     """Seconds since the catalog was built, or ``None`` when it is unknown."""
     stamped = parse_stored_timestamp(built_at)
@@ -512,7 +528,7 @@ def build_snapshot(
                     product.get("description"),
                     product["source_url"],
                     product["source_shape"],
-                    product["crawled_at"],
+                    stored_timestamp(product["crawled_at"]),
                     json.dumps(product.get("raw_labels") or {}, ensure_ascii=False),
                 ],
             )
@@ -526,7 +542,7 @@ def build_snapshot(
                     tier.min_qty,
                     _require_int_satang(tier.unit_price_satang, field="tier price"),
                     tier.source_url,
-                    tier.crawled_at,
+                    stored_timestamp(tier.crawled_at),
                 ],
             )
 
@@ -567,7 +583,8 @@ def build_snapshot(
             "INSERT INTO ingest_runs (run_id, started_at, finished_at, base_url, "
             "pages_fetched, skus_found, tier_docs_found, status) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            [run_id, started, finished, base_url, pages_fetched,
+            [run_id, stored_timestamp(started), stored_timestamp(finished),
+             base_url, pages_fetched,
              len(products), tier_docs_found, "ok"],
         )
         for key, value in (

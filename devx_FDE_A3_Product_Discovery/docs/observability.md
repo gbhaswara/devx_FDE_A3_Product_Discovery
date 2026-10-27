@@ -157,8 +157,8 @@ The same value travels in the JSON payload and in every API response, under
 `snapshot.freshness`:
 
 ```json
-"freshness": {"built_at": "2026-10-27 00:25:24.500248", "age_seconds": 12858.0,
-              "age_human": "3h", "stale_after_hours": 24.0, "stale": false}
+"freshness": {"built_at": "2026-10-27 09:36:03.925543", "age_seconds": 4.4,
+              "age_human": "just now", "stale_after_hours": 24.0, "stale": false}
 ```
 
 Three details are deliberate.
@@ -169,7 +169,13 @@ Three details are deliberate.
 - **The stored timestamp is zone-less, and is read as UTC.** The crawl stamps it
   with `datetime.now(timezone.utc)` and DuckDB returns a naive `TIMESTAMP`. Read as
   local time in a UTC+7 deployment, a nine-hour-old catalog would look minutes
-  old — the precise condition the signal exists to catch, inverted.
+  old — the precise condition the signal exists to catch, inverted. That reading
+  was only correct once the write side was fixed: DuckDB converts an aware value
+  into the **session** timezone before storing it, so binding a UTC datetime
+  directly stored local wall time and the age came out seven hours short, negative
+  just after an ingest (defect A19). `catalog.stored_timestamp` now converts to UTC
+  and drops the zone at every write site, so the column really holds what the
+  reader assumes, whatever the host timezone is.
 - **An unknown age is `None`, not `False`.** "Cannot tell" and "not stale" must not
   read the same, which is the same rule `criteria.py` applies to an unstated field.
 

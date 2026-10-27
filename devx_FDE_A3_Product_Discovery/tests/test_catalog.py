@@ -117,6 +117,41 @@ class TestBuild:
         assert "api/pricing/PL-T-1.json" in row[0]
         assert row[1] is not None
 
+    def test_a_crawled_at_keeps_its_instant(self, tmp_path):
+        # A TIMESTAMP column carries no zone, so the value written must be UTC
+        # wall time: that is what every reader assumes. DuckDB converts an aware
+        # datetime into the *session* timezone before storing it, so binding one
+        # directly stores local time and the instant moves (BUG.md A19).
+        stamped = datetime(2026, 3, 1, 12, 0, tzinfo=timezone(timedelta(hours=7)))
+        row = product_row()
+        row["crawled_at"] = stamped
+        path = build(tmp_path, products=[row])
+        with open_readonly(path) as con:
+            stored = con.execute("SELECT crawled_at FROM products").fetchone()[0]
+        assert catalog.parse_stored_timestamp(stored) == stamped
+
+    def test_the_two_representations_of_the_build_time_agree(self, tmp_path):
+        # The same instant is written twice: as a TIMESTAMP column and as an ISO
+        # string with an explicit offset. If they disagree, the column lost a zone.
+        path = build(tmp_path)
+        with open_readonly(path) as con:
+            finished = con.execute(
+                "SELECT finished_at FROM ingest_runs"
+            ).fetchone()[0]
+            built_at = con.execute(
+                "SELECT value FROM meta WHERE key = 'built_at'"
+            ).fetchone()[0]
+        assert (catalog.parse_stored_timestamp(finished)
+                == catalog.parse_stored_timestamp(built_at))
+
+    def test_a_snapshot_built_now_does_not_have_a_negative_age(self, tmp_path):
+        # The failure that exposed A19: minutes after an ingest the catalog read
+        # "just now" and could never be stale, because age was computed as
+        # UTC-now minus a local wall time.
+        age = health(build(tmp_path))["freshness"]["age_seconds"]
+        assert age is not None
+        assert -5 <= age < 120
+
     def test_money_is_stored_as_integer_satang(self, tmp_path):
         path = build(tmp_path)
         with open_readonly(path) as con:
