@@ -32,7 +32,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
-from . import catalog, conversation, embeddings, records
+from . import catalog, conversation, embeddings, records, search
 from .assistant import (
     OUTCOME_CLARIFIED,
     OUTCOME_NO_MATCH,
@@ -40,6 +40,7 @@ from .assistant import (
     OUTCOME_REFUSED,
     AssistantReply,
     answer,
+    refusal_text,
 )
 from .criteria import Criteria
 from .interpret import (
@@ -268,6 +269,48 @@ def _record_basket(
         )
     except records.RecordInvalid as exc:
         print(f"paperlane: could not build basket record: {exc}", file=sys.stderr)
+        return None
+    return records.emit(writer, entry)
+
+
+def _record_refusal(
+    writer,
+    *,
+    endpoint: str,
+    refused: Sequence[Any],
+    started: float,
+    request_text: str,
+    snapshot: dict[str, Any],
+):
+    """Write the record for a refusal on a path that does not build a reply.
+
+    The multi-line basket refuses without an ``AssistantReply``. Recording that
+    as ``failed`` would file an availability refusal with the errors and inflate
+    the failure rate; the outcome set already has ``refused`` for exactly this,
+    and the metrics exclude it from the numerator (BUG.md A22).
+    """
+    elapsed = round((time.perf_counter() - started) * 1000, 3)
+    try:
+        entry = records.RequestRecord(
+            endpoint=endpoint,
+            outcome="refused",
+            interpretation="structured",
+            candidates_considered=len(refused),
+            items_returned=len(refused),
+            timings={
+                "interpret_ms": 0.0, "search_ms": 0.0,
+                "price_ms": 0.0, "total_ms": elapsed,
+            },
+            snapshot=dict(snapshot),
+            request_chars=len(request_text),
+            request_digest=records.digest_of(request_text),
+            request_text=(
+                records.text_for_log(request_text) if records.capture_enabled()
+                else None
+            ),
+        )
+    except records.RecordInvalid as exc:
+        print(f"paperlane: could not build refusal record: {exc}", file=sys.stderr)
         return None
     return records.emit(writer, entry)
 
@@ -640,15 +683,28 @@ def create_app(
 
     @app.post("/api/quote/lines")
     def multi_line_quote(payload: MultiLineRequest):
-        """Price several known SKUs together, so delivery and VAT are once."""
+        """Price several known SKUs together, so delivery and VAT are once.
+
+        Availability is checked here, as it is in ``search``: PR8 applies to
+        every entry point, and this one prices known SKUs directly rather than
+        going through the search layer that enforces it (BUG.md A22).
+        """
         started = time.perf_counter()
         all_facts = facts()
+        rows = {row["sku"]: row for row in products()}
 
         lines: list[LineRequest] = []
         unknown: list[str] = []
+        unavailable: list[Any] = []
         for line in payload.lines:
             if line.sku not in all_facts:
                 unknown.append(line.sku)
+                continue
+            row = rows.get(line.sku, {})
+            if row.get("stock_status", "in_stock") != "in_stock":
+                unavailable.append(
+                    search.make_candidate(row, all_facts[line.sku], (), line.quantity)
+                )
                 continue
             lines.append(LineRequest(line.sku, line.quantity, all_facts[line.sku]))
 
@@ -663,7 +719,7 @@ def create_app(
                 f"unknown SKU(s): {', '.join(sorted(unknown))}", field="lines",
                 status=422,
             )
-        if not lines:
+        if not lines and not unavailable:
             record(
                 endpoint="/api/quote/lines", started=started,
                 request_text=payload.model_dump_json(),
@@ -671,6 +727,26 @@ def create_app(
                 error="no priceable lines supplied",
             )
             return _client_error("no priceable lines supplied", field="lines")
+
+        # One unorderable line refuses the whole order. Pricing the rest and
+        # dropping the line silently would hand back a total the customer reads
+        # as complete, which is the failure PR8 exists to prevent.
+        if unavailable:
+            body = {
+                "outcome": OUTCOME_REFUSED,
+                "refused": [c.as_dict() for c in unavailable],
+                "reply": refusal_text(unavailable),
+                "meta": _meta(
+                    started=started, interpretation="structured",
+                    snapshot=_snapshot_meta(db_path),
+                ),
+            }
+            _record_refusal(
+                writer(), endpoint="/api/quote/lines", refused=unavailable,
+                started=started, request_text=payload.model_dump_json(),
+                snapshot=_snapshot_meta(db_path),
+            )
+            return body
 
         order = quote(lines)
         body = {

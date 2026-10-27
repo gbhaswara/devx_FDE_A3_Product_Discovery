@@ -298,6 +298,32 @@ An unknown SKU is a `422` naming it:
 { "error": "invalid_request", "detail": "unknown SKU(s): PL-FAKE-1", "field": "lines" }
 ```
 
+An **unavailable** SKU is not a client error: the request is valid, the item
+cannot be supplied. The whole basket is refused, because pricing the remaining
+lines and dropping the unavailable one would return a total the customer reads as
+complete (PR8, `BUG.md` A22):
+
+```json
+{
+  "outcome": "refused",
+  "refused": [
+    {
+      "sku": "PL-CL-A4-100-IVY",
+      "name": "Heritage Ivory A4 100gsm",
+      "unit_price": "168.00",
+      "available": false,
+      "stock_status": "out_of_stock",
+      "back_in_stock_date": "20 November 2026"
+    }
+  ],
+  "reply": "Heritage Ivory A4 100gsm (PL-CL-A4-100-IVY) is out of stock, so I cannot quote it as a purchase today. It is expected back 20 November 2026.\nI have not quoted it, because I can only price items you can actually order."
+}
+```
+
+The refusal carries no `figures`, and the refused item is the same object the
+`refused` outcome returns from `/api/ask` — one shape, produced by
+`search.make_candidate` and worded by `assistant.refusal_text`.
+
 ---
 
 ## `GET /api/products`

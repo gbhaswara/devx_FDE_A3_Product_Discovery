@@ -327,25 +327,37 @@ class TestThePriceIsTheQuote:
         }
         assert len(displayed) == len(products), "every row must carry a price"
 
+        # Posted one SKU at a time rather than in chunks. A basket is refused
+        # whole when any line is unavailable (PR8, BUG.md A22), so a chunk
+        # containing an out-of-stock item would price none of its other lines;
+        # a per-SKU request keeps the comparison total for every row.
         quoted: dict[str, str] = {}
-        skus = [product["sku"] for product in products]
-        for start in range(0, len(skus), 50):          # the endpoint's limit
-            chunk = skus[start:start + 50]
+        for product in products:
+            sku = product["sku"]
             response = client.post(
                 "/api/quote/lines",
-                json={"lines": [{"sku": sku, "quantity": 1} for sku in chunk]},
+                json={"lines": [{"sku": sku, "quantity": 1}]},
             )
             assert response.status_code == 200, response.text
-            for line in response.json()["figures"]["lines"]:
-                quoted[line["sku"]] = line["unit_price"]
+            body = response.json()
+            # A quoted line carries the price under `figures`; a refused one
+            # carries it on the refused item. Both are the price the row shows.
+            priced = (
+                body["figures"]["lines"]
+                if body["outcome"] == "quoted"
+                else body.get("refused", [])
+            )
+            assert len(priced) == 1, (sku, body["outcome"])
+            quoted[sku] = priced[0]["unit_price"]
 
         names = {product["sku"]: product["name"] for product in products}
         mismatches = [
             (sku, names[sku], displayed[names[sku]], quoted[sku])
-            for sku in skus
+            for sku in quoted
             if displayed[names[sku]] != quoted[sku]
         ]
         assert mismatches == [], f"the page and the quote disagree: {mismatches}"
+        assert len(quoted) == len(products), "every SKU must have been priced"
 
     def test_the_sale_item_shows_the_sale_price_not_the_list_price(
         self, page, products

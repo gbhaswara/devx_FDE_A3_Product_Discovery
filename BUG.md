@@ -751,10 +751,38 @@ an unavailable item must not be quoted as available, on any entry point.
 build an order, so it is exactly where an unorderable line must not go unnoticed
 — and it returns a total the customer could act on.
 
-**Falsification.** `TestMultiLine::test_an_out_of_stock_line_is_refused` and
-`test_a_discontinued_line_is_refused`, posting the two v1 out-of-stock SKUs and
-asserting the endpoint does not return a `quoted` figures block. Both fail
-against the current handler, which returns 200.
+**Falsification.** `TestMultiLine::test_an_out_of_stock_line_is_refused`,
+`test_a_basket_with_one_unavailable_line_prices_nothing`,
+`test_the_refusal_names_every_unavailable_line`, posting the two v1 out-of-stock
+SKUs and asserting the endpoint does not return a `quoted` figures block. All
+three failed against the old handler, which returned 200:
+
+```
+FAILED TestMultiLine::test_an_out_of_stock_line_is_refused
+E  assert 'quoted' == 'refused'
+FAILED TestMultiLine::test_a_basket_with_one_unavailable_line_prices_nothing
+E  assert 'quoted' == 'refused'
+FAILED TestMultiLine::test_the_refusal_names_every_unavailable_line
+E  assert 'quoted' == 'refused'
+```
+
+**Fix.** The endpoint checks stock itself, because it prices known SKUs and never
+goes through the search layer that enforces PR8. Any unavailable line refuses the
+**whole basket** — pricing the rest and dropping the line would return a total the
+customer reads as complete. The refused item is built by `search.make_candidate`
+and worded by the new `assistant.refusal_text`, both shared with `/api/ask`, so a
+refusal has one shape and one wording wherever it is produced rather than two
+that can drift. The new `api._record_refusal` records it as `refused`, not
+`failed`: the request was valid and the refusal is an answer, so filing it with
+the errors would inflate the failure rate the metrics exist to keep honest.
+
+**Verification.** All four multi-line tests pass, plus the fully-available basket
+still quoting. `tests/test_ui_catalog.py` was adapted — it now posts one SKU per
+request, because a chunk containing an out-of-stock row refuses the whole chunk
+under the new rule — and still compares every row against the endpoint.
+`./run.sh test` 1207 passed, 3 skipped; `./run.sh eval` 24/24; `--catalog v2`
+21/21; `verify-refresh --keep` 12/12; the audit probe `/tmp/opencode/a3-gap-probe.py`
+now reports PASS on all four checks.
 
 ---
 

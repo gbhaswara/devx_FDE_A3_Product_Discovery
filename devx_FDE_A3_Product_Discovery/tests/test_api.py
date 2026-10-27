@@ -444,6 +444,56 @@ class TestMultiLine:
         r = client.post("/api/quote/lines", json={"lines": []})
         assert r.status_code == 422
 
+    def test_an_out_of_stock_line_is_refused(self, client):
+        # BUG.md A22. PR8 is unconditional: this path prices known SKUs through
+        # pricing.quote() and never consulted stock, so it returned 200 with a
+        # total for an item that cannot ship.
+        body = client.post("/api/quote/lines", json={"lines": [
+            {"sku": "PL-CL-A4-100-IVY", "quantity": 1},
+        ]}).json()
+        assert body["outcome"] == "refused"
+        assert "figures" not in body
+        assert check_outcome_contract(body["outcome"], body) == []
+        refused = body["refused"]
+        assert [item["sku"] for item in refused] == ["PL-CL-A4-100-IVY"]
+        assert refused[0]["available"] is False
+        assert refused[0]["stock_status"] == "out_of_stock"
+        # The price is still stated, as it is on /api/ask, so the page and the
+        # quote can be compared for an out-of-stock row too.
+        assert refused[0]["unit_price"] == "168.00"
+
+    def test_a_basket_with_one_unavailable_line_prices_nothing(self, client):
+        """One unorderable line refuses the order rather than silently dropping it.
+
+        Quoting the rest and omitting the line would give a total the customer
+        reads as complete. Nothing is priced until the basket is orderable.
+        """
+        body = client.post("/api/quote/lines", json={"lines": [
+            {"sku": "PL-CP-A4-80", "quantity": 1},
+            {"sku": "PL-CL-A4-100-IVY", "quantity": 1},
+        ]}).json()
+        assert body["outcome"] == "refused"
+        assert "figures" not in body
+        assert [item["sku"] for item in body["refused"]] == ["PL-CL-A4-100-IVY"]
+
+    def test_the_refusal_names_every_unavailable_line(self, client):
+        body = client.post("/api/quote/lines", json={"lines": [
+            {"sku": "PL-CL-A4-100-IVY", "quantity": 1},
+            {"sku": "PL-PR-A4-GL-170-44", "quantity": 2},
+        ]}).json()
+        assert body["outcome"] == "refused"
+        assert sorted(item["sku"] for item in body["refused"]) == [
+            "PL-CL-A4-100-IVY", "PL-PR-A4-GL-170-44",
+        ]
+        assert all(item["available"] is False for item in body["refused"])
+
+    def test_a_fully_available_basket_still_quotes(self, client):
+        body = client.post("/api/quote/lines", json={"lines": [
+            {"sku": "PL-CP-A4-80", "quantity": 20},
+        ]}).json()
+        assert body["outcome"] == "quoted"
+        assert body["figures"]["lines"][0]["sku"] == "PL-CP-A4-80"
+
 
 # ---------------------------------------------------------------------------
 # docs/api.md (6.8)

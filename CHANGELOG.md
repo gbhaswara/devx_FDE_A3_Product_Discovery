@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1199 tests** (offline 1192 passed + 7 skipped; online 1195 passed + 4 skipped), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1210 tests** (offline 1203 passed + 7 skipped; online 1206 passed + 4 skipped), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,56 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Fixed — 2026-10-27 · an unavailable line was quoted in a multi-line basket
+
+`POST /api/quote/lines` priced `PL-CL-A4-100-IVY` (out of stock, back 20 November
+2026) as available: `{"outcome":"quoted","figures":{...,"total":"340.26"}}`, with
+no stock field. `/api/ask` and `/api/quote` refuse it correctly, because
+availability is a **search-layer** filter — but the basket path prices known SKUs
+through `pricing.quote()` and never consults the catalog. PR8 is unconditional, so
+an unorderable item must not be quoted as available on any entry point.
+
+The endpoint now checks stock itself. Any unavailable line refuses the **whole
+basket** — quoting the rest and dropping the line silently would return a total the
+customer reads as complete. The refused item is built by `search.make_candidate`
+and worded by the shared `assistant.refusal_text`, so a refusal has one shape and
+one wording wherever it is produced. The new `api._record_refusal` files it as
+`refused`, not `failed`: the request was valid and the refusal is an answer.
+
+Three tests were written first and run against the old handler; all three failed
+`assert 'quoted' == 'refused'`. `tests/test_ui_catalog.py` was adapted — it posts
+one SKU per request now, because a chunk containing an out-of-stock row refuses the
+whole chunk — and still compares every row against the endpoint. Recorded as
+`BUG.md` **A22**.
+
+### Fixed — 2026-10-27 · a budget was compared on the wrong basis
+
+Two failures of one requirement. PR7 says the assumption must be **stated and
+honoured**; the code stated a label and compared before VAT regardless, and the
+label itself was wrong when the customer wrote *"a pack including VAT"*.
+
+- **A20.** `interpret._BASIS_PATTERNS` was one ordered list of alternatives, so
+  `per|a|each pack` matched before `including vat` and the qualifier was dropped:
+  `parse_budget("… under 240 a pack including VAT …")` returned
+  `(240.00, 'per pack, before VAT')`. The list is now two questions — the unit word
+  (`_UNIT_PATTERNS`) and the VAT qualifier (`_INCLUSIVE_VAT`) — composed by
+  `_budget_basis`.
+- **A21.** `check_budget` carried the basis as a footnote: with
+  `basis="per pack, including VAT"` it still compared the ex-VAT 233.20 against a
+  240.00 ceiling and returned `within_budget=True`, although the pack costs 249.52
+  including VAT. `pricing.comparable_unit_price(facts, quantity, basis)` now
+  returns the number the budget is compared **against** — gross when the basis says
+  so — and `search._evaluate` and `assistant._quantity_changes_the_answer` both call
+  it, so the filter, the reply and the clarification rule agree by construction
+  rather than by three copies of one condition.
+
+Both fixes had their tests written and seen failing first. One evaluation reply
+changed, as intended: case 18 (*"budget 1500 including VAT"*) now states 111.96,
+the VAT-inclusive figure it compared, where it stated 104.64 — the only one of the
+28 whose reply differs. The single-turn digest was retaken with that justification
+recorded in `tests/test_single_turn_unchanged.py`. Recorded as `BUG.md` **A20** and
+**A21**.
 
 ### Fixed — 2026-10-27 · stored timestamps were local time wearing a UTC label
 

@@ -592,13 +592,15 @@ def _render_clarification(questions: Sequence[Question], criteria: Criteria) -> 
     return "\n".join(lines)
 
 
-def _refuse(
-    criteria: Criteria, result: SearchResult, interpretation: str, quantity: int
-) -> AssistantReply:
-    """Refuse, distinguishing a temporary shortage from a withdrawal."""
+def refusal_text(candidates: Sequence[Candidate]) -> str:
+    """The words for a refusal, from the items that cannot be supplied.
+
+    One function, because the same refusal appears on two entry points: the
+    conversational path and the multi-line basket (BUG.md A22). Two copies of
+    this prose would eventually say different things about the same item.
+    """
     lines = []
-    refused_items = []
-    for candidate in result.unavailable:
+    for candidate in candidates:
         if candidate.stock_status == "discontinued":
             lines.append(
                 f"{candidate.name} ({candidate.sku}) has been discontinued and is "
@@ -614,14 +616,21 @@ def _refuse(
                 f"{candidate.name} ({candidate.sku}) is out of stock, so I cannot "
                 f"quote it as a purchase today.{detail}"
             )
-        refused_items.append(candidate)
 
     lines.append(
         "I have not quoted it, because I can only price items you can actually order."
     )
+    return "\n".join(lines)
+
+
+def _refuse(
+    criteria: Criteria, result: SearchResult, interpretation: str, quantity: int
+) -> AssistantReply:
+    """Refuse, distinguishing a temporary shortage from a withdrawal."""
+    refused_items = list(result.unavailable)
     return AssistantReply(
         outcome=OUTCOME_REFUSED,
-        text="\n".join(lines),
+        text=refusal_text(refused_items),
         criteria=criteria,
         interpretation=interpretation,
         refused=tuple(refused_items),

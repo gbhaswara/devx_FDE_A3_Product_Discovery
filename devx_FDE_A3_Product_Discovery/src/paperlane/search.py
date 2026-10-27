@@ -415,12 +415,18 @@ def _ranked(
 # ---------------------------------------------------------------------------
 
 
-def _make_candidate(
+def make_candidate(
     product: dict[str, Any],
     facts: PriceFacts,
     reasons: Sequence[MatchReason],
     quantity: int,
 ) -> Candidate:
+    """Build a candidate from a catalog row.
+
+    The multi-line endpoint calls this too, to report an unavailable line: a
+    refusal must carry the same fields wherever it is produced, so there is one
+    shape for a refused item and not two (BUG.md A22).
+    """
     unit = unit_price(facts, quantity)
     tier = applied_tier(facts, quantity)
     return Candidate(
@@ -467,7 +473,7 @@ def search(
         considered += 1
         passed, reasons = _evaluate(product, facts[sku], criteria, qty)
         if passed:
-            matched.append(_make_candidate(product, facts[sku], reasons, qty))
+            matched.append(make_candidate(product, facts[sku], reasons, qty))
 
     similarity, semantic, detail = _similarity_for(scorer, matched)
     ranked = _ranked(matched, similarity)
@@ -581,7 +587,7 @@ def _relax(
                 continue
             passed, reasons = _evaluate(product, facts[sku], relaxed, quantity)
             if passed:
-                found.append(_make_candidate(product, facts[sku], reasons, quantity))
+                found.append(make_candidate(product, facts[sku], reasons, quantity))
 
         similarity, _semantic, _detail = _similarity_for(scorer, found)
         available = [c for c in _ranked(found, similarity) if c.available]

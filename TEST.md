@@ -318,9 +318,9 @@ carrying a total is checked structurally instead.
 | Module | Tests | Layer |
 |---|---|---|
 | `test_aliases.py` | 106 | 1 |
-| `test_api.py` | 68 | 3 |
+| `test_api.py` | 72 | 3 |
 | `test_ask_cli.py` | 32 | 3 |
-| `test_assistant.py` | 67 | 3 |
+| `test_assistant.py` | 70 | 3 |
 | `test_catalog.py` | 51 | 3 |
 | `test_conversation.py` | 67 | 8 |
 | `test_conversation_api.py` | 38 | 8 |
@@ -337,25 +337,25 @@ carrying a total is checked structurally instead.
 | `test_mutate.py` | 77 | 4 |
 | `test_normalize.py` | 37 | 1 |
 | `test_observability_api.py` | 37 | 7 |
-| `test_pricing.py` | 49 | 1 |
+| `test_pricing.py` | 51 | 1 |
 | `test_records.py` | 73 | 7 |
-| `test_search.py` | 40 | 1 |
+| `test_search.py` | 42 | 1 |
 | `test_semantic_api.py` | 15 | 6 |
 | `test_single_turn_unchanged.py` | 3 | 8 |
 | `test_snapshot_cli.py` | 5 | 3 |
 | `test_snapshot_path.py` | 26 | 7 |
 | `test_ui_catalog.py` | 26 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1199** | |
+| **Total** | **1210** | |
 
-Online: 1199 collected, 4 skip (provider- and loopback-dependent). Offline
-(`unshare -rn`): 1199 collected, 7 skip — the same four plus the three loopback
-tests that legitimately cannot run without a network interface.
+Online: 1210 collected, 4 skip (provider- and loopback-dependent) — 1206 passed.
+Offline (`unshare -rn`): 1210 collected, 7 skip — 1203 passed; the same four plus
+the three loopback tests that legitimately cannot run without a network interface.
 
 One further skip is state-dependent, not environmental: `test_evaluate.py` skips
 its second-catalog case until `./run.sh verify-refresh --keep` has produced
 `.refresh-verification/mutated.duckdb`. With that artefact present the offline run
-is 1193 passed + 6 skipped rather than 1192 + 7. The figures above are for a clean
+is 1204 passed + 6 skipped rather than 1203 + 7. The figures above are for a clean
 tree, which is what a fresh clone sees — the artefact directory is git-ignored.
 
 ## What is tested where
@@ -409,7 +409,7 @@ tree, which is what a fresh clone sees — the artefact directory is git-ignored
 ## Running the tests
 
 ```
-./run.sh test             # 1199 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1210 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot (24/24)
 ./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21, after verify-refresh --keep
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design

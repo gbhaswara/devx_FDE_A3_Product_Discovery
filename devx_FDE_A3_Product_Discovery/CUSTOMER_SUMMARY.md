@@ -17,7 +17,12 @@ choose a product, or write a total.
 
 **It understands trade shorthand** — "4/4" for double-sided full colour, "24 lb"
 for paper weight, "8½ × 11" and "letter" for the same size — and it will not offer
-an out-of-stock item as available. It refuses and gives the restock date.
+an out-of-stock item as available, on any endpoint. It refuses and gives the
+restock date.
+
+**It checks your budget against the number you meant.** A ceiling stated per pack
+before VAT is compared before VAT; say "including VAT" and it is compared against
+the VAT-inclusive price, and the reply names which assumption it used.
 
 **It knows when not to answer.** It quotes; it asks when a missing detail would
 change the answer; it says "nothing matches" and shows labelled alternatives; it
@@ -25,10 +30,6 @@ refuses an unavailable item.
 
 ## What it cannot do
 
-- **An inclusive-VAT budget is not yet compared correctly.** The reply states a
-  basis, but the comparison still uses the price before VAT, so an item just over
-  an inclusive ceiling can be quoted. Budgets stated before VAT — the normal case
-  — are exact.
 - **Conversation is conservative.** "Make that 40 packs" continues the previous
   request, and the reply says what it remembered; "the cheaper one" alone is a new
   question, not a guess. The model never sees the conversation, so every
@@ -56,5 +57,4 @@ On a test copy of your site we plant twelve changes; the refresh report catches
 twelve of twelve, so the report can be trusted when your real site moves.
 
 The pricing engine and the search that decide a customer's total are finished;
-what remains is the inclusive-VAT edge case above, and then presentation and
-delivery.
+what remains is presentation and delivery.

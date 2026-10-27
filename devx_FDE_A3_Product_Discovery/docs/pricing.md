@@ -179,11 +179,20 @@ is PR7's assumption and PR6's rule.
 ## PR8 — Out-of-stock and discontinued items are not quoted as available
 
 **Requirement:** `pricing-engine` → "Only catalog values may enter a quote"
-**Code:** enforced in `search.py` (stock state is a filter), surfaced by `assistant.py`
+**Code:** enforced in `search.py` (stock state is a filter); also checked in
+`api.multi_line_quote`, which prices known SKUs directly and does not go through
+the search layer (BUG.md A22)
 
 Pricing itself is indifferent to stock: these items have perfectly valid prices.
 Availability is therefore a **search-layer** concern, and the refusal is a
 distinct outcome (`refused`), not an error.
+
+Both entry points enforce it. `/api/ask` and `/api/quote` reach it through
+`search`, which splits matches into `matches` (available) and `unavailable`. The
+multi-line endpoint prices known SKUs through `pricing.quote()` and never
+consults the catalog, so it checks stock itself and refuses the **whole basket**
+when any line is unavailable — quoting the rest and dropping the line would
+return a total the customer reads as complete.
 
 Two items in v1 are out of stock — `PL-PR-A4-GL-170-44` and `PL-CL-A4-100-IVY` —
 and both carry a restock date. Zero are discontinued in v1, so that path is
