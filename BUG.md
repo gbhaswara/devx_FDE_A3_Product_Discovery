@@ -635,10 +635,10 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A28 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A30 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
-from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A28 came from
+from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A30 came from
 the section-by-section review of the brief's five "what we look for" areas. Both
 probed the running service and the stored snapshot rather than reading the
 modules — the same method as A12–A19. Each was reproduced before being written
@@ -1010,6 +1010,91 @@ availability filter), and
 `tests/test_assistant.py` (the sentence must name the item and its date). Both
 run over the real snapshot; the assistant test fails today because the reply
 contains "could not find anything close" and no `PL-CL-A4-100-IVY`.
+
+### A29 — A request for two products is merged into one impossible request, or half-answered
+
+```
+"A4 80gsm copy paper and A4 gloss flyers"
+  -> criteria: category Copy paper, weight 80, finish Gloss
+  -> no_match: "Nothing in the catalog satisfies every requirement you gave."
+
+"A4 250gsm white card and A4 80gsm copy paper"
+  -> criteria: category Copy paper, weight 250, colour white
+  -> no_match
+
+"It needs A4 80gsm copy paper, 20 packs, and 5 packs of A4 250gsm white card"
+  -> quoted, 20 packs of copy paper only — the card is not mentioned at all
+```
+
+**Root cause.** `interpret_rules` scans the whole request for each field
+independently and keeps the first hit per field, with no notion of where one
+product clause ends and the next begins. Attributes therefore bleed across
+clauses: *finish: Gloss* is taken from the flyers half and applied to the copy
+paper, and the category is taken from whichever half mentions it first. The
+result is a phantom product that exists in neither clause, or a real product
+quoted while the second item is silently discarded. No note is recorded, so
+nothing downstream can tell the request was compound.
+
+**Why it matters.** Two failures in one, both of the kind the brief names
+directly. A satisfiable request — A4 80gsm copy paper, in stock at 121.50 — is
+answered with *"Nothing in the catalog satisfies every requirement you gave"*,
+which is false. And a two-item order is answered as though it were complete:
+the reply carries a best match, a full breakdown and a total, with no sentence
+saying the card was not priced. Must-have 3 asks for *"matching products, why
+they match, and a full price breakdown"*, and a reply that reads as complete
+while covering half the request is the one thing a salesperson would never send.
+Multi-item quoting is a nice-to-have and is built for the API; the defect is the
+silence, not the single-item conversation.
+
+**Fix direction.** Segment before parsing: split on `and` / `,` / `;`, run the
+rule parse per fragment, and when more than one fragment yields a category or a
+weight, mark the request compound and ask which item to price first. That stops
+both the phantom `no_match` and the silent drop without building a multi-item
+conversational parser — the basket path already exists at
+`POST /api/quote/lines`.
+
+**Falsification.** `TestRuleInterpretation::test_two_products_do_not_merge_into_a_phantom`
+and `test_a_second_item_is_never_dropped_silently` in `tests/test_assistant.py`,
+plus `TestClarification::test_a_compound_request_asks_which_item_first` in the
+same file. The first two fail today on the two `no_match` replies above; the
+third fails because the outcome is `quoted`.
+
+### A30 — The reply never says that a slightly larger order would cost less
+
+```
+19 packs of PL-PR-A4-GL-100-40  ->  19 x 202.10 = 3,839.90, total 4,108.69
+20 packs of PL-PR-A4-GL-100-40  ->  20 x 189.20 = 3,784.00, total 4,048.88
+```
+
+The 19-pack quote is higher than the 20-pack quote for the same product, and the
+reply says nothing. `assistant._render_breakdown` states the tier that *was*
+applied and never the tier above the requested quantity, so the lever is
+invisible.
+
+**Scale.** Measured over the stored snapshot: **64 quantity cliffs across 49
+in-stock SKUs**, where one more unit lowers the total — every tier boundary
+where `min_qty x tier_price < (min_qty - 1) x previous_price`. A second family
+comes from A27's threshold: `PL-PR-A4-MT-100-10` at 28 packs totals 3,297.91 and
+at 29 packs totals 3,249.46.
+
+**Why it matters.** Business sense, not arithmetic: every figure is the one the
+site would charge. But quoting 4,108.69 for 19 when 20 costs 4,048.88 invites the
+customer to discover it themselves, and the honest reading of "a reply a
+salesperson would be proud to send" is that the salesperson would point it out.
+The volume table is published on the site; the reply is the only place it is
+withheld.
+
+**Fix direction.** Keep A27's shortfall sentence and add the next lever beside
+it: the cheapest `min_qty` above the requested quantity, re-priced through
+`pricing.quote` at that quantity, and stated only when that total is lower. Both
+figures computed, both added to the allowed set for guard G2. Deliberately a
+one-step lookahead — a "best quantity" optimiser is not worth the explanation
+cost in an interview.
+
+**Falsification.** `TestReplyContract::test_a_cheaper_larger_quantity_is_named`
+and `test_no_hint_when_the_larger_quantity_costs_more` in
+`tests/test_assistant.py`: 19 packs must mention 20 and 4,048.88, and 20 packs
+must not invent a comparison.
 
 ---
 
