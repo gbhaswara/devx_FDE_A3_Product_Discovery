@@ -154,6 +154,20 @@ Comparing the budget against the **list price** (265.00) gets the brief's own
 example wrong. The bound is inclusive: PR6 says "maximum price per pack", so a
 unit price exactly equal to the budget is within budget.
 
+### The unit the budget is stated in
+
+A budget may be stated per pack, per ream or per sheet, and the price is always
+quoted per pack. The comparison converts by the pack's sheet count — a ream is
+500 sheets, so a 178.00 pack of 100 is **890.00 a ream** and fails a 250.00
+per-ream ceiling, while 129.00 for a pack of 500 is **0.26 a sheet** and passes a
+1.00 per-sheet ceiling (`BUG.md` A24). Same shape as the VAT basis: a unit word
+that is parsed, echoed in the reply, and therefore applied.
+
+The verdict is computed on integers — `price × sheets_per_stated_unit` against
+`budget × pack_sheets` — because a per-sheet price rounded to the satang is not
+precise enough to decide a boundary. `pricing.budget_ok` is the one place that
+decides it; `comparable_unit_price` returns the figure the reply prints.
+
 ---
 
 ## PR7 — Budgets exclude VAT unless stated; say which assumption was used
@@ -179,7 +193,8 @@ The basis is **parsed from what the customer said, then applied**.
 `BudgetCheck` carries the same `basis` string and `describe()` always includes
 it, so the reply always states the assumption it used. `unit_price` on the result
 is the number actually compared — 233.20 for an ex-VAT basis, 249.52 for an
-inclusive one on the same pack at 20.
+inclusive one on the same pack at 20, 890.00 for a per-ream basis on a pack of
+100.
 
 The default when the customer states nothing is `"per pack, before VAT"`, which
 is PR7's assumption and PR6's rule.

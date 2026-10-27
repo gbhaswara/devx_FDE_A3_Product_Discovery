@@ -242,7 +242,7 @@ def _quantity_changes_the_answer(
     if criteria.budget_per_unit is None:
         return False
 
-    from .pricing import comparable_unit_price
+    from .pricing import budget_ok
 
     budget = criteria.budget_per_unit
 
@@ -259,7 +259,7 @@ def _quantity_changes_the_answer(
             facts = _facts_for(product)
             if facts is None:
                 continue
-            if comparable_unit_price(facts, quantity, criteria.budget_basis) <= budget:
+            if budget_ok(facts, quantity, budget, criteria.budget_basis):
                 passing.add(product["sku"])
         return passing
 
@@ -294,6 +294,8 @@ def _facts_for(product: dict[str, Any]) -> PriceFacts | None:
             if product.get("sale_price_satang") is not None
             else None
         ),
+        # Needed to convert a per-ream or per-sheet budget (BUG.md A24).
+        pack_sheets=product.get("pack_sheets"),
     )
 
 

@@ -24,6 +24,7 @@ The three lines that actually go wrong, each with a named test:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Iterable, Sequence
@@ -72,6 +73,9 @@ class PriceFacts:
     list_price: Money
     tiers: tuple[PriceTier, ...] = ()
     sale_price: Money | None = None
+    #: Sheets in one pack. Needed to compare a budget stated per ream or per
+    #: sheet, which is not the unit the price is quoted in (BUG.md A24).
+    pack_sheets: int | None = None
 
     @property
     def on_sale(self) -> bool:
@@ -307,17 +311,85 @@ def _basis_includes_vat(basis: str) -> bool:
     return "including vat" in lowered or "inclusive" in lowered
 
 
+def _pack_price(facts: PriceFacts, quantity: int, basis: str) -> Money:
+    """The price of one **pack**, gross when the basis says inclusive VAT."""
+    unit = unit_price(facts, quantity)
+    if _basis_includes_vat(basis):
+        return unit + percent_of(unit, VAT_RATE)
+    return unit
+
+
+#: Sheets in a ream. A budget stated "per ream" is a 500-sheet unit whatever the
+#: pack happens to hold, which is what the site's own pack sizes vary from.
+REAM_SHEETS = 500
+
+_UNIT_IN_BASIS = re.compile(r"per\s+(pack|ream|sheet)\b", re.I)
+
+
+def sheets_per_stated_unit(basis: str) -> int | None:
+    """How many sheets the budget's stated unit contains, or ``None`` for a pack.
+
+    ``None`` means "the unit the price is already quoted in", so no conversion is
+    needed. A pack is deliberately ``None`` rather than ``facts.pack_sheets``:
+    the pack *is* the pricing unit.
+    """
+    m = _UNIT_IN_BASIS.search(basis or "")
+    if m is None:
+        return None
+    unit = m.group(1).lower()
+    if unit == "ream":
+        return REAM_SHEETS
+    if unit == "sheet":
+        return 1
+    return None
+
+
+def _scale(amount: Money, numerator: int, denominator: int) -> Money:
+    """``amount × numerator ÷ denominator``, rounded half-up, in integers."""
+    total = amount.satang * numerator
+    whole, remainder = divmod(abs(total), denominator)
+    if 2 * remainder >= denominator:
+        whole += 1
+    return Money(whole if total >= 0 else -whole)
+
+
 def comparable_unit_price(facts: PriceFacts, quantity: int, basis: str) -> Money:
     """The per-unit price a budget should be compared against, given its basis.
 
     One function, so the pricing engine, the search filter and the clarification
     rule cannot disagree about what "within budget" means. Returning the gross
-    price here is what makes the basis a *rule* rather than a footnote.
+    price here is what makes the VAT basis a *rule* rather than a footnote, and
+    converting by the pack's sheet count is what makes a per-ream or per-sheet
+    basis one too (BUG.md A24).
+
+    The figure returned is for **display**. A verdict must use
+    :func:`budget_ok`, which compares on integers — a price rounded to the
+    satang for a per-sheet unit is not precise enough to decide a boundary.
     """
-    unit = unit_price(facts, quantity)
-    if _basis_includes_vat(basis):
-        return unit + percent_of(unit, VAT_RATE)
-    return unit
+    per_pack = _pack_price(facts, quantity, basis)
+    sheets = sheets_per_stated_unit(basis)
+    if sheets is None or not facts.pack_sheets or sheets == facts.pack_sheets:
+        return per_pack
+    return _scale(per_pack, sheets, facts.pack_sheets)
+
+
+def budget_ok(
+    facts: PriceFacts,
+    quantity: int,
+    budget: Money,
+    basis: str = "per pack, before VAT",
+) -> bool:
+    """Is the item within ``budget`` at ``quantity``, honouring the stated unit?
+
+    The comparison is exact: ``price × sheets_per_stated_unit`` against
+    ``budget × pack_sheets``, both integers. Dividing the money first would
+    compare rounded figures at the boundary, where a satang decides.
+    """
+    per_pack = _pack_price(facts, quantity, basis)
+    sheets = sheets_per_stated_unit(basis)
+    if sheets is None or not facts.pack_sheets:
+        return per_pack <= budget
+    return per_pack.satang * sheets <= budget.satang * facts.pack_sheets
 
 
 def check_budget(
@@ -342,13 +414,16 @@ def check_budget(
 
     When the customer states an inclusive basis the comparison is against the
     gross price, so ``unit_price`` on the result is the number actually compared
-    (233.20 before VAT, 249.52 including it).
+    (233.20 before VAT, 249.52 including it). When they state a per-ream or
+    per-sheet basis, ``unit_price`` is that unit's price, converted by the pack's
+    sheet count (BUG.md A24); the verdict itself is computed on integers by
+    :func:`budget_ok`.
     """
     unit = comparable_unit_price(facts, quantity, basis)
     return BudgetCheck(
         budget=budget,
         unit_price=unit,
         quantity=quantity,
-        within_budget=unit <= budget,
+        within_budget=budget_ok(facts, quantity, budget, basis),
         basis=basis,
     )

@@ -404,7 +404,8 @@ def load_price_facts(db_path: Path | None = None) -> dict[str, Any]:
 
     with open_readonly(db_path) as con:
         product_rows = con.execute(
-            "SELECT sku, list_price_satang, sale_price_satang FROM products"
+            "SELECT sku, list_price_satang, sale_price_satang, pack_sheets "
+            "FROM products"
         ).fetchall()
         tier_rows = con.execute(
             "SELECT sku, min_qty, unit_price_satang FROM price_tiers "
@@ -416,12 +417,15 @@ def load_price_facts(db_path: Path | None = None) -> dict[str, Any]:
         tiers.setdefault(sku, []).append(PriceTier(min_qty, Money(price)))
 
     facts: dict[str, PriceFacts] = {}
-    for sku, list_satang, sale_satang in product_rows:
+    for sku, list_satang, sale_satang, pack_sheets in product_rows:
         facts[sku] = PriceFacts(
             sku=sku,
             list_price=Money(list_satang),
             tiers=tuple(tiers.get(sku, ())),
             sale_price=Money(sale_satang) if sale_satang is not None else None,
+            # Carried so a budget stated per ream or per sheet can be compared
+            # against a price quoted per pack (BUG.md A24).
+            pack_sheets=pack_sheets,
         )
     return facts
 

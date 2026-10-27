@@ -42,6 +42,15 @@ A4_COPY = PriceFacts(
     sku="PL-CP-A4-80",
     list_price=baht("129.00"),
     tiers=(PriceTier(10, baht("122.55")), PriceTier(50, baht("116.10"))),
+    pack_sheets=500,
+)
+
+#: A 100-sheet pack, because the sheet count is what makes a stated unit other
+#: than "per pack" mean something different (BUG.md A24).
+CARD_100 = PriceFacts(
+    sku="PL-CS-A4-200-WH",
+    list_price=baht("178.00"),
+    pack_sheets=100,
 )
 
 A5_COPY = PriceFacts(
@@ -435,6 +444,36 @@ class TestBudget:
             LTR_FLYER_130, 20, baht("250.00"), basis="per pack, including VAT"
         )
         assert check.within_budget is True
+
+    def test_a_per_sheet_budget_is_converted_by_pack_size(self):
+        # BUG.md A24. 129.00 for a pack of 500 is 0.26 a sheet; comparing the
+        # pack price against a per-sheet ceiling excluded it from "under 1.00 a
+        # sheet" by a factor of 500.
+        check = check_budget(
+            A4_COPY, 1, baht("1.00"), basis="per sheet, before VAT"
+        )
+        assert check.within_budget is True
+        assert check.unit_price == baht("0.26")
+
+    def test_a_per_ream_budget_is_converted_by_pack_size(self):
+        # The other direction, and the expensive one: a pack of 100 sheets at
+        # 178.00 is 890.00 a ream, so a 250.00 per-ream ceiling must exclude it.
+        check = check_budget(
+            CARD_100, 1, baht("250.00"), basis="per ream, before VAT"
+        )
+        assert check.within_budget is False
+        assert check.unit_price == baht("890.00")
+
+    def test_a_per_sheet_budget_is_exact_at_the_boundary(self):
+        # 129.00 / 500 = 0.258 exactly; the comparison must be made on integers,
+        # not on the 0.26 rounded for display. A 0.25 ceiling is over by 0.008
+        # per sheet and must fail, a 0.26 ceiling must pass.
+        assert check_budget(
+            A4_COPY, 1, baht("0.25"), basis="per sheet, before VAT"
+        ).within_budget is False
+        assert check_budget(
+            A4_COPY, 1, baht("0.26"), basis="per sheet, before VAT"
+        ).within_budget is True
 
     def test_difference_is_quantified(self):
         check = check_budget(A5_FLYER, 1, baht("60.00"))

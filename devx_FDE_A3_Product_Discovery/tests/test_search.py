@@ -54,6 +54,11 @@ def facts(sku, list_price, tiers=(), sale=None):
         list_price=b(list_price),
         tiers=tuple(PriceTier(q, b(p)) for p, q in tiers),
         sale_price=b(sale) if sale else None,
+        # The pack size travels with the facts because a budget stated per ream
+        # or per sheet cannot be compared without it (BUG.md A24).
+        pack_sheets=next(
+            (p["pack_sheets"] for p in CATALOG if p["sku"] == sku), None
+        ),
     )
 
 
@@ -422,6 +427,27 @@ class TestBudgetAtQuantity:
     def test_one_satang_over_is_excluded(self):
         result = run(Criteria(size_code="A5", budget_per_unit=b("71.99")), quantity=1)
         assert "PL-CP-A5-80" not in {c.sku for c in result.matches}
+
+    def test_a_per_ream_budget_excludes_an_over_item(self):
+        # BUG.md A24. 178.00 buys 100 sheets, which is 890.00 a ream; a 250.00
+        # per-ream ceiling must exclude it. Comparing the pack price against the
+        # ceiling included it, at 3.6x over.
+        result = run(
+            Criteria(size_code="A4", budget_per_unit=b("250.00"),
+                     budget_basis="per ream, before VAT"),
+            quantity=1,
+        )
+        assert "PL-CS-A4-200-WH" not in {c.sku for c in result.matches}
+
+    def test_a_per_sheet_budget_includes_an_under_item(self):
+        # The mirror: 0.26 a sheet is well under 1.00, and the pack price of
+        # 129.00 must not be compared against it directly.
+        result = run(
+            Criteria(size_code="A4", budget_per_unit=b("1.00"),
+                     budget_basis="per sheet, before VAT"),
+            quantity=1,
+        )
+        assert "PL-CP-A4-80" in {c.sku for c in result.matches}
 
     def test_quantity_defaults_to_one(self):
         result = run(Criteria(size_code="A5"))
