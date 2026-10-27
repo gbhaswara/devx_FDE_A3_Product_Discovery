@@ -712,16 +712,27 @@ def _no_match(
             "colour": "the colour",
             "size": "the size",
         }.get(result.relaxed, result.relaxed)
-        lines.append(
-            f"If you could relax {readable}, these are the closest options — "
-            "they do not match your original request:"
-        )
-        for candidate in result.alternatives:
+        unavailable = [c for c in result.alternatives if not c.available]
+        if len(unavailable) == len(result.alternatives):
+            # The close item exists and cannot be supplied. Saying nothing is
+            # close would be a false claim about the assortment, so the refusal
+            # vocabulary is reused rather than a third one invented (BUG.md A28).
             lines.append(
-                f"  {candidate.name} ({candidate.sku}) — "
-                f"{candidate.unit_price.format()} per {_unit_phrase(candidate)} "
-                f"[relaxed: {readable}]"
+                f"The closest match{'es' if len(unavailable) > 1 else ''} cannot "
+                "be supplied today:"
             )
+            lines.append(refusal_text(unavailable))
+        else:
+            lines.append(
+                f"If you could relax {readable}, these are the closest options — "
+                "they do not match your original request:"
+            )
+            for candidate in result.alternatives:
+                lines.append(
+                    f"  {candidate.name} ({candidate.sku}) — "
+                    f"{candidate.unit_price.format()} per {_unit_phrase(candidate)} "
+                    f"[relaxed: {readable}]"
+                )
     else:
         lines.append(
             "I also could not find anything close, so I would rather ask than "

@@ -392,6 +392,21 @@ class TestNoMatch:
         assert result.matches
         assert result.alternatives == ()
 
+    def test_an_unavailable_near_match_is_reported_not_denied(self):
+        # BUG.md A28. Relaxing the weight finds the A4 ivory — which is out of
+        # stock — and every later relaxation finds nothing, so the availability
+        # filter emptied the result and the search reported nothing close: a
+        # false claim about the assortment.
+        result = run(
+            Criteria(size_code="A4", colour_name="ivory", weight_gsm=120),
+            quantity=1,
+        )
+        assert result.matches == ()
+        assert result.alternatives
+        assert any(c.sku == "PL-CL-A4-100-IVY" for c in result.alternatives)
+        assert all(not c.available for c in result.alternatives)
+        assert result.relaxed == "weight"
+
 
 # ---------------------------------------------------------------------------
 # Budget at the requested quantity (the central trap)

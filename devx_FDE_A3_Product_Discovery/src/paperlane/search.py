@@ -584,6 +584,9 @@ def _relax(
     the invariant "similarity cannot change what qualifies" is then testable
     without going through a display cap that legitimately does.
     """
+    fallback: tuple[Candidate, ...] = ()
+    fallback_attribute: str | None = None
+
     for attribute in RELAXATION_ORDER:
         relaxed = _drop(criteria, attribute)
         if relaxed is None:
@@ -599,11 +602,19 @@ def _relax(
                 found.append(make_candidate(product, facts[sku], reasons, quantity))
 
         similarity, _semantic, _detail = _similarity_for(scorer, found)
-        available = [c for c in _ranked(found, similarity) if c.available]
+        ranked = _ranked(found, similarity)
+        available = [c for c in ranked if c.available]
         if available:
             return tuple(available), attribute
+        # An item can be close and unorderable. Discarding that set made "I could
+        # not find anything close" a false claim about the assortment, so the
+        # first relaxation that found anything at all is kept as a fallback —
+        # labelled with its relaxed attribute and its own stock state, so the
+        # caller can say the item exists and when it returns (BUG.md A28).
+        if ranked and not fallback:
+            fallback, fallback_attribute = tuple(ranked), attribute
 
-    return (), None
+    return fallback, fallback_attribute
 
 
 def _drop(criteria: Criteria, attribute: str) -> Criteria | None:

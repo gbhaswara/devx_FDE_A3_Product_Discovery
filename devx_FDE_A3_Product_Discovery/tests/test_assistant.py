@@ -723,6 +723,37 @@ class TestFourOutcomes:
         assert no_match.quote is None and no_match.candidates == ()
 
 
+class TestNoMatch:
+    """BUG.md A28: "nothing close" must be true when it is said.
+
+    Runs over the real snapshot, because the defect is in its contents: the only
+    A4 ivory sheet in the catalog is out of stock until 20 November 2026.
+    """
+
+    def reply(self, request: str):
+        from paperlane import catalog
+
+        if not catalog.snapshot_exists():
+            pytest.skip("no committed catalog snapshot")
+        return answer(
+            validate(interpret_rules(request)),
+            catalog.load_products(),
+            catalog.load_price_facts(),
+        )
+
+    def test_the_near_match_carries_its_restock_date(self):
+        reply = self.reply("A4 120gsm ivory paper 4 packs")
+        assert reply.outcome == OUTCOME_NO_MATCH
+        assert "PL-CL-A4-100-IVY" in reply.text
+        assert "20 November 2026" in reply.text
+
+    def test_the_false_claim_is_not_made(self):
+        # The sentence is a factual claim about the assortment; when an item is
+        # close but unorderable, saying nothing is close is false.
+        reply = self.reply("A4 120gsm ivory paper 4 packs")
+        assert "could not find anything close" not in reply.text
+
+
 class TestModelMergeDoesNotRetractSettledColour:
     """The model may add information; it must not un-settle what the rules read.
 

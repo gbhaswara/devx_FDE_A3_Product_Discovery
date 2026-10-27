@@ -315,6 +315,20 @@ The three outcomes are structurally distinct and cannot be confused:
 | nothing satisfied, close items exist | `()` | ranked items | named |
 | nothing satisfied, nothing close | `()` | `()` | `None` |
 
+### A close item that is out of stock is still close
+
+An item can satisfy every relaxed requirement and be unavailable. Filtering
+those out of the alternatives meant that when *every* relaxation found only
+unavailable items, the search reported nothing close — a false claim about the
+assortment, since the item the customer asked for nearly is in the catalog
+(`BUG.md` A28).
+
+The first relaxation that finds anything keeps its ranked set as a fallback,
+returned with its own stock state when no later relaxation finds an available
+item. `Candidate.available` and `back_in_stock_date` therefore reach the reply,
+which reports the item and its restock date instead of claiming it does not
+exist. An available alternative always wins over an unavailable one.
+
 ---
 
 ## The budget trap, in the search layer
