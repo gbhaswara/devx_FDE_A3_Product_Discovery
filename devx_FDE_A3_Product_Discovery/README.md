@@ -485,34 +485,17 @@ In order, because the order is the judgement:
 
 ## 6. How I used AI tools
 
-I used **opencode** as the driver with the **9router** endpoint (`9inference`,
-which resolves to `deepseek-v4.1-flash`), plus a spec-driven workflow of my own
-(`openspec`) to keep the plan, the specs and the task list in one place.
-
-- **Planning and analysis.** I used the model to analyse the site and the brief,
-  and to draft the OpenSpec change — proposal, eight capability specs, design
-  decisions and an 86-task breakdown. I reviewed and corrected all of it; the
-  scope verdict in `CHANGELOG.md` is my own, and it disagrees with the plan's own
-  estimate.
-- **Implementation.** The code was written with heavy model assistance, module by
-  module, against the specs. Every module has tests I ran and read.
-- **Finding defects.** This is where it earned its place. Running the evaluation
-  set against the *live* model found a real defect that the test suite had
-  hidden — a clarification branch that was dead in production because tests
-  passed an argument the API never supplied, and a colour ambiguity that only the
-  model's own phrasing triggered. I would not have found either by reading. Six
-  defects from that phase are recorded in `CHANGELOG.md`, each with *how* it was
-  found rather than only what changed; three more, from conversation memory, were
-  found later by probing the running service and are registered in `BUG.md`
-  Part 2b. Total register: 15 data traps, 9 analysis defects, 5 shipped-code
-  defects.
-- **What I did not delegate.** The pricing arithmetic, the evaluation design and
-  the decision about what the five axes should mean. Those are the parts the
-  assignment is actually scoring, and they needed to be mine.
-
-The model is also a runtime component: it interprets free text when configured.
-It never computes a price, never selects a product, and never writes a total into
-a reply — those are deterministic code paths with their own tests.
+I used **opencode** with the **9router** endpoint (`9inference`, resolving to
+`deepseek-v4.1-flash`) and a spec-driven workflow of my own (`openspec`) to keep
+the proposal, eight capability specs, design decisions and an 86-task list in one
+place. The model drafted the site analysis, the specs and most of the code; I
+reviewed and corrected all of it, and the scope verdict is mine. It earned its
+place finding defects: the live-model evaluation exposed a clarification branch
+that tests had made unreachable, plus a colour ambiguity only the model's
+phrasing triggered. The register holds 15 data traps, 9 analysis defects and 5
+shipped-code defects. I kept the pricing arithmetic, the evaluation design and
+the five-axis definitions. At runtime the model interprets free text only — it
+never prices, selects a product or writes a total.
 
 ---
 
