@@ -635,7 +635,7 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A30 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A28 OPEN, A29 FIXED, A30 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
 from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A30 came from
@@ -1055,9 +1055,60 @@ conversational parser — the basket path already exists at
 
 **Falsification.** `TestRuleInterpretation::test_two_products_do_not_merge_into_a_phantom`
 and `test_a_second_item_is_never_dropped_silently` in `tests/test_assistant.py`,
-plus `TestClarification::test_a_compound_request_asks_which_item_first` in the
-same file. The first two fail today on the two `no_match` replies above; the
-third fails because the outcome is `quoted`.
+plus `TestClarification::test_a_compound_request_asks_which_item_first` and
+`test_a_compound_clarification_does_not_restate_the_merged_reading`. All four
+failed first: the two parse tests on the missing `compound:` note, the third with
+
+```
+FAILED TestClarification::test_a_compound_request_asks_which_item_first
+E  assert 'quoted' == 'clarified'
+```
+
+**Fix.** `interpret.count_product_clauses` splits on `and` / `&` / `,` / `;` /
+`plus` and counts the fragments that name a product. A fragment counts when it
+names a category, or — failing that — when it carries both its own quantity and
+its own weight, which is how the second item of
+*"10 packs of the 100gsm A4 gloss flyers and 10 packs of the 130gsm"* survives
+its elided type; without that second rule the count is 1 and the 130gsm half is
+quoted away. A count above one becomes a `compound:` note, kept as a note rather
+than a flag so it survives `merge_model_and_rules` the way the size note does.
+`decide_questions` asks the compound question first — before size, because a
+single-item answer would be wrong for every field — and
+`_render_clarification` suppresses *"So far I have"* for a compound request,
+since the merged criteria are precisely the phantom this rule exists to avoid.
+
+The heuristic deliberately stays a count, not a parse: *"A4 80gsm and 90gsm
+copy paper"* names the category once and the bare weight carries no quantity,
+so it is one product with two weights, and *"A4 80gsm copy paper, 20 packs,
+under 250 a pack"* names it once with no second quantity+weight pair. Both are
+asserted in `test_one_product_with_several_clauses_is_not_compound`.
+
+**Verification.** `./run.sh test` 1215 collected / 1212 passed + 3 skipped;
+`./run.sh eval` 24/24; `verify-refresh --keep` 12/12 (12 injected changes);
+`./run.sh eval --catalog v2` 21/21. Case 27's *pricing* is untouched — it is
+scored as `multi_line` through `POST /api/quote/lines` and still returns
+4,666.91; only the single-item conversational path changed. The single-turn
+reply digest was regenerated with a comment naming the two cases whose reply
+changed, both from reassurances to questions:
+
+- case 16 *"20 reams A4 copy paper plus 5 packs A4 matte flyer, single sided"*
+  — was `no_match`, because "matte" from the flyer half was applied to the copy
+  paper. The failing run before the fix:
+
+  ```
+  case 16 before: no_match | Nothing in the catalog satisfies every requirement
+  you gave. / If you could relax the finish, these are the closest options …
+  ```
+
+- case 27 *"10 packs of the 100gsm A4 gloss flyers and 10 packs of the 130gsm"*
+  — was `quoted` for the 100gsm flyers alone:
+
+  ```
+  case 27 before: quoted | Best match — Digital Flyers A4 – Gloss — 100 gsm,
+  Single-sided, Full colour (CMYK) (PL-PR-A4-GL-100-40)
+  ```
+
+**Status: FIXED.**
 
 ### A30 — The reply never says that a slightly larger order would cost less
 
