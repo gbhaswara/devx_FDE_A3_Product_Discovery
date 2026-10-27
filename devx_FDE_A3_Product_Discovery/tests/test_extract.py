@@ -276,6 +276,15 @@ class TestPackSize:
         assert p.unit_word is not None
         assert "ream" in p.unit_word.lower()
 
+    def test_unit_word_ignores_the_volume_pricing_note(self):
+        # Four pages carry the unit on the price line ("289.00 THB / ream") and
+        # the only .muted in the box says "No volume pricing for this item."
+        # Reading .muted first stored that sentence as the unit (BUG.md A16).
+        assert one("pl-cl-ltr-24-brt.html").unit_word == "ream"
+
+    def test_a_muted_unit_is_still_read_with_no_slash_on_the_price_line(self):
+        assert one("pl-cl-a4-100-ivy.html").unit_word == "Pack of 250 sheets"
+
     def test_unit_word_disagrees_with_pack_contents_on_the_site(self):
         # pl-cl-a4-80-pyl.html states "195.00 THB / ream" in the price box while
         # its own table says "Pack contents: 500 sheets". This is exactly why

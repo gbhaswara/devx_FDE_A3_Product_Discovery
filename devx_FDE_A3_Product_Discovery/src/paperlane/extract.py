@@ -295,19 +295,28 @@ def _read_pricebox(tree: LexborHTMLParser) -> tuple[Decimal | None, Decimal | No
 def _unit_word(box, big) -> str | None:
     """The unit basis as published, for display only.
 
+    Two layouts, plus one trap. A price line can carry the unit itself —
+    ``Price: <span class='big'>289.00 THB</span> / ream`` — while the only
+    ``.muted`` in the box is a note, ``No volume pricing for this item.``. The
+    price line is therefore read first when it has no muted text of its own, so
+    the note cannot be stored as a unit (BUG.md A16).
+
     Deliberately unreliable as a data source: ``pl-cl-a4-80-pyl.html`` states
     "195.00 THB / ream" in the price box while its own spec table says
     "Pack contents: 500 sheets". Nothing may compare or filter on this value;
     ``pack_sheets`` is the machine-readable field.
     """
+    if big is not None:
+        parent = big.parent
+        if parent is not None and parent.css_first(".muted") is None:
+            raw = _text(parent)
+            if "/" in raw:
+                tail = raw.rsplit("/", 1)[1].strip()
+                if tail:
+                    return tail
     muted = box.css_first(".muted")
     if muted is not None:
         return _text(muted) or None
-    if big is not None and big.parent is not None:
-        raw = _text(big.parent)
-        if "/" in raw:
-            tail = raw.rsplit("/", 1)[1].strip()
-            return tail or None
     return None
 
 

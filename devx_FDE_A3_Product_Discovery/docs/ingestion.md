@@ -251,6 +251,15 @@ become an unmatchable NULL.
 its own spec table says `Pack contents: 500 sheets`. The words are unreliable;
 the sheet count is not. Nothing filters or compares on `unit_word`.
 
+Where the words are read from is a branch order, not a lookup. When the price line
+carries the unit — `Price: <span class='big'>289.00 THB</span> / ream` — the slash
+tail wins; otherwise the unit comes from the price box's `.muted` element, which is
+how `Ream of 500 sheets` is published. The tail is checked first for one reason:
+on four pages the only `.muted` in the box is the note `No volume pricing for this
+item.`, so reading `.muted` first stored the note as the unit (defect A16). The
+fix is the order, not a check for that sentence, so the weathered copy cannot
+bring it back — see `BUG.md` A16.
+
 ---
 
 ## Sale, stock, restock, discontinued

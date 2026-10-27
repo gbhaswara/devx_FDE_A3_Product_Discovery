@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1194 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1199 tests** (offline 1192 passed + 7 skipped; online 1195 passed + 4 skipped), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,59 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Fixed — 2026-10-27 · stored timestamps were local time wearing a UTC label
+
+`/api/health` reported a catalog built three minutes earlier as
+`age_seconds: -25098.7`, `"just now"`, `stale: false`. Two representations of the
+same instant disagreed inside one file: `meta.built_at` held
+`2026-10-27T09:30:09.402283+00:00`, `ingest_runs.finished_at` held
+`2026-10-27 16:30:09.402283`.
+
+DuckDB's `TIMESTAMP` has no zone and converts an aware datetime into the
+**session** timezone before storing it, so `datetime.now(timezone.utc)` landed as
+`Asia/Jakarta` wall time. Every reader does the opposite: `parse_stored_timestamp`
+tags a zone-less value as UTC, deliberately, so a nine-hour-old catalog cannot
+look fresh in a UTC+7 timezone. The catalog therefore read seven hours younger
+than it was, and a snapshot built moments ago had a negative age — the freshness
+signal could not fire for seven hours longer than configured, which is the one
+job it has.
+
+`catalog.stored_timestamp` now converts to UTC and drops the zone at all four
+write sites (product and tier `crawled_at`, run `started_at`/`finished_at`). Naive
+values pass through, documented as already-UTC. The conversion is in the writer
+rather than in a session setting, so it does not depend on the host timezone. The
+snapshot was rebuilt over HTTP at 1 req/s: both representations now agree and
+`age_seconds` is `4.4`.
+
+No price, stock state or answer changed. Recorded as `BUG.md` **A19**; three tests
+were written first and failed by exactly 25200 s — the offset, not a rounding.
+The two pre-existing freshness tests that caught it were not wrong, and were not
+changed.
+
+### Fixed — 2026-10-27 · `unit_word` held the volume-pricing note on four SKUs
+
+`/api/products` returned `"No volume pricing for this item."` as the `unit_word`
+for `PL-CL-LTR-24-BRT`, `PL-CS-A4-160-AST`, `PL-CS-A4-250-BLK` and
+`PL-PH-A4-230-MT`. Those pages state the unit on the price line
+(`Price: … 289.00 THB / ream`) and their only `.muted` element is the volume note.
+`extract._unit_word` read `.muted` first and returned it, so the slash tail was
+never reached.
+
+The branch order was the bug, so the branch order changed: the slash tail is read
+first when the price line has no `.muted` of its own, and `.muted` remains the
+fallback for the layout that publishes its unit there. No check for the note's
+text — a sentence-shaped unit would still be wrong, but only a structural fix
+survives a copy change. Replies and the catalog column were never affected because
+both use `pack_sheets` through `assistant.unit_phrase`.
+
+The new test was run before the fix, against a real page copied into
+`tests/fixtures/`: `assert 'No volume pr...or this item.' == 'ream'`. The snapshot
+was then re-ingested over HTTP at 1 req/s, not edited in place: against the
+previous snapshot, **4 product rows differ, all in `unit_word`**, plus the
+`crawled_at`/`built_at` provenance that must move. 72 products, 105 tiers, 2 out of
+stock, 1 on sale, 0 review items — unchanged. Recorded as `BUG.md` **A16** and
+closed as **F-1**.
 
 ### Added — 2026-10-27 · the evaluation can name the catalog it scored
 

@@ -313,7 +313,7 @@ carrying a total is checked structurally instead.
 
 ## Test module inventory
 
-27 modules, gathered by `--collect-only`. Counts are tests, not lines. The layer column names a module's **primary** layer; several span more than one (for example `test_api.py` exercises the conversation wiring as well as the quote path).
+29 modules, gathered by `--collect-only`. Counts are tests, not lines. The layer column names a module's **primary** layer; several span more than one (for example `test_api.py` exercises the conversation wiring as well as the quote path).
 
 | Module | Tests | Layer |
 |---|---|---|
@@ -321,14 +321,14 @@ carrying a total is checked structurally instead.
 | `test_api.py` | 68 | 3 |
 | `test_ask_cli.py` | 32 | 3 |
 | `test_assistant.py` | 67 | 3 |
-| `test_catalog.py` | 48 | 3 |
+| `test_catalog.py` | 51 | 3 |
 | `test_conversation.py` | 67 | 8 |
 | `test_conversation_api.py` | 38 | 8 |
 | `test_conversation_eval.py` | 19 | 8 |
 | `test_crawl.py` | 13 | 2 |
 | `test_embeddings.py` | 66 | 6 |
 | `test_evaluate.py` | 71 | 5 |
-| `test_extract.py` | 49 | 2 |
+| `test_extract.py` | 51 | 2 |
 | `test_hygiene.py` | 13 | 7 |
 | `test_ingest.py` | 14 | 2 |
 | `test_metrics.py` | 59 | 7 |
@@ -346,11 +346,17 @@ carrying a total is checked structurally instead.
 | `test_snapshot_path.py` | 26 | 7 |
 | `test_ui_catalog.py` | 26 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1194** | |
+| **Total** | **1199** | |
 
-Online: 1194 collected, 4 skip (provider- and loopback-dependent). Offline
-(`unshare -rn`): 1194 collected, 7 skip — the same four plus the three loopback
+Online: 1199 collected, 4 skip (provider- and loopback-dependent). Offline
+(`unshare -rn`): 1199 collected, 7 skip — the same four plus the three loopback
 tests that legitimately cannot run without a network interface.
+
+One further skip is state-dependent, not environmental: `test_evaluate.py` skips
+its second-catalog case until `./run.sh verify-refresh --keep` has produced
+`.refresh-verification/mutated.duckdb`. With that artefact present the offline run
+is 1193 passed + 6 skipped rather than 1192 + 7. The figures above are for a clean
+tree, which is what a fresh clone sees — the artefact directory is git-ignored.
 
 ## What is tested where
 
@@ -403,7 +409,7 @@ tests that legitimately cannot run without a network interface.
 ## Running the tests
 
 ```
-./run.sh test             # 1194 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1199 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot (24/24)
 ./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21, after verify-refresh --keep
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design

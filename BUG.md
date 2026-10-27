@@ -255,7 +255,7 @@ What shipped instead: `request_chars` (a length) and `request_digest` (16 hex ch
 
 ## Part 2b — Defects found in the shipped code
 
-Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. A12–A14 are in conversation memory. A15 is separate: it was found later, while answering "how is the UI deployed?", and it is in the page rather than in the assistant. A16 was found by building the catalog column and noticing a product's unit read "No volume pricing for this item." Registered before being fixed, per the rule at the end of this file — except A15, which says so in its own entry. **A12–A15, A17 and A18 are FIXED; A16 is OPEN** — A13 required answering a question D3 left open, which is recorded in its entry. A17 and A18 were reported from use after the submission was complete; both were reproduced against the running service before anything was changed.
+Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. A12–A14 are in conversation memory. A15 is separate: it was found later, while answering "how is the UI deployed?", and it is in the page rather than in the assistant. A16 was found by building the catalog column and noticing a product's unit read "No volume pricing for this item." Registered before being fixed, per the rule at the end of this file — except A15, which says so in its own entry. **A12–A19 are FIXED** — A13 required answering a question D3 left open, which is recorded in its entry. A17 and A18 were reported from use after the submission was complete; both were reproduced against the running service before anything was changed. A19 was exposed by the re-ingest that fixed A16: the freshness tests failed against a snapshot that was minutes old, and the cause was the writer storing local time as if it were UTC.
 
 ### A12 — A first turn that states only a quantity or a budget cannot be continued
 
@@ -414,17 +414,34 @@ the reply cannot drift apart.
 | `/` catalog column | no — `unit_phrase`, same rule |
 | `/api/products` | **yes**, verbatim |
 
-**Status: OPEN.** Not fixed here, deliberately: the fix is in extraction, so it
-changes the committed snapshot and needs a re-ingest, and it belongs in its own
-change with its own before/after on the four SKUs. The candidate fix is to prefer
-the slash tail over `.muted` (the branch order is the bug), with a test on this
-price-box shape. Severity is low — no answer is affected, and the field is
-display-only — but it is a wrong value in a published field, which is the class
-this file exists to catch.
+**Status: FIXED.** `extract._unit_word` now reads the slash tail first when the
+price line has no `.muted` of its own, and falls back to `.muted` otherwise. The
+branch order was the bug: the four pages above have both a slash tail and a muted
+note, and the note won. The fix is structural, not a check for the sentence — no
+"if it starts with *No volume*" special case — so a muted unit still wins where
+that is the only unit on the page (the `Ream of 500 sheets` layout), which is the
+second shape the tests pin.
 
-**Guard:** `test_ui_catalog.py::test_no_unit_phrase_leaks_from_the_price_box`
-fails if the column ever renders the string. That guards the display, not the
-extraction.
+**Falsification.** The new test was written and run before the fix, on a real page
+copied into `tests/fixtures/pl-cl-ltr-24-brt.html`:
+
+```
+FAILED tests/test_extract.py::TestPackSize::test_unit_word_ignores_the_volume_pricing_note
+E   AssertionError: assert 'No volume pr...or this item.' == 'ream'
+```
+
+**Verification.** `TestPackSize` (9) passes, including the guard that a `.muted`
+unit is still read when the price line has no slash. Extracting all 72 pages now
+yields no `unit_word` beginning "No volume"; the four formerly broken SKUs read
+`ream`, `pack`, `pack`, `pack`, and the catalog's exact-`ream` count rises from 6
+to 7. The re-ingest was over HTTP at 1 req/s, not a database edit: a `/tmp` copy of
+the old snapshot vs the new one differs on **4 rows, all in `unit_word`**, plus
+provenance (`crawled_at`, `built_at`, run id). Counts are unchanged — 72 products,
+105 tiers, 2 out of stock, 1 on sale, 0 review items.
+
+**Guard:** `test_unit_word_ignores_the_volume_pricing_note` fails if the note is
+ever stored as a unit again. `test_ui_catalog.py::test_no_unit_phrase_leaks_from_the_price_box`
+still guards the display independently.
 
 ---
 
@@ -540,6 +557,81 @@ and still pass.
 
 **Status: FIXED.** The 50-50 half of the report was a preference, not a defect;
 it is implemented but not claimed as a bug.
+
+---
+
+### A19 — Every stored timestamp was local time, so a fresh catalog could never be stale
+
+```json
+{"built_at": "2026-10-27 16:30:09.402283", "age_seconds": -25098.7,
+ "age_human": "just now", "stale": false}
+```
+
+That health payload was read three minutes after an ingest. The true build time
+was `2026-10-27T09:30:09.402283+00:00`, which the same snapshot stored correctly
+in `meta` — so the file disagreed with itself by exactly seven hours, and the
+sign of the error was backwards.
+
+**Root cause.** `crawled_at` and `started_at`/`finished_at` are `TIMESTAMP`
+columns, which carry no zone. DuckDB converts an aware datetime into the
+**session** timezone before storing it, so `datetime.now(timezone.utc)` written in
+this environment landed as `Asia/Jakarta` wall time (UTC+7). Every reader did the
+opposite: `parse_stored_timestamp` tags a zone-less value as UTC, deliberately, so
+that a nine-hour-old catalog cannot look fresh in a UTC+7 timezone. Correct
+intent, wrong premise — the writer had already moved the value. The age was
+therefore understated by seven hours, and negative immediately after an ingest.
+
+**Why it was invisible.** It was invisible in the exact situation the signal
+exists for. The two tests that assert staleness set the threshold to 0.001 h
+(3.6 s) against the committed snapshot, which was 16 hours old: wrong by seven
+hours, but still comfortably positive, so `STALE` printed and both passed. The
+first re-ingest during F-1 made the snapshot minutes old, the age went negative,
+`humanise_age` clamped it to *just now*, and the two tests failed. They were
+reporting a real defect, not wall-clock flakiness — which is also why the fix is
+in the writer and not in the test.
+
+A second representation of the same instant made the bug checkable without
+waiting for a clock: `meta.built_at` is an ISO string with an explicit offset and
+was always right, while `ingest_runs.finished_at` was local. Two answers to one
+question, seven hours apart.
+
+| Surface | Effect |
+|---|---|
+| `/api/health`, `./run.sh metrics` | age understated by the host's UTC offset; a 30 h catalog reads 23 h and is not flagged |
+| immediately after any ingest | negative age, rendered "just now" — the one time the catalog is freshest reads as no information |
+| `crawled_at` provenance on every row | local wall time, unlabelled, presented as the retrieval timestamp |
+
+No price, stock state or answer was affected. The damage was to the freshness
+signal, which is the claim that makes an automated refresh safe to trust.
+
+**Fix.** `catalog.stored_timestamp` converts an aware datetime to UTC and drops
+the zone before binding, at all four write sites (product `crawled_at`, tier
+`crawled_at`, run `started_at`, run `finished_at`). Naive values pass through
+unchanged, documented as already-UTC. The conversion is in the writer, not in a
+session setting, so it does not depend on the host timezone or on every future
+connection remembering to set one. `meta.built_at` still stores the aware value;
+the two representations now agree.
+
+**Falsification.** Three tests were written first and run against the old writer.
+All three failed by 25200 s — the offset, not a rounding:
+
+```
+FAILED TestBuild::test_a_crawled_at_keeps_its_instant
+FAILED TestBuild::test_the_two_representations_of_the_build_time_agree
+FAILED TestBuild::test_a_snapshot_built_now_does_not_have_a_negative_age
+E  assert -5 <= -25200.0
+```
+
+**Verification.** After the fix and a full re-ingest over HTTP at 1 req/s,
+`ingest_runs.finished_at` and `meta.built_at` are the same instant and
+`age_seconds` is `4.4`. Offline suite 1192 passed, 7 skipped; `./run.sh eval`
+24/24; `--catalog v2` 21/21; `verify-refresh --keep` 12/12. Counts unchanged: 72
+products, 105 tiers, 2 out of stock, 0 review items.
+
+**Guard:** the three tests above. The first asserts the instant survives the
+round trip through a real snapshot; the second compares the two stored
+representations; the third fails on any negative age. Together they make the
+local-time write fail on the next ingest rather than on the next demo.
 
 ---
 

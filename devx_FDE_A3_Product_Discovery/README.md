@@ -541,7 +541,7 @@ a reply — those are deterministic code paths with their own tests.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The four conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1194) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1199) |
 
 ---
 
