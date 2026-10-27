@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — PaperLane Product Discovery
 
-Architecture overview for the A3 submission. Requirements live in the ten main specs under `openspec/specs/`; the reasoning behind each technical choice is in the `design.md` of the change that introduced it, under `openspec/changes/archive/`.
+Architecture overview for the A3 submission. Requirements live in the eleven main specs under `openspec/specs/`; the reasoning behind each technical choice is in the `design.md` of the change that introduced it, under `openspec/changes/archive/`.
 
 ## What the system does
 
@@ -71,6 +71,10 @@ A sales assistant over PaperLane's paper catalog. A customer sends a chat messag
                     +-----------------------------------+
                     |  ASSISTANT                        |
                     |  model: intent -> criteria only   |
+                    |  conversation: merge across turns |
+                    |  (after interpret, over typed     |
+                    |   criteria; re-validated; the     |
+                    |   model never sees the transcript)|
                     |  rules: fallback interpretation   |
                     |  code: products + prices + reasons|
                     |  assertions: no invented product  |
@@ -80,9 +84,12 @@ A sales assistant over PaperLane's paper catalog. A customer sends a chat messag
                                v
                     +-----------------------------------+
                     |  HTTP API (FastAPI)               |
-                    |  POST /chat   POST /quote         |
-                    |  GET  /products /health /diff     |
-                    |  + one server-rendered page       |
+                    |  POST /api/ask  /api/quote        |
+                    |  POST /api/quote/lines            |
+                    |  GET  /api/products /api/health   |
+                    |  GET  /api/diff /api/metrics      |
+                    |  DELETE /api/conversations/{id}   |
+                    |  POST /ask  + one server page     |
                     +-----------------------------------+
                                |
                                v
@@ -104,7 +111,7 @@ A sales assistant over PaperLane's paper catalog. A customer sends a chat messag
 
 ## The load-bearing design decisions
 
-Four properties carry most of the score. Each is structural — enforced by the shape of the code, not by a convention.
+Six properties carry most of the score. Each is structural — enforced by the shape of the code, not by a convention.
 
 ### 1. Prices cannot come from the model
 
@@ -112,9 +119,11 @@ The model's only output is structured search criteria. Product selection, pricin
 
 This matters because the guarantee is *structural* rather than *behavioural*. The model is not instructed to avoid inventing products; it has no channel through which to introduce one.
 
+The same holds once a conversation exists. The merge runs **after** interpretation, over typed `Criteria`, and only the current turn's text ever reaches an interpreter — so every constraint in a merged request is traceable to a turn that stated it, and the model still has no channel into the numbers. See `docs/conversation-memory.md`.
+
 ### 2. One pricing path, shared by every caller
 
-`POST /quote` (structured criteria) and `POST /chat` (free text) both call the same pure pricing function. The evaluation harness calls it too.
+`POST /api/quote` (structured criteria) and `POST /api/ask` (free text) both call the same pure pricing function. The evaluation harness calls it too.
 
 Consequence: a pricing bug cannot appear in one entry point and not another, and most of the evaluation set runs with no model and no network.
 
@@ -183,6 +192,8 @@ page_reviews
 
 `pack_sheets` is separate from price because "under 250 a pack" is unanswerable without it. `weight_raw` is kept alongside `weight_gsm` because the source states weight four different ways, and a conversion must be defensible in the interview.
 
+**Conversation state is deliberately not in this store.** It is not catalog data, it is per-customer and short-lived, and putting it in the snapshot would make it survive a refresh it has no business surviving. `conversation.py` holds it separately: an in-memory store for the service, and a JSONL store for the CLI, both bounded (`MAX_CONVERSATIONS = 100` LRU, `MAX_TURNS = 20`). Neither holds request text — only `Criteria`. See `docs/conversation-memory.md`.
+
 ## Pricing pipeline
 
 ```
@@ -219,10 +230,13 @@ Three lines in that pseudocode are where the errors live, so each has a named te
 | `GET /api/health` | Snapshot id, product count, store readable, model reachable | no |
 | `GET /api/diff` | Current snapshot vs previous | no |
 | `GET /api/metrics` | The five operational measures, derived from request records | no |
+| `DELETE /api/conversations/{id}` | Discard a conversation. Idempotent | no |
 | `GET /` | The single server-rendered page | no |
 | `POST /ask` | The htmx fragment the page swaps in | yes (with rule fallback) |
 
-The three that interpret or quote write a request record; the rest do not.
+The four that interpret or quote — `POST /api/ask`, `POST /api/quote`,
+`POST /api/quote/lines` and the page's `POST /ask` — write a request record, as
+does a request the framework rejects before it reaches a handler; the rest do not.
 Recording the inspection endpoints would dilute the fallback and zero-result
 rates with traffic that structurally cannot exhibit either — see
 `docs/observability.md`.
@@ -300,7 +314,7 @@ Two consequences worth naming, because both are silent:
 
 ## Known architectural limitations
 
-- **Single-turn.** No conversation memory. A correction starts a new request. Deliberate: an explicit clarification step is more reliable than half-built memory.
+- **Conversation memory is conservative and per process.** A follow-up continues only when it names no new subject (a category or a size), so *"the cheaper one"* with no subject is a fresh request. The API's store is in memory, so a restart forgets every conversation and two workers do not share one; there is no expiry, only bounds. Deliberate: a wrong carry is a confident wrong answer, worse than a lost one. The model never sees the transcript — the merge is over typed criteria, after interpretation. Reasoning and the full list of limits in `docs/conversation-memory.md`; the three defects found after it shipped are A12–A14 in `BUG.md` Part 2b.
 - **Semantic search is a tiebreak only.** A purely descriptive request with no structured terms can miss — embeddings never enter the filter. The tiebreak decides ties among equally-priced items; measured against the recorded set it reorders 3 of 28 cases with zero improvements and zero regressions, so it is not a quality claim.
 - **Rule interpretation is narrower than the model.** Paraphrases the model handles may fall back to a clarification. The fallback rate is measured so the degradation is visible.
 - **No authentication, no rate limiting beyond the crawler.** This is a local demonstration service.

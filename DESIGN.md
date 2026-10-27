@@ -1,6 +1,6 @@
 # DESIGN.md — PaperLane Product Discovery
 
-Product and interaction design. Behavioural requirements are in `openspec/changes/add-paperlane-product-discovery/specs/`; system structure is in `ARCHITECTURE.md`.
+Product and interaction design. Behavioural requirements are in `openspec/specs/` (the eleven main specs) and the change that introduced each is under `openspec/changes/archive/`; system structure is in `ARCHITECTURE.md`.
 
 ## Who this is for
 
@@ -62,13 +62,13 @@ Why this shape:
 
 ## The four outcomes as designed states
 
-Each is a distinct screen, not a variation of the same one. This is the core interaction decision: the system never blurs "here is your answer" with "I could not answer".
+Each is a distinct screen, not a variation of the same one. This is the core interaction decision: the system never blurs "here is your answer" with "I could not answer". They ship as `quoted`, `clarified`, `no_match` and `refused`; the names below are the ones this document used while they were being designed, and they map one to one.
 
-### `ok` — matched
+### `quoted` (designed as `ok`) — matched
 
 As above. One to five products, cheapest first.
 
-### `clarify` — one question, at most two
+### `clarified` (designed as `clarify`) — one question, at most two
 
 ```
 I can find that. Two things I need to get the price right:
@@ -160,7 +160,7 @@ Consequences that are visible in the product:
 
 - **The product list is never wrong in a way the model caused.** Products come from the filter.
 - **Every figure in the reply text is inserted from the computed result**, not generated. The number in the sentence and the number in the breakdown are the same object.
-- **If the model is down, the product still answers.** Rule interpretation covers the common shapes; anything it cannot parse becomes a `clarify`, which is a normal state, not an error.
+- **If the model is down, the product still answers.** Rule interpretation covers the common shapes; anything it cannot parse becomes a `clarified`, which is a normal state, not an error.
 
 The trade-off accepted: replies read slightly more templated than a fully model-composed answer. In exchange, a wrong price cannot be blamed on the model, and a model outage is a quality dip rather than an outage.
 
@@ -170,12 +170,21 @@ Each of these was considered and cut. They are listed because a reviewer will as
 
 | Omitted | Why |
 |---|---|
-| Conversation memory | Single-turn plus an explicit clarification is more reliable than half-built memory. The clarify state already carries the "what I understood" echo, which covers the common correction case. |
 | Product images | The catalog's value is in attributes and price, not presentation. Images would add a crawler path and storage for no scored benefit. |
 | A cart / checkout | The brief asks for a quote, not an order. Quoting is where the errors are; ordering is out of scope. |
 | Rich formatting, charts, PDF export | The reply is meant to be forwarded as text into a chat channel. |
 | Streaming responses | Replies are fast because pricing is local. Streaming would add complexity to hide a latency problem that does not exist. |
 | A customer-facing UI | The user is a salesperson. The interface is a working tool, not a storefront. |
+
+**Conversation memory was on this list and is not any more.** It was cut during
+planning — *"single-turn plus an explicit clarification is more reliable than
+half-built memory"* — and that reasoning is right about a *half-built* memory. It
+was wrong about the capability: the second most natural thing a customer says is
+a refinement, and the assistant could not hear it. It was built after the scored
+work was complete, conservatively: a turn continues only when it names no new
+subject, the merge is over typed criteria rather than the transcript, and every
+continued reply says what it remembered. See
+[`docs/conversation-memory.md`](devx_FDE_A3_Product_Discovery/docs/conversation-memory.md).
 
 ## Accessibility of the answer itself
 
