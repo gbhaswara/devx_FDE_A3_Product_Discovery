@@ -24,7 +24,7 @@ uv sync                                    # 1. install dependencies
 Step 5 is deliberately two turns: the second one is understood without repeating
 the product, and the reply says which requirements it remembered.
 
-Those five are the demo path. Four further commands exist to *prove* something
+Those five are the demo path. Five further commands exist to *prove* something
 rather than demonstrate it, and none is needed to see the system work:
 
 - `./run.sh diff` compares the current snapshot with the previous one. It reports
@@ -43,6 +43,11 @@ rather than demonstrate it, and none is needed to see the system work:
   `docs/observability.md`.
 - `./run.sh similarity` measures the semantic tiebreak. It is the only command
   that needs an embedding provider, and it says `NOT MEASURED` when it cannot.
+- `./run.sh eval --cases eval/conversation-cases.json` scores the conversation
+  layer — 11 recorded conversations, 24 turns — and prints a single-turn replay
+  digest: the 22 comparable cases must produce the same reply as before the
+  feature existed. `eval/conversation-negative-control.json` is the same file
+  wrong in five ways and exits 1, so the harness is shown able to fail.
 
 **None of the five demo commands needs an embedding provider**, and none sets
 `PAPERLANE_EMBED_*`. That is not luck: with no provider configured the similarity
@@ -112,31 +117,39 @@ environment variable only.
     + politeness shapes           vocabulary         rebuild-and-swap
                                   |
                                   v
-                        data/catalog.duckdb
-                                  |
-              +-------------------+-------------------+
-              |                   |                   |
-              v                   v                   v
-        aliases.py           search.py           pricing.py
-        synonym &            hard filter,        pure functions,
-        notation             deterministic       integer satang,
-        resolution           rank, justify       Decimal, half-up
-              |                   |                   |
-              +-------------------+-------------------+
-                                  |
-                                  v
-                        interpret.py  ->  assistant.py
-                        rules first,      one of four outcomes:
-                        model optional    quote / clarify / no match / refuse
-                                  |
-                                  v
-                     api.py (JSON)  +  ui.py (one page, htmx)
-                                  |
-                                  v
-                          evaluate.py (28 recorded cases)
+                        data/catalog.duckdb  (committed)
+
+              ----------- one request, top to bottom -----------
+
+    request text
+        |
+        v
+    interpret.py  --->  Criteria   (aliases.py resolves vocabulary;
+    rules first,                    criteria.py is the typed shape)
+    model optional
+        |
+        v
+    conversation.py  merges Criteria across turns. No-op without a
+    conversation id. The model never sees the transcript, so every
+    constraint traces to a turn that stated it.
+        |
+        v
+    assistant.py  —  validate, then search() (hard filter + total rank),
+        |            then quote() (pure, integer satang, half-up).
+        |            Produces exactly one outcome:
+        |            quote / clarify / no match / refuse
+        v
+    api.py (JSON)  +  ui.py (one page, htmx)
+
+              ---------- what proves it ----------
+
+    evaluate.py (28 cases)  +  conversation_eval.py (11 conversations)
+        |
+        v
+    records.py (one per request)  ->  metrics.py (derived on read)
 ```
 
-Three properties hold structurally rather than by convention:
+Four properties hold structurally rather than by convention:
 
 **Money never leaves Python.** Arithmetic is on integer satang; `Decimal` with
 explicit `ROUND_HALF_UP` is used where a percentage is involved. There is no
@@ -151,6 +164,13 @@ free text into a criteria object. Its values are then re-resolved through the
 same alias functions the rules use — never trusted verbatim — and re-validated
 against the catalog's own vocabulary. A reply is rendered deterministically from
 pricing output, so the model has no path into the numbers or the product names.
+
+**The guarantee survives memory.** This one only became load-bearing once
+conversations existed, which is where the previous three could have quietly
+weakened. The merge happens *after* interpretation and only over typed
+criteria, and only the current turn's text ever reaches an interpreter. So every
+constraint in a merged request is traceable to a turn that stated it, and the
+model still has no channel into the numbers.
 
 Module map:
 
@@ -167,13 +187,27 @@ Module map:
 | `interpret.py` | Rules interpreter, model merge, validation |
 | `search.py` | Hard filtering, deterministic ranking, justification |
 | `assistant.py` | Four outcomes and reply rendering, with guards |
+| `conversation.py` | The continuation rule, the two bounded stores, no text retained |
 | `api.py` / `ui.py` | JSON endpoints and the single page |
 | `evaluate.py` | The recorded evaluation harness |
+| `conversation_eval.py` | The conversation harness and the single-turn replay digest |
+| `records.py` / `metrics.py` | One request record; five measures derived on read, never counted |
+| `embeddings.py` / `similarity.py` | The optional tiebreak provider and its measurement command |
+
+`refresh.py` / `mutate.py` are test tooling rather than serving code: they stand
+up a mutated copy of the site and verify a refresh against a declared manifest.
+`cli.py`, `ask_cli.py`, `refresh_cli.py` and `ingest.py` are the command surface
+`run.sh` dispatches to. `model.py` is the only module that talks to a language
+model; `embeddings.py` talks to an embedding provider and is inert when none is
+configured.
 
 Full detail in `docs/`: `pricing.md`, `ingestion.md`, `search.md`,
 `assistant.md`, `api.md`, `refresh.md`, `refresh-verification.md`,
 `semantic-ranking.md`, `observability.md`, `conversation-memory.md`,
-`chat-channel.md`.
+`chat-channel.md`. In the repository root, `TEST.md` lists the eight test layers
+and the per-module test inventory, and `ANALYZE_POST.md` is this design written
+out in full — the data, search, agent and pricing layers, and why the build is
+ordered the way it is.
 
 ---
 
@@ -216,12 +250,20 @@ catalog's vocabulary and never invent a value.
 
 Stated as limitations, not as strengths.
 
-**Weight conversions are only partly verified.** The pound-to-grammage table
-(`20→75`, `24→90`, `28→105`, `32→120`) is implemented from the brief, but only
-the 20 lb and 24 lb rows can be checked against real products — the v1 catalog
-stocks no 28 lb or 32 lb paper. Two of four rows are therefore untested against
-live data. Cases 23 and 24 in the evaluation set are recorded as not applicable
-for exactly this reason rather than being counted as passes.
+**Weight conversions are only partly verified against live data.** The
+pound-to-grammage table (`20→75`, `24→90`, `28→105`, `32→120`) is implemented
+from the brief, but the committed v1 catalog stocks no 28 lb or 32 lb paper, so
+only two of four rows can be checked against it. Cases 23 and 24 are scored
+against the mutated v2 catalog, which does contain `28 lb` and `32 lb` products,
+rather than being counted as passes against v1.
+
+**No single evaluation run scores all 28 cases.** Four behaviours have no live
+data in v1, so they are scored against the mutated v2 snapshot that
+`./run.sh verify-refresh` builds. The honest summary is **24/24 on v1 and 21/21
+on v2** — seven cases are pinned to v1 because their expected product sets
+enumerate v1's exact offering, which v2 genuinely extends; rewriting them from
+v2's own output would make the expectation circular. Per-case reasoning is in
+`eval/results.md`.
 
 **Pack-size ambiguity is surfaced, not resolved.** "Under 250 a pack" is compared
 against whatever unit the product is actually sold in — a ream, a pack, a pad.
@@ -248,6 +290,24 @@ happens after interpretation over typed criteria, so every constraint is
 traceable to a turn that stated it. The cost is that "the cheaper one" with no
 subject is a fresh request rather than a reference. See
 [`docs/conversation-memory.md`](docs/conversation-memory.md).
+
+**Three defects were shipped in that feature and found afterwards**, by probing
+the running service rather than by reading the module: a first turn stating only
+a quantity or only a budget could not be continued (A12), an unparseable turn
+permanently erased the conversation (A13), and the turn number saturated once the
+retained-turn cap was reached (A14). All three are fixed and all three are
+registered in `BUG.md` Part 2b with how they were found. A13 is the interesting
+one: it was D3 working as written, so fixing it meant answering a question the
+decision left open — an empty turn is now *fresh for the reply* and *transparent
+for the state*. Each fix arrived with a test and a falsification check: the fix
+was reverted, the new test and evaluation case were confirmed to fail, and the
+fix restored.
+
+**The conversation harness cannot falsify its own pricing axis.** A fresh turn is
+compared against the standalone run of the same request, and both call the same
+pricing code, so the axis cannot disagree with itself from a case file. It is
+checked structurally instead — a `quoted` outcome must carry a total — and the
+harness does not claim more than that.
 
 **No auth and no rate limiting** beyond the crawler's own 1 req/s politeness.
 The app is local-only and not hardened for exposure.
@@ -313,8 +373,11 @@ which resolves to `deepseek-v4.1-flash`), plus a spec-driven workflow of my own
   hidden — a clarification branch that was dead in production because tests
   passed an argument the API never supplied, and a colour ambiguity that only the
   model's own phrasing triggered. I would not have found either by reading. Six
-  real defects in total are recorded in `CHANGELOG.md`, each with *how* it was
-  found rather than only what changed.
+  defects from that phase are recorded in `CHANGELOG.md`, each with *how* it was
+  found rather than only what changed; three more, from conversation memory, were
+  found later by probing the running service and are registered in `BUG.md`
+  Part 2b. Total register: 15 data traps, 9 analysis defects, 5 shipped-code
+  defects.
 - **What I did not delegate.** The pricing arithmetic, the evaluation design and
   the decision about what the four axes should mean. Those are the parts the
   assignment is actually scoring, and they needed to be mine.
@@ -339,6 +402,11 @@ a reply — those are deterministic code paths with their own tests.
 | No credential reaches a record | `tests/test_records.py::TestNoCredentialInRecords` sets a sentinel key, makes a model call, and scans the log |
 | The metrics are derived, not counted | `tests/test_metrics.py::TestDerivedOnRead` deletes a record and asserts the metric moves |
 | The disagreement metric can fail | `tests/test_metrics.py::TestDisagreement` corrupts a stated total and asserts the count goes non-zero |
+| The conversation layer is scored | `./run.sh eval --cases eval/conversation-cases.json` — 11 conversations, 24 turns |
+| That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
+| Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
+| The three conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1095) |
 
 ---
 
@@ -353,20 +421,23 @@ interpretation, the four assistant outcomes, the JSON API, and the evaluation
 harness with its results. Everything in sections 1–7 above. **Complete** — 86 of
 86 tasks closed.
 
-**Tier 2 — extras, each independently droppable.** Six were planned, and all six
-are built:
+**Tier 2 — extras, each independently droppable.** Six were planned and all six
+are built; a seventh, conversation memory, was planned as a nice-to-have and
+grew into a full change of its own. Each shipped as its own OpenSpec change
+under `openspec/changes/archive/`, with its own capability spec:
 
 | Item | State |
 |---|---|
 | Multi-item basket quoting | Built — `POST /api/quote/lines`, evaluation cases 16 and 27 |
 | Single-page interface | Built — `ui.py`, all four outcomes rendered |
 | Snapshot diff as a demo artefact | Built — `GET /api/diff`, `./run.sh diff` |
-| Mutated-site refresh demonstration | Built — `./run.sh verify-refresh` mutates a copy of the site, ingests it, and verifies all 12 injected changes are reported under the correct kind |
-| Hybrid semantic tiebreak | Built — `embeddings.py`, optional `PAPERLANE_EMBED_*` configuration, similarity term after price; measured with `./run.sh similarity` |
-| Structured logging and the five metrics | Built — `records.py`, `metrics.py`, `./run.sh metrics`, `GET /api/metrics`. See `docs/observability.md` |
+| Mutated-site refresh demonstration | Built — `./run.sh verify-refresh` mutates a copy of the site, ingests it, and verifies all 12 injected changes are reported under the correct kind. Closed by `add-mutated-site-refresh-harness` |
+| Hybrid semantic tiebreak | Built — `embeddings.py`, optional `PAPERLANE_EMBED_*` configuration, similarity term after price; measured with `./run.sh similarity`. Closed by `add-semantic-tiebreak` |
+| Structured logging and the five metrics | Built — `records.py`, `metrics.py`, `./run.sh metrics`, `GET /api/metrics`. Closed by `add-observability`. See `docs/observability.md` |
+| Conversation memory | Built — `conversation.py`, the continuation rule, two bounded stores, disclosure in every continued reply, and its own evaluation. Closed by `add-conversation-memory` |
 
-All six Tier 2 items are now built. The metrics module is the last one, and its
-own numbers are in `docs/observability.md`.
+**221 tasks are closed across the five archived changes and none is open:**
+86 (Tier 1) + 26 + 27 + 28 + 54 (the four Tier 2 / nice-to-have changes).
 
 **The brief's five nice-to-haves, and where each landed:**
 
