@@ -325,6 +325,21 @@ REAM_SHEETS = 500
 
 _UNIT_IN_BASIS = re.compile(r"per\s+(pack|ream|sheet)\b", re.I)
 
+#: Every basis string the engine can actually apply: the three units it
+#: converts by, each with either VAT qualifier. `interpret._budget_basis`
+#: produces these and nothing else, so this set is the whole vocabulary — the
+#: reply may state a basis only if it is in here (BUG.md A25).
+BUDGET_BASES = tuple(
+    f"{unit}, {qualifier}"
+    for unit in ("per pack", "per ream", "per sheet")
+    for qualifier in ("before VAT", "including VAT")
+)
+
+
+def is_canonical_basis(basis: str) -> bool:
+    """Can the pricing engine read this basis, or would it only print it?"""
+    return basis in BUDGET_BASES
+
 
 def sheets_per_stated_unit(basis: str) -> int | None:
     """How many sheets the budget's stated unit contains, or ``None`` for a pack.

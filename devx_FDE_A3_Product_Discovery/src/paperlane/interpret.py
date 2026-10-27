@@ -27,6 +27,7 @@ from .criteria import Criteria
 from .money import Money
 from .model import normalise_sides
 from .normalize import SizeError
+from .pricing import is_canonical_basis
 
 #: "20 packs", "3 reams", "10 boxes", "5".
 _QUANTITY_PATTERNS = (
@@ -335,7 +336,21 @@ def merge_model_and_rules(
 
     basis = take("budget_basis")
     if basis:
-        merged = replace(merged, budget_basis=str(basis))
+        basis = str(basis)
+        if is_canonical_basis(basis):
+            merged = replace(merged, budget_basis=basis)
+        else:
+            # The basis is both published and applied, so the model may only
+            # choose among the forms the rules themselves produce. A phrasing
+            # the engine cannot read would make the reply state an assumption it
+            # did not use (BUG.md A25), so the rules' basis stands and the gap is
+            # recorded the way an invalid size is.
+            merged = replace(
+                merged,
+                notes=merged.notes + (
+                    f"budget_basis: {basis!r} is not a basis the engine applies",
+                ),
+            )
 
     notes = take("notes")
     if notes:
@@ -421,6 +436,20 @@ def validate(criteria: Criteria) -> Criteria:
 
     if criteria.budget_per_unit is not None and criteria.budget_per_unit.satang <= 0:
         raise CriteriaInvalid("budget must be positive", "budget_per_unit")
+
+    if not is_canonical_basis(criteria.budget_basis):
+        # The basis is published in the reply *and* read by the pricing engine,
+        # so a value the engine cannot read must never survive as a label. Every
+        # entry point passes through here, which makes it the one place the
+        # guarantee holds (BUG.md A25).
+        stated = criteria.budget_basis
+        criteria = replace(
+            criteria,
+            budget_basis=DEFAULT_BASIS,
+            notes=criteria.notes + (
+                f"budget_basis: {stated!r} is not a basis the engine applies",
+            ),
+        )
 
     return criteria
 

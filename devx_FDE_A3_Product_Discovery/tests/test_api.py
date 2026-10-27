@@ -240,6 +240,27 @@ class TestClientErrors:
         assert body["error"] == "invalid_request"
         assert body["field"] == field
 
+    def test_an_unknown_budget_basis_is_a_client_error(self, client):
+        # BUG.md A25. The basis is published and read by the pricing engine, so
+        # a caller cannot supply one the engine cannot apply — it would print an
+        # assumption that was never used.
+        r = client.post("/api/quote", json={
+            "size": "A4", "budget_per_unit": "200.00",
+            "budget_basis": "per box, including VAT",
+        })
+        assert r.status_code == 422
+        body = r.json()
+        assert body["error"] == "invalid_request"
+        assert body["field"] == "budget_basis"
+
+    def test_a_canonical_budget_basis_is_accepted(self, client):
+        # The mirror: refusing every basis would break PR7's stated assumption.
+        r = client.post("/api/quote", json={
+            "size": "A4", "budget_per_unit": "200.00",
+            "budget_basis": "per pack, including VAT",
+        })
+        assert r.status_code == 200
+
     def test_no_stack_trace_is_exposed(self, client):
         r = client.post("/api/quote", json={"size": "B5"})
         text = r.text.lower()

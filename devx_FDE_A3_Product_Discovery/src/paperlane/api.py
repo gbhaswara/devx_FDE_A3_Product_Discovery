@@ -153,6 +153,21 @@ class StructuredRequest(BaseModel):
     budget_per_unit: Decimal | None = None
     budget_basis: str = "per pack, before VAT"
 
+    @field_validator("budget_basis")
+    @classmethod
+    def basis_is_applyable(cls, value: str) -> str:
+        # The basis is published in the reply and read by the pricing engine, so
+        # a caller cannot supply one the engine cannot apply — that would state
+        # an assumption which was never used (BUG.md A25). The canonical set is
+        # the engine's, not a second copy of it.
+        from .pricing import BUDGET_BASES, is_canonical_basis
+
+        if not is_canonical_basis(value):
+            raise ValueError(
+                f"budget_basis must be one of: {', '.join(BUDGET_BASES)}"
+            )
+        return value
+
 
 class QuoteLineRequest(BaseModel):
     """A cart line for the multi-line quote endpoint."""

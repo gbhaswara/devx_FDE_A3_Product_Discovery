@@ -318,6 +318,30 @@ class TestModelMerge:
         merged = merge_model_and_rules({"budget_per_unit": "250.00"}, rules)
         assert merged.budget_per_unit == b("250.00")
 
+    def test_a_model_basis_outside_the_canonical_set_is_ignored(self):
+        # BUG.md A25. The basis is published in the reply and read by the
+        # pricing engine, so a phrasing the engine cannot read asserts an
+        # assumption it did not apply. The model may only choose among the
+        # forms the rules themselves produce.
+        rules = interpret_rules("A4 paper under 5.00 a pack")
+        merged = merge_model_and_rules(
+            {"budget_per_unit": "5.00", "budget_basis": "per box, including VAT"},
+            rules,
+        )
+        assert merged.budget_basis == rules.budget_basis
+        assert any(note.startswith("budget_basis:") for note in merged.notes)
+
+    def test_a_canonical_model_basis_is_kept(self):
+        # The guard must not throw away a basis the engine can apply: "including
+        # VAT" is a rule (BUG.md A21), and the model reading it is the point of
+        # the model path.
+        rules = interpret_rules("A4 paper under 5.00 a ream")
+        merged = merge_model_and_rules(
+            {"budget_per_unit": "5.00", "budget_basis": "per ream, including VAT"},
+            rules,
+        )
+        assert merged.budget_basis == "per ream, including VAT"
+
     def test_model_cannot_smuggle_a_price_into_criteria(self):
         # Only allow-listed keys are taken; a price or SKU has no field to land
         # in.
@@ -427,6 +451,31 @@ class TestReplyContract:
         reply = ask("A4 copy paper 80 gsm, 50 reams")
         assert reply.quote.delivery.satang == 0
         assert "more)" not in reply.text
+
+    def test_the_stated_basis_is_always_one_the_engine_can_apply(self):
+        # BUG.md A25. The basis is both published (PR7: "say which assumption
+        # you used") and read by the pricing engine, so the two must not be able
+        # to disagree. A non-canonical one is replaced, not printed.
+        from dataclasses import replace
+
+        from paperlane.pricing import BUDGET_BASES
+
+        criteria = replace(
+            interpret_rules("A4 copy paper 80 gsm, 20 reams"),
+            budget_per_unit=b("200.00"),
+            budget_basis="per box, including VAT",
+        )
+        # Both entry points pass through validate, which is where the field is
+        # normalised.
+        from paperlane import catalog
+
+        if not catalog.snapshot_exists():
+            pytest.skip("no committed catalog snapshot")
+        checked = validate(criteria)
+        assert checked.budget_basis in BUDGET_BASES
+        reply = answer(checked, catalog.load_products(), catalog.load_price_facts())
+        assert "per box" not in reply.text
+        assert checked.budget_basis in reply.text
 
     def test_list_price_case_identified_as_list(self):
         reply = ask("A5 paper")

@@ -199,6 +199,20 @@ inclusive one on the same pack at 20, 890.00 for a per-ream basis on a pack of
 The default when the customer states nothing is `"per pack, before VAT"`, which
 is PR7's assumption and PR6's rule.
 
+### The basis is a closed set
+
+`pricing.BUDGET_BASES` holds the six strings the engine can actually apply —
+*per pack / per ream / per sheet*, each *before* or *including VAT*. It is the
+whole vocabulary, because `interpret._budget_basis` produces those forms and
+nothing else, and it is one set rather than a second copy of the rule.
+
+A basis outside it is never printed. The model may choose among the six and no
+more: `merge_model_and_rules` keeps the rules' basis for anything else and
+records a `budget_basis:` note, and `interpret.validate` normalises the field for
+every entry point that reaches it, so the assumption the reply states is always
+one the arithmetic used (`BUG.md` A25). `POST /api/quote` refuses an unknown
+basis with a `422` naming the field, in the same way it refuses an unknown size.
+
 ---
 
 ## PR8 — Out-of-stock and discontinued items are not quoted as available
