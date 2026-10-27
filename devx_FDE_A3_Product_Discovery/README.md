@@ -80,6 +80,17 @@ python3 -m http.server 8000                # serve the catalog site, from THIS d
 swaps the new snapshot into place atomically. Re-running it against an unchanged
 site reports `no_change: true` and commits nothing.
 
+**Ingesting without disturbing the committed snapshot.** The demo round supplies
+an updated site and asks for a live re-ingest, so `ingest` takes `--db` (or the
+`PAPERLANE_DB` environment variable) and `serve`, `eval`, `ask` and `metrics`
+accept the same, all resolving through one path. That means a new site can be
+ingested into a separate file and served from it, leaving `data/catalog.duckdb`
+byte-for-byte intact — the property is asserted by comparing the committed file's
+bytes rather than its size or mtime. Without the flag everything defaults to
+`data/catalog.duckdb` exactly as before, so the five demo commands are unchanged.
+Every response also reports the snapshot `path` it was computed from and how old
+it is.
+
 Serve from **this** directory, not its parent. The site lives at
 `./paperlane/`, so the base URL is `/paperlane/`; serving the parent directory
 puts the site at `/devx_FDE_A3_Product_Discovery/paperlane/` and the ingest fails
@@ -271,6 +282,24 @@ When a customer's "pack" might mean 50 sheets or 500, the reply states the basis
 it used rather than guessing silently. That is honest, but it is not a
 resolution.
 
+**The held-out set fails, and that is the honest result.** Against 11 requests in
+phrasings the rules were never tuned on (`eval/held-out-cases.json`), 8 pass and 3
+fail, all from one cause: a noun the aliases cannot map — a shade, or a weight in
+pounds with no catalog equivalent — is dropped rather than surfaced, so the answer
+silently widens to every paper of that size. "The pink A4 coloured paper" quotes
+all seven A4 coloured papers instead of the one; "pastel grey A4 paper" returns all
+33 A4 papers when nothing grey is stocked; "30 lb letter paper" returns all 19
+letter papers. The failures are kept in the run, not pruned to get a clean sweep,
+and a test asserts at least one remains. The recorded set was written *while* the
+rules were built and used to fix them, so it cannot measure this; a held-out set is
+the only thing that can.
+
+**Freshness is reported, not enforced.** The catalog's age is on every surface
+(`./run.sh metrics`, `GET /api/health`, the `snapshot.freshness` block) with a
+24-hour threshold, but nothing is gated on it. A snapshot past the threshold is
+labelled, not withheld — a gate that refuses to serve would fail the demo round,
+which re-ingests a live unseen site and asks for answers immediately.
+
 **Semantic search is a tiebreak, and its benefit here is unmeasured.** Search is
 hard filtering plus deterministic ranking, with an optional similarity term that
 decides ties *among items priced equally*. A request phrased entirely in
@@ -379,7 +408,7 @@ which resolves to `deepseek-v4.1-flash`), plus a spec-driven workflow of my own
   Part 2b. Total register: 15 data traps, 9 analysis defects, 5 shipped-code
   defects.
 - **What I did not delegate.** The pricing arithmetic, the evaluation design and
-  the decision about what the four axes should mean. Those are the parts the
+  the decision about what the five axes should mean. Those are the parts the
   assignment is actually scoring, and they needed to be mine.
 
 The model is also a runtime component: it interprets free text when configured.
@@ -394,8 +423,11 @@ a reply — those are deterministic code paths with their own tests.
 |---|---|
 | Prices are correct to the satang | `tests/test_pricing.py` (49 tests), `docs/pricing.md` |
 | The evaluation passes | `./run.sh eval`, and `eval/results.md` for the full run |
-| The evaluation *can* fail | `./run.sh eval --cases eval/negative-control.json` |
+| The evaluation *can* fail | `./run.sh eval --cases eval/negative-control.json` — four deliberate corruptions, one per scoring axis |
 | The scoring detects what it claims | `./run.sh eval --self-check` |
+| A misread request is scored, not just a mis-ranked one | `./run.sh eval` — `interpretation` is the first axis; `tests/test_evaluate.py::TestInterpretationAxis` |
+| Behaviour on unseen phrasing, warts included | `./run.sh eval --cases eval/held-out-cases.json` — 11 requests the rules were never tuned against, 8 pass and 3 fail on purpose |
+| The catalog's age is visible | `./run.sh metrics` (prints `catalog age:`), `GET /api/health`, and the `snapshot.freshness` block in every API payload |
 | The crawler is faithful | `./run.sh diff`, `tests/test_extract.py`, `docs/ingestion.md` |
 | The documented API is real | `tests/test_api.py::TestDocumentedExamples` executes every example |
 | No credential is committed | `.gitignore`; `./run.sh test` includes a scan |
@@ -406,7 +438,7 @@ a reply — those are deterministic code paths with their own tests.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The three conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1095) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1141) |
 
 ---
 

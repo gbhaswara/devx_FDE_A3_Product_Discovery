@@ -8,7 +8,7 @@ The **devx AI Labs AI Forward Deployed Engineer** take-home, **Option A3 — Pro
 
 A customer sends *"We need letter-size flyers, one side, colour, under 250 a pack, 20 packs."* The system reads the live catalog, finds matching products, explains why each matches, and returns a complete price breakdown — every figure computed in deterministic code.
 
-**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory. **221 tasks closed across five archived changes and none open** (86 Tier 1 + 26 + 27 + 28 + 54). 1095 tests pass offline under `unshare -rn` (7 skip) with no model configured. The version is `0.8.0`. Nothing is under construction.
+**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory and the gap-closure work. **221 tasks closed across the five earlier archived changes and none open** (86 Tier 1 + 26 + 27 + 28 + 54); `add-gap-closure` closed 5 more and is archived. 1141 tests pass offline under `unshare -rn` (7 skip) with no model configured. The version is `0.9.0`. Nothing is under construction.
 
 ## Read in this order
 
@@ -16,12 +16,13 @@ A customer sends *"We need letter-size flyers, one side, colour, under 250 a pac
 |---|---|---|
 | 1 | `devx_FDE_A3_Product_Discovery/devx_FDE_A3_Brief.pdf` | The customer's specification: PR1–PR8, must-haves 1–8, nice-to-haves, "what we look for". Authoritative. |
 | 2 | `00_START_HERE_All_Briefs.md` | Submission requirements, rules, the seven scoring areas, the three post-submission rounds. |
-| 3 | `openspec/specs/*/spec.md` | Behavioural contracts — **eleven** capabilities, **84 requirements, 215 scenarios**. These are the live specs. |
-| 4 | `openspec/changes/archive/` | The five changes that produced them, each with `proposal.md` / `design.md` / `tasks.md`. **All archived** — there are no active changes. |
+| 3 | `openspec/specs/*/spec.md` | Behavioural contracts — **eleven** capabilities, **86 requirements, 227 scenarios**. These are the live specs. |
+| 4 | `openspec/changes/archive/` | The changes that produced them, each with `proposal.md` / `design.md` / `tasks.md`. **All archived** — there are no active changes. |
 | 5 | `ANALYZE_01.md` | The evidence, written during planning. §2 traps, §11b gap audit, §12 verification log. Cite it rather than re-deriving facts. |
 | 6 | `ANALYZE_POST.md` | The same system re-analysed from the code as built — §1 data, §2 search, §3 agents, §4 pricing. Read this for what actually shipped; `ANALYZE_01.md` for what was decided. |
 | 7 | `ARCHITECTURE.md`, `DESIGN.md`, `TEST.md`, `BUG.md` | How it is built, how it reads, how it is proven, what is known to break. |
 | 8 | `devx_FDE_A3_Product_Discovery/README.md` | The submission's front door: the five-command demo path and the evidence table. |
+| 9 | `devx_FDE_A3_Product_Discovery/GAPS_ANALYSIS.md` + `GAPS_RESPONSE.md` | A production-readiness review of the finished system, and the finding-by-finding answer — which gaps were closed, which the brief puts out of scope, and why. |
 
 The brief PDF and the A3 section of `00_START_HERE` were extracted and diffed: **identical, no drift**. If they ever disagree, the PDF wins and the discrepancy gets raised.
 
@@ -34,7 +35,7 @@ DEVXLABS/
 ├── DESIGN.md                    product and interaction design
 ├── TEST.md                      testing and evaluation strategy (eight layers)
 ├── BUG.md                       data traps, analysis defects, shipped-code defects
-├── CHANGELOG.md                 history; current status is 0.8.0
+├── CHANGELOG.md                 history; current status is 0.9.0
 ├── ANALYZE_01.md                planning analysis and verification log
 ├── ANALYZE_POST.md              post-implementation design, grounded in the code
 ├── MVC_PLAN.md                  a separate scoping exercise — NOT this repo
@@ -45,7 +46,7 @@ DEVXLABS/
 │   │          evaluation-harness,observability,pricing-engine,product-search,
 │   │          quote-api,refresh-verification,sales-assistant,
 │   │          semantic-ranking}/spec.md          the eleven live specs
-│   └── changes/archive/2026-10-26-*  and  2026-10-27-add-conversation-memory/
+│   └── changes/archive/2026-10-26-*  and  2026-10-27-*
 │       ├── proposal.md  design.md  tasks.md
 │       └── specs/*/spec.md
 └── devx_FDE_A3_Product_Discovery/
@@ -53,12 +54,12 @@ DEVXLABS/
     ├── paperlane/               READ-ONLY input — the site to crawl
     ├── run.sh                   the command surface (see below)
     ├── src/paperlane/           27 modules
-    ├── tests/                   25 modules, 1095 tests
-    ├── eval/                    cases.json, conversation-cases.json, the two
-    │                            negative controls, results.md
+    ├── tests/                   27 modules, 1141 tests
+    ├── eval/                    cases.json, held-out-cases.json, conversation-cases.json,
+    │                            the three negative/control sets, results.md
     ├── docs/                    11 documents, one per layer or capability
     ├── data/                    catalog.duckdb is committed; *.jsonl is not
-    ├── README.md  CUSTOMER_SUMMARY.md
+    ├── README.md  CUSTOMER_SUMMARY.md  GAPS_ANALYSIS.md  GAPS_RESPONSE.md
     └── pyproject.toml  uv.lock
 ```
 
@@ -106,9 +107,17 @@ uv sync                                        # install; no network beyond PyPI
 ```
 
 `./run.sh eval` also takes `--cases <path>` and `--self-check`. The conversation
-set is `eval/conversation-cases.json`; the two negative controls are
+set is `eval/conversation-cases.json`; the held-out set is
+`eval/held-out-cases.json` (11 requests, unseen phrasing, 3 failures retained by
+design — it is *not* a regression set). The two negative controls are
 `eval/negative-control.json` and `eval/conversation-negative-control.json`, and
 both are *expected* to exit 1.
+
+`ingest`, `serve`, `eval`, `ask` and `metrics` all take `--db <path>` (or read
+`PAPERLANE_DB`), resolving through one `resolve_db_path`, so a live re-ingest of
+an unseen site can be served from a separate snapshot without overwriting
+`data/catalog.duckdb`. Without the flag the default is `data/catalog.duckdb`
+exactly as before. Every API response names the snapshot it used and its age.
 
 Serving the site — required, because volume prices load over HTTP and not from disk:
 

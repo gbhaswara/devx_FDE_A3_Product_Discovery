@@ -134,7 +134,14 @@ paths answer.
       "products": 72,
       "price_tiers": 105,
       "built_at": "2026-10-26 14:22:45.965504",
-      "base_url": "http://localhost:8000/paperlane/"
+      "base_url": "http://localhost:8000/paperlane/",
+      "freshness": {
+        "built_at": "2026-10-26 14:22:45.965504",
+        "age_seconds": 12884.5,
+        "age_human": "3h",
+        "stale_after_hours": 24.0,
+        "stale": false
+      }
     },
     "interpretation_detail": "no model client supplied"
   }
@@ -322,13 +329,26 @@ stock.
   "catalog_readable": true,
   "healthy": true,
   "model_configured": false,
-  "model_reachable": false
+  "model_reachable": false,
+  "freshness": {
+    "built_at": "2026-10-26 14:22:45.965504",
+    "age_seconds": 12884.5,
+    "age_human": "3h",
+    "stale_after_hours": 24.0,
+    "stale": false
+  }
 }
 ```
 
 Always `200` — a health check answers even when the thing it reports on is
 missing. With no snapshot it returns `healthy: false` **and a `remedy`** naming the
 command that builds one, because a diagnosis without a remedy is a dead end.
+
+`freshness.stale` is a **report**, not a gate: with the threshold crossed, every
+endpoint still answers. The threshold is 24 hours by default and
+`PAPERLANE_STALE_AFTER_HOURS` overrides it. An unreadable or missing snapshot
+reports `age_seconds: null` rather than `false`, so "cannot tell" does not read as
+"fresh".
 
 ---
 

@@ -131,14 +131,17 @@ exercised by `./run.sh verify-refresh`, which runs in the normal environment.
 
 28 recorded requests against the running system. This is the layer the brief explicitly asks for. All 28 run, but not all against one catalog: 24 against the committed v1 snapshot and 4 against the mutated v2 snapshot that `verify-refresh` builds. A case names the catalog its requirement needs, and a run names the catalog it scored.
 
-**Four axes, scored separately.** The reason for separating them: a case can have perfect prices and the wrong products, and a single pass/fail would hide that.
+**Five axes, scored separately.** The reason for separating them: a case can have perfect prices and the wrong products, and a single pass/fail would hide that. `interpretation` was added first in the order because it is the earliest thing that can go wrong — a request read as the wrong size produces a valid quote for something nobody asked for, which the other four axes cannot see.
 
 ```
-retrieval   did the right SKU set come back?
-match       was each stated justification accurate?
-pricing     was the total right to the satang?
-reply       would a salesperson send this?
+interpretation   was the request read as the customer meant it?
+retrieval        did the right SKU set come back?
+match            was each stated justification accurate?
+pricing          was the total right to the satang?
+reply            would a salesperson send this?
 ```
+
+`interpretation` scores a case's derived criteria against a **declared subset** of the fields the request states, plus a declared set of fields it must **not** invent. "Under 250 a pack" becoming "80 gsm or lighter" is the second kind. The expectation is deliberately never a transcription of `criteria.describe()` — that would be the engine agreeing with itself — and a test asserts every case's declared set is smaller than what the engine derives, so the axis can always disagree independently. A case recording no criteria reports `n/a`.
 
 **Coverage.** Each of these must have at least one case:
 
@@ -171,6 +174,8 @@ reply       would a salesperson send this?
 | 28 lb / 32 lb | v2 only — unverifiable against v1 |
 
 **Cases that cannot run are recorded as such.** Two conversion cases depend on products that do not exist in v1. They are marked *not applicable*, with the reason, rather than omitted or counted as passing.
+
+**A held-out set exists, and it fails.** `eval/held-out-cases.json` is 11 requests in phrasings that appear nowhere in `cases.json`, written after the rules path was finished and **not** used to develop it. Expectations were derived by filtering the catalog directly and applying the documented ranking chain, never by reading the engine's response. Three of eleven fail, all one root cause: an unmappable noun is dropped rather than honoured, so the answer silently widens — "the pink A4 coloured paper" widens from one product to all seven A4 coloured papers, "pastel grey A4 paper" returns all 33 A4 papers when no grey is stocked, and "30 lb letter paper" returns all 19 letter papers. A test asserts at least one held-out failure **remains**, because a held-out set that passes completely is evidence about its author. It is a separate file, not cases 29+, and a default `./run.sh eval` does not load it.
 
 **Results format.** Expected against actual, per case, per axis. Failures stay in, with a cause.
 
@@ -277,7 +282,7 @@ carrying a total is checked structurally instead.
 
 ## Test module inventory
 
-25 modules, gathered by `--collect-only`. Counts are tests, not lines. The layer column names a module's **primary** layer; several span more than one (for example `test_api.py` exercises the conversation wiring as well as the quote path).
+27 modules, gathered by `--collect-only`. Counts are tests, not lines. The layer column names a module's **primary** layer; several span more than one (for example `test_api.py` exercises the conversation wiring as well as the quote path).
 
 | Module | Tests | Layer |
 |---|---|---|
@@ -291,7 +296,7 @@ carrying a total is checked structurally instead.
 | `test_conversation_eval.py` | 19 | 8 |
 | `test_crawl.py` | 13 | 2 |
 | `test_embeddings.py` | 66 | 6 |
-| `test_evaluate.py` | 52 | 5 |
+| `test_evaluate.py` | 67 | 5 |
 | `test_extract.py` | 49 | 2 |
 | `test_hygiene.py` | 13 | 7 |
 | `test_ingest.py` | 14 | 2 |
@@ -306,10 +311,12 @@ carrying a total is checked structurally instead.
 | `test_search.py` | 40 | 1 |
 | `test_semantic_api.py` | 15 | 6 |
 | `test_single_turn_unchanged.py` | 3 | 8 |
-| **Total** | **1095** | |
+| `test_snapshot_cli.py` | 5 | 3 |
+| `test_snapshot_path.py` | 26 | 7 |
+| **Total** | **1141** | |
 
-Online: 1095 collected, 4 skip (provider- and loopback-dependent). Offline
-(`unshare -rn`): 1095 collected, 7 skip — the same four plus the three loopback
+Online: 1141 collected, 4 skip (provider- and loopback-dependent). Offline
+(`unshare -rn`): 1141 collected, 7 skip — the same four plus the three loopback
 tests that legitimately cannot run without a network interface.
 
 ## What is tested where
@@ -325,6 +332,8 @@ tests that legitimately cannot run without a network interface.
 | Absent-attribute semantics | | ● | ● | ● |
 | Alias and notation handling | ● | | | ● |
 | Ranking determinism | ● | | | ● |
+| Request read as meant (interpretation) | | | ● | ● |
+| Held-out requests, unseen phrasing | | | | ● |
 | `match_reasons` accuracy | ● | | | ● |
 | Clarify / no-match / refuse | | | ● | ● |
 | No invented products | | | ● | ● |
@@ -340,6 +349,7 @@ tests that legitimately cannot run without a network interface.
 | Untrusted text | | ● | ● | ● |
 | Mutated-site refresh verification | | | ● | |
 | Observability: records, metrics, no credentials | ● | | ● | ● |
+| Catalog freshness and snapshot path | ● | | ● | |
 | Conversation merge rule, field by field | ● | | ● | ● |
 | Disclosure of what was remembered | ● | | ● | ● |
 | Turn numbering past the retained cap | ● | | ● | |
@@ -360,8 +370,9 @@ tests that legitimately cannot run without a network interface.
 ## Running the tests
 
 ```
-./run.sh test             # 1095 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1141 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot
+./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design
 ./run.sh eval --cases eval/conversation-cases.json   # 11 conversations, 24 turns
 ./run.sh metrics          # the five operational measures, derived from request records
 ./run.sh metrics --eval   # the same measures over the most recent evaluation run
@@ -370,7 +381,7 @@ tests that legitimately cannot run without a network interface.
 
 The unit and integration layers must pass with the network disconnected and no credentials present. If a test needs either, it belongs in the evaluation layer instead.
 
-Two layers are scored by their own harness rather than by pytest: the 28-case evaluation (`./run.sh eval`, 24 run against v1, 4 against v2) and the conversation set (`./run.sh eval --cases eval/conversation-cases.json`, 11 conversations / 24 turns, with a single-turn replay digest across the 22 comparable cases). Both have a negative control that exits 1.
+Two layers are scored by their own harness rather than by pytest: the 28-case evaluation (`./run.sh eval`, 24 run against v1, 4 against v2) and the conversation set (`./run.sh eval --cases eval/conversation-cases.json`, 11 conversations / 24 turns, with a single-turn replay digest across the 22 comparable cases). Both have a negative control that exits 1. A third set is scored by the same harness but is deliberately **not** a regression set: `eval/held-out-cases.json` (11 requests, unseen phrasing, 3 known failures retained), run with `./run.sh eval --cases eval/held-out-cases.json`.
 
 ## Regression policy
 

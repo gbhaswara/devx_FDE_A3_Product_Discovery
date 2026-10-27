@@ -26,7 +26,9 @@ the service handles a request that interprets or quotes.
   "quoted_total": "2,664.30",
   "request_chars": 17,
   "request_digest": "0a999b322e85046d",
-  "snapshot": {"path": ".../data/catalog.duckdb", "products": 72, "price_tiers": 105},
+  "snapshot": {"path": ".../data/catalog.duckdb", "products": 72, "price_tiers": 105,
+               "freshness": {"age_human": "3h", "age_seconds": 12866.5, "stale": false,
+                             "stale_after_hours": 24.0}},
   "stated_total": "2,664.30",
   "timestamp": "2026-10-26T12:52:48.183+00:00",
   "timings": {"interpret_ms": 1.103, "price_ms": 0.257, "search_ms": 0.109, "total_ms": 59.063}
@@ -47,7 +49,7 @@ the service handles a request that interprets or quotes.
 | `stated_total` | The figure the reply **actually printed**, parsed from the rendered text |
 | `lines` | `[{sku, quantity}]`, so the total can be re-derived independently |
 | `timings` | `interpret_ms`, `search_ms`, `price_ms`, `total_ms`. Always all four; a stage that did not run is `0.0`, not absent |
-| `snapshot` | Which catalog answered: path, product count, tier count, build time |
+| `snapshot` | Which catalog answered: path, product count, tier count, build time, and a `freshness` block with the age and the stale flag. Every answer can be traced to the prices it used, and to how old those are |
 | `request_chars` | Length of the request |
 | `request_digest` | 16 hex characters: a **grouping aid, not anonymisation** |
 | `turn_index` | Present only for a multi-turn request: its 1-based position in the conversation. Keeps single-turn and multi-turn traffic separable in the measures rather than blending two behaviours into one population |
@@ -114,14 +116,18 @@ longer know which one is true.
 ```
 
 ```
-Records: 4  (p95 window: 1000)
+Records: 1  (p95 window: 1000)
 
   interpretation fallback rate     no data   (alarm above 20%)
   zero-result rate                    0.0%   (alarm above 10%)
   extraction review backlog              0   (alarm above 5)
-  p95 latency                         59ms   (alarm above 2000ms)
+  p95 latency                         42ms   (alarm above 2000ms)
   reply/total disagreement               0   (alarm above 0)
-                                (0 checked)
+                                (1 checked)
+
+  catalog age: 3h  (stale above 24h)
+  outcomes: quoted=1
+  interpretation: rules=1
 ```
 
 `./run.sh metrics --json` gives the same as JSON; `GET /api/metrics` serves it
@@ -134,6 +140,38 @@ from the running service.
 | `review_backlog` | `open_review_items` + `carried_review_items` from the snapshot | 5 | A jump after a refresh means the site changed shape |
 | `p95_latency_ms` | Nearest-rank p95 over the most recent N records (default 1000) | 2000 ms | An interactive assistant that responds slowly is not usable |
 | `disagreement_count` | Replies whose printed total differs from an independently re-derived one | 0 | The only one that detects a **correctness** bug rather than a degradation |
+
+### The catalog's age, which is reported rather than measured
+
+`catalog age` is printed beside the review backlog because both are facts about
+the **snapshot** rather than rates over records — a reader wants to know how old
+the prices are regardless of how much traffic there was. It is deliberately **not**
+a sixth derived measure: it is not computed from records, and adding it to the
+table would blur what "derived on read" means.
+
+```
+  catalog age: 3h  (stale above 24h)
+```
+
+The same value travels in the JSON payload and in every API response, under
+`snapshot.freshness`:
+
+```json
+"freshness": {"built_at": "2026-10-27 00:25:24.500248", "age_seconds": 12858.0,
+              "age_human": "3h", "stale_after_hours": 24.0, "stale": false}
+```
+
+Three details are deliberate.
+
+- **It is reported, never gating.** A snapshot past the threshold is labelled, not
+  withheld. A gate that refused to serve would fail exactly the deployment this
+  exists to help — one that has a good but old catalog.
+- **The stored timestamp is zone-less, and is read as UTC.** The crawl stamps it
+  with `datetime.now(timezone.utc)` and DuckDB returns a naive `TIMESTAMP`. Read as
+  local time in a UTC+7 deployment, a nine-hour-old catalog would look minutes
+  old — the precise condition the signal exists to catch, inverted.
+- **An unknown age is `None`, not `False`.** "Cannot tell" and "not stale" must not
+  read the same, which is the same rule `criteria.py` applies to an unstated field.
 
 ### Three definitional choices that matter
 

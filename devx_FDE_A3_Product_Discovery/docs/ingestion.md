@@ -337,6 +337,30 @@ without a price is a review row, not a half-populated catalog entry.
 Written to `data/catalog.duckdb` and committed, so the service runs with no
 crawl.
 
+### Choosing the file
+
+Where the snapshot lives is resolved in one place, `catalog.resolve_db_path`, in
+the order **explicit argument → `PAPERLANE_DB` → the committed path**. `ingest`,
+`serve`, `eval`, `ask` and `metrics` each take `--db <path>`, and all five route
+through that function, so a reader and a writer can never disagree about which
+file they mean.
+
+This exists for the re-ingest the demo round asks for. A live crawl of an unseen
+site must not overwrite `data/catalog.duckdb`, because that file is what the
+recorded expectations are written against — so the crawl goes to a named snapshot
+and the service is pointed at it:
+
+```bash
+./run.sh ingest --base-url http://localhost:8000/paperlane/ --db data/unseen.duckdb
+PAPERLANE_DB=data/unseen.duckdb ./run.sh serve
+```
+
+The committed catalog is untouched by that, which is asserted by comparing its
+**bytes** rather than its size or mtime — a rewrite that preserved the length
+would pass either of those. Without `--db` and without `PAPERLANE_DB` every
+command resolves to `data/catalog.duckdb` exactly as before, so nothing in the
+five-command demo path changed.
+
 ### Build, then swap
 
 An ingest builds a complete new file (`.tmp.duckdb`) and only then replaces the

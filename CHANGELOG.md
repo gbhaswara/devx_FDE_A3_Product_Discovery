@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.8.0 — Tier 1, three Tier 2 extras, and conversation memory, all complete and archived.** 221 tasks closed across the five archived changes, none open. **1095 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 11/11 over 24 turns, and both negative controls fail as designed. Requirements now live in the **eleven** main specs under `openspec/specs/` — 84 requirements, 215 scenarios; the five changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1141 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 11/11 over 24 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,154 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Added — 2026-10-27 · `add-gap-closure` (acting on the gap analysis)
+
+The OpenSpec change is 5/5. This closes the three findings in the gap analysis
+that sat inside the brief's scored areas, and answers the rest in
+`devx_FDE_A3_Product_Discovery/GAPS_RESPONSE.md`.
+
+**Why this and not everything.** `GAPS_ANALYSIS.md` reviews the finished system as
+a **production** sales assistant. Read that way most of what it finds is real, and
+most of it is out of scope: the brief states PR1–PR8 are *"the customer's agreed
+specification"*, so reconciling them against a real supplier's tax policy, quote
+expiry or order workflow would contradict the brief rather than improve the
+submission. Three findings were inside the brief's scored areas and are now
+closed. The refusals are argued in the response document rather than left implied,
+because a take-home that quietly expanded to cover a production security review
+would fail the part of the brief that scores scope judgment.
+
+**A fifth scoring axis: was the request understood?** The harness had four axes —
+retrieval, match, pricing, reply — and none asked whether the request was *read*
+correctly. Validating criteria is not validating the reading of them: an A4 request
+misread as A3 produces typed, in-range criteria drawn from a known vocabulary and a
+perfectly correct quote for something nobody asked for. Every criterion can be
+individually valid while the *set* is wrong, so no existing axis could see it, and
+a misread surfaced as a retrieval failure — naming the symptom and hiding the cause.
+
+- `interpretation` is now the **first** member of `AXES`, because it is the
+  earliest thing that can go wrong.
+- A case declares `expect.criteria` — a **subset** of the fields the request
+  states — and `expect.absent_criteria`, what it must **not** invent. Two
+  directions, because they are different defects; "under 250 a pack" becoming
+  "80 gsm or lighter" is the second kind, and a subset check alone would miss it.
+- The declared set is deliberately **never** a transcription of
+  `criteria.describe()`. That would be the engine agreeing with itself, the same
+  anti-pattern `recompute_totals` avoids for money. A test asserts every case's
+  declared set is smaller than what the engine derives, or declares an absent
+  field, so the axis can always disagree independently.
+- A case recording no criteria reports `n/a`, not pass. Counting the unexamined
+  as correct is how an axis reports a sweep it did not earn.
+- `self_check()` gained three checks, including one that corrupts a derived size
+  and asserts interpretation fails **while** retrieval, pricing and reply stay at
+  pass.
+- `negative-control.json` gained a fourth corruption on the new axis — case 10's
+  `20 lb → 75 gsm` conversion recorded as 70 — and it fails on interpretation
+  **alone**. The products and the price are the engine's own and correct; only the
+  reading is wrong, which is the finding reproduced as a test.
+
+**A held-out set the rules were never tuned against.** The analysis's sharpest
+point: *"a system may pass its 28 ranking cases while performing poorly on new
+requests, unfamiliar phrasing."* True — all 28 recorded cases were written while
+the rules path was being built and were used to fix it, which makes them a good
+regression set and a biased estimate of unseen behaviour. `eval/held-out-cases.json`
+is 11 requests in phrasings that appear nowhere in `cases.json`.
+
+- Expectations are derived by filtering the committed catalog directly and
+  applying the **documented** ranking chain (availability, then effective unit
+  price at the requested quantity, then sku) — never by reading the engine's
+  response. Deriving a SKU set from `run_case()` and writing it down would make the
+  set a recording of current behaviour, bugs included.
+- It is a separate file, not cases 29+. Once a case is in the regression set it
+  gets fixed against like the others, and the held-out property dies quietly in one
+  commit. A test asserts a default `./run.sh eval` does not load it.
+- **It fails, and the failures are kept.** 8 of 11 pass; 3 fail from one root
+  cause — an unmappable noun is dropped rather than honoured, so the answer
+  silently widens. *"the pink A4 coloured paper, 2 packs"* reads the shade as
+  `None` and quotes all seven A4 coloured papers (price moving with it); *"pastel
+  grey A4 paper"* returns all 33 A4 papers when nothing grey is stocked; *"30 lb
+  letter paper"* returns all 19 letter papers. A test asserts at least one failure
+  **remains**, because a held-out set that passes completely is evidence about its
+  author.
+
+**Freshness, reported and never gating.** The analysis: *"the pricing engine can
+calculate perfectly using outdated prices."* Worse than it looked — `health()`
+reported counts and `metrics` reported five measures, and none reported the
+catalog's **age**, so a twelve-day-old catalog and a fresh one rendered
+identically. Now `age_seconds`, `age_human` and `stale` are derived from the
+ingest timestamp and surfaced on `GET /api/health`, in the snapshot block of every
+API response, in `./run.sh metrics`, and at `serve` startup. The threshold is a
+named constant (`STALE_AFTER_HOURS`, 24, overridable by
+`PAPERLANE_STALE_AFTER_HOURS`).
+
+- The stored timestamp is zone-less. The crawl stamps it with
+  `datetime.now(timezone.utc)` and DuckDB returns a naive `TIMESTAMP`, so reading
+  it as local time in a UTC+7 deployment would make a nine-hour-old catalog look
+  minutes old. It is read as UTC, and a test asserts that.
+- An unknown age is `None`, not `False`. "Not stale" and "cannot tell" must not
+  read the same. Same rule as `criteria.py`: absent is not negative.
+
+**Ingest into a named snapshot, so an unseen site can be demonstrated live.** The
+demo round supplies an updated site and asks for a re-ingest. `ingest` already
+discovered categories from the home page and took `--base-url`/`--rate`, so the
+real gap was the **snapshot path**: a live re-ingest would have overwritten
+`data/catalog.duckdb`, the file the recorded expectations are written against.
+Now `ingest` takes `--db` (and `PAPERLANE_DB`), and `serve`, `eval`, `ask` and
+`metrics` accept the same, all resolving through one `resolve_db_path`. Without the
+flag every path is `data/catalog.duckdb` exactly as before. The property is
+asserted by comparing the committed file's **bytes**, not its size or mtime, which
+a rewrite would pass.
+
+**`GAPS_RESPONSE.md`** answers every finding in `GAPS_ANALYSIS.md` with one of four
+verdicts — closed, already closed, out of scope by the brief, or not fixable in
+kind — and names the reason. Two refusals are argued in full: the hard
+completeness gate (it would fail the demo round's live re-ingest, refusing to
+publish in the room) and tax/quote-expiry/concurrent-price-change reconciliation
+(the brief defines PR5 and PR4). The architectural blind spot — internal
+consistency is not external truth — is accepted as a limitation rather than
+papered over, because no internal check can establish a fact about the outside
+world without a second source, which the brief rules out. `GAPS_ANALYSIS.md` is
+committed alongside it so every citation resolves.
+
+#### Fixed — a scorer bug found by the held-out set, on its first run
+
+`_same_value` compared derived criteria to expected ones with a case-sensitive
+string equality, so a case recording `"White"` failed against the engine's
+`"white"` — a mismatch of the catalog's capitalisation, not of the reading. Found
+by **running the held-out set**, where case 6 reported
+`interpretation: colour_shade expected 'White', read as 'white'` on a case whose
+product and price were both right. Comparison is now case-insensitive
+(`casefold`), so the axis fails on a wrong reading rather than on spelling. A
+genuinely different value still fails, and a test asserts the misread case still
+does.
+
+#### Changed — two case files, and the recomputation behind each change
+
+- **26 of 28 cases in `eval/cases.json` and `eval/negative-control.json` now carry
+  `expect.criteria`** (cases 16 and 27 are `multi_line`, priced through a different
+  endpoint, and are `n/a` on this axis by design). The criteria were **injected
+  from the request text and verified against the engine's derivation**, then six
+  over-declared cases (10, 11, 12, 13, 17, 25) were trimmed to the field(s) that
+  carry the case's meaning — because a test asserting the declared set is a
+  *proper* subset caught cases 10 and 11 declaring exactly what the engine derives,
+  which is the transcription D2 forbids.
+- **`negative-control.json` now has four corruptions, not three** (cases 4, 6, 10,
+  14). The fourth is on the new axis. The `_comment` names all four, and the
+  tests assert `failed: 4` rather than `failed: 3` — recomputed from the run, not
+  transcribed.
+- **One dead constant removed.** `EXPECTED_CATEGORIES = 4` in `ingest.py` was
+  never read: categorisation is decided from the crawled rows, and the constant
+  would have been a second, silently-wrong source of truth had it ever been used.
+
+**Verification.** 1141 tests pass offline under `unshare -rn` (7 skip, 0 fail), up
+from 1095 — the increase is 31 tests across the two new modules plus 15 in
+`test_evaluate.py`, all gathered by `--collect-only` rather than estimated.
+`./run.sh eval` is 24/24 and the conversation set 11/11, unchanged. Both negative
+controls exit 1; `./run.sh eval --self-check` exits 0 with the three new checks;
+`./run.sh eval --cases eval/held-out-cases.json` exits 1 with 8/11. The
+single-turn digest is unchanged, so no reply text moved.
+
+---
 
 ### Added — 2026-10-27 · `add-conversation-memory` (the brief's third nice-to-have)
 
