@@ -93,7 +93,7 @@ semantics.
 
 **D3 — The held-out set is a separate file, not extra cases in `cases.json`.**
 The harness selects a case file with `--cases`. A second file scored by the same
-code gives the honest statement "these 28 were used to build it, these 12 were
+code gives the honest statement "these 28 were used to build it, these 11 were
 not", and a run of the held-out file needs no new reporting path.
 *Rejected:* adding cases 29+ to `cases.json`. Once they are in the regression set
 they get fixed against like the others, and the held-out property dies quietly in
