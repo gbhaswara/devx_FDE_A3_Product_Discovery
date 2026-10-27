@@ -24,6 +24,7 @@ from paperlane.conversation import (
     InMemoryConversationStore,
     JsonlConversationStore,
     bare_quantity,
+    continuation_basis,
     is_continuation,
     iter_stored_text,
     merge_turn,
@@ -438,6 +439,56 @@ class TestTurnNumbering:
             store.put(conversation)
         reopened = JsonlConversationStore(path, max_turns=2)
         assert reopened.get("c").turn_index == 6
+
+
+class TestAnEmptyTurnDoesNotForget:
+    """BUG.md A13 — a turn that understood nothing is answered fresh, not erased.
+
+    D3 says such a turn is a **fresh request**: it must not silently re-answer the
+    previous question. It does not say the conversation's requirements are
+    discarded, and discarding them made one unparseable sentence ("hello there",
+    "too expensive") end the customer's ability to refine — the opposite of what
+    memory is for. The turn is answered from an empty request and is still
+    recorded; the criteria the customer actually stated are kept for the next
+    turn to continue from.
+    """
+
+    def test_an_empty_result_is_flagged(self):
+        assert merge_turn(None, criteria()).empty is True
+        assert merge_turn(criteria(size_code="A4"), criteria()).empty is True
+        assert merge_turn(None, criteria(quantity=5)).empty is False
+
+    def test_the_criteria_survive_an_empty_turn(self):
+        conversation = Conversation(id="c")
+        conversation = record_turn(conversation, merge_turn(None, criterion_from("A4 copy paper")))
+        empty = merge_turn(conversation.criteria, criteria())
+        assert empty.empty
+        conversation = record_turn(conversation, empty)
+        assert conversation.criteria.size_code == "A4"
+        assert conversation.criteria.category == "Copy paper"
+
+    def test_the_next_turn_continues(self):
+        conversation = Conversation(id="c")
+        conversation = record_turn(conversation, merge_turn(None, criterion_from("A4 copy paper")))
+        conversation = record_turn(conversation, merge_turn(conversation.criteria, criteria()))
+        following = merge_turn(continuation_basis(conversation), criterion_from("make it 50"))
+        assert following.continued
+        assert following.criteria.size_code == "A4"
+        assert following.criteria.quantity == 50
+
+    def test_the_empty_turn_is_still_recorded(self):
+        conversation = Conversation(id="c")
+        conversation = record_turn(conversation, merge_turn(None, criteria()))
+        assert len(conversation.turns) == 1
+        assert conversation.turn_index == 2
+
+    def test_a_stated_subject_still_replaces_the_criteria(self):
+        """Only an empty turn preserves; naming a subject still discards (D3)."""
+        conversation = Conversation(id="c")
+        conversation = record_turn(conversation, merge_turn(None, criterion_from("A4 copy paper, 20 reams")))
+        conversation = record_turn(conversation, merge_turn(conversation.criteria, criterion_from("A5 copy paper")))
+        assert conversation.criteria.size_code == "A5"
+        assert conversation.criteria.quantity is None, "the new subject starts clean"
 
 
 class TestNoTextStored:

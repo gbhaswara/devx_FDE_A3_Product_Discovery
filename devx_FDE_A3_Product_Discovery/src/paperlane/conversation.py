@@ -114,6 +114,11 @@ class MergeResult:
     criteria: Criteria
     carried: frozenset[str] = frozenset()
     continued: bool = False
+    #: True when the turn stated nothing at all, so the merge produced no
+    #: requirement. The turn is answered as a fresh request, but it is not a
+    #: *subject change*: :func:`record_turn` keeps the conversation's earlier
+    #: criteria, so the customer's next sentence can still continue (BUG.md A13).
+    empty: bool = False
     #: Why the verdict was reached, for the reply and for the tests. Never shown
     #: to a customer verbatim.
     reason: str = ""
@@ -235,14 +240,15 @@ def merge_turn(
     Field by field: the current turn wins where it stated a value, and the
     earlier value survives only where it did not. ``None`` means "not stated"
     everywhere in ``Criteria``, which is what makes this expressible at all.
-
+    
     ``raw_text`` is always the current turn's, because the merged criteria are
     being used to answer *this* request.
     """
     continued, reason = is_continuation(previous, current)
     if not continued or previous is None:
         return MergeResult(criteria=current, carried=frozenset(),
-                           continued=False, reason=reason)
+                           continued=False, reason=reason,
+                           empty=not _states_something(current))
 
     merged = current
     carried: set[str] = set()
@@ -585,6 +591,11 @@ def record_turn(
     Appending a turn never mutates the argument: the store hands out copies, and
     a caller that got a copy must not be able to change history by holding on to
     it.
+
+    A turn that stated nothing (``result.empty``) is answered as a fresh request
+    but does not *displace* the conversation's criteria: the next turn may
+    continue from the last thing the customer actually asked for (BUG.md A13).
+    The turn is still appended, so the history and the turn count include it.
     """
     turn = Turn(
         index=conversation.turn_index,
@@ -594,7 +605,7 @@ def record_turn(
     )
     return Conversation(
         id=conversation.id,
-        criteria=result.criteria,
+        criteria=conversation.criteria if result.empty else result.criteria,
         turns=list(conversation.turns) + [turn],
         turns_seen=turn.index,
     )

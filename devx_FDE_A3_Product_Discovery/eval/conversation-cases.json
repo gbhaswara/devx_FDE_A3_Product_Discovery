@@ -282,6 +282,39 @@
         }
       ],
       "note": "The budget is carried and the reply says so, because carrying a budget silently is the constraint most likely to be a one-off. The same defect as case 9 from the other side: a budget is commercial-only too."
+    },
+    {
+      "number": 11,
+      "name": "a turn that understood nothing does not forget",
+      "proves": "an unparseable turn is answered fresh but does not erase the conversation (BUG.md A13)",
+      "turns": [
+        {
+          "request": "A4 80gsm copy paper, 20 reams",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"category": "Copy paper", "size": "A4", "weight_gsm": 80, "quantity": 20}
+          }
+        },
+        {
+          "request": "too expensive",
+          "expect": {
+            "outcome": "clarified",
+            "criteria": {},
+            "absent": ["category", "size", "weight_gsm", "quantity"],
+            "carried": []
+          }
+        },
+        {
+          "request": "make it 50",
+          "expect": {
+            "outcome": "quoted",
+            "criteria": {"category": "Copy paper", "size": "A4", "weight_gsm": 80, "quantity": 50},
+            "carried": ["category", "size_code", "weight_gsm"],
+            "reply_contains": ["Remembered from your earlier message"]
+          }
+        }
+      ],
+      "note": "Turn 2 states nothing, so it is answered from an empty request rather than by re-answering turn 1 — D3, and the whole point of it. But the earlier requirements must survive it, or one unparseable sentence ends the conversation: turn 3 has to still know it was A4 80gsm copy paper. Both halves are asserted, and either one alone would miss the defect."
     }
   ]
 }

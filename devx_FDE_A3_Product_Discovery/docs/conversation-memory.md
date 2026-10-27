@@ -57,7 +57,8 @@ the size and the category, so the refinement lost the paper it was refining.
 | A4 copy paper, 20 reams | "A5 instead" | fresh — size stated |
 | flyers, double-sided | "A4 copy paper" | fresh — category and size stated |
 | (none) | anything | fresh — nothing to continue |
-| A4 copy paper | "hello" | fresh — the turn understood nothing |
+| A4 copy paper | "hello" | fresh — the turn understood nothing, and the criteria are kept for the next turn |
+| 20 reams | "make it 50" | continuation — a first turn may state only a quantity (A12) |
 
 ### Field by field, the current turn wins
 
@@ -71,6 +72,16 @@ a printing constraint from excluding plain paper.
 *"hello"* after a quote does not re-answer the quote. Treating an empty turn as a
 continuation would silently repeat the previous answer, which looks exactly like
 the assistant ignoring what was just said.
+
+**Fresh is about the reply, not about the history.** The turn is answered from an
+empty request and is still recorded as a turn — but it does not *displace* what
+the customer already asked for. `"A4 80gsm copy paper, 20 reams"`, then *"too
+expensive"*, then *"make it 50"* still quotes 50 reams of the A4 80gsm paper.
+The first implementation erased the criteria on an empty turn, so one unparseable
+sentence ended the conversation's ability to be refined — the opposite of what
+memory is for, and a stricter reading of D3 than D3 states (`BUG.md` A13). Only an
+empty turn preserves this way; a turn that *names a subject* still replaces the
+criteria, which is D3.
 
 There is one exception, and it is a real one: a bare number. *Make it 50* contains
 no unit word, so the general quantity parser cannot see a quantity — and that
@@ -208,14 +219,17 @@ link back to `/`, so abandoning a conversation needs no request.
 ./run.sh eval --cases eval/conversation-cases.json
 ```
 
-Ten recorded conversations, twenty-one turns, each asserting the merged criteria
-a human would have understood, what the reply disclosed, and — where it matters —
-that a fresh turn quotes the same total as the same request run standalone.
+Eleven recorded conversations, twenty-four turns, each asserting the merged
+criteria a human would have understood, what the reply disclosed, and — where it
+matters — that a fresh turn quotes the same total as the same request run
+standalone.
 
 Cases 9 and 10 are regressions from `BUG.md` A12: a first turn whose only
 requirement is a quantity, or only a budget. For those turns
 `has_any_constraint()` is False, and gating the *earlier* criteria on it threw the
-conversation away. Both cases fail if the narrow predicate is restored.
+conversation away. Case 11 is A13: an unparseable turn is answered fresh but must
+not forget, so it asserts both halves. Every one of the three fails if the
+corresponding defect is reintroduced.
 
 The harness is shown able to fail:
 
@@ -251,10 +265,6 @@ a total.
   store is the change a deployment needs, and the interface already allows it.
 - **There is no expiry.** Bounds cap how much is held; nothing ages out a
   conversation that is merely old.
-- **A turn that understands nothing currently forgets the conversation**
-  (`BUG.md` A13, OPEN). D3 says such a turn is answered fresh; the code also
-  discards the retained criteria, so the next turn cannot continue either. This
-  is a defect, not a design choice — it is listed here until it is resolved.
 
 ---
 

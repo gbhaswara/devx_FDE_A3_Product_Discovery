@@ -120,6 +120,29 @@ class TestCommercialOnlyFirstTurn:
         assert second["criteria"].get("size") == "A4"
 
 
+class TestAnEmptyTurnDoesNotForget:
+    """BUG.md A13 at the wiring: the turn is fresh, the conversation is not lost."""
+
+    def test_the_next_turn_still_continues(self, client):
+        ask(client, "A4 80gsm copy paper, 20 reams", "c1")
+        middle = ask(client, "too expensive", "c1").json()
+        assert middle["outcome"] == "clarified"
+        assert middle["criteria"] == {}, "answered fresh, not re-answered"
+
+        third = ask(client, "make it 50", "c1").json()
+        assert third["outcome"] == "quoted"
+        assert third["criteria"]["size"] == "A4"
+        assert third["criteria"]["weight_gsm"] == 80
+        assert third["criteria"]["quantity"] == 50
+        assert "Remembered from your earlier message" in third["reply"]
+
+    def test_the_turn_is_still_counted(self, client):
+        ask(client, "A4 copy paper", "c1")
+        ask(client, "hello there", "c1")
+        third = ask(client, "make it 50", "c1").json()
+        assert third["conversation"]["turn"] == 3
+
+
 class TestDisclosure:
     def test_the_reply_names_what_it_remembered(self, client):
         ask(client, "A4 80gsm copy paper, 20 reams", "c1")
