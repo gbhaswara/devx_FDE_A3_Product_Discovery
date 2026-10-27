@@ -635,7 +635,7 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A24 FIXED, A25 OPEN, A26 FIXED, A27–A28 OPEN, A29 FIXED, A30 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A24 FIXED, A25 OPEN, A26–A27 FIXED, A28 OPEN, A29–A30 FIXED
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
 from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A30 came from
@@ -1224,7 +1224,37 @@ cost in an interview.
 **Falsification.** `TestReplyContract::test_a_cheaper_larger_quantity_is_named`
 and `test_no_hint_when_the_larger_quantity_costs_more` in
 `tests/test_assistant.py`: 19 packs must mention 20 and 4,048.88, and 20 packs
-must not invent a comparison.
+must not invent a comparison. A third, `test_no_hint_when_no_larger_tier_exists`,
+covers the top of the table. The first failed first:
+
+```
+FAILED TestReplyContract::test_a_cheaper_larger_quantity_is_named
+E  assert '20 packs would come to 4,237.20' in 'Best match — … Total 4,299.80 …'
+```
+
+**Fix.** `assistant._cheaper_at_a_larger_quantity` takes the smallest published
+`min_qty` above the requested quantity, re-prices that quantity through
+`pricing.quote`, and returns it only when the total is **lower**. The reply adds
+one sentence beside the breakdown:
+
+```
+20 packs would come to 4,048.88 — 59.81 less than this order.
+```
+
+One step only, as planned: a "best quantity" optimiser would have to justify a
+quantity the customer did not ask for, and the next published tier is a fact on
+the site rather than a recommendation. Both amounts — the larger total and the
+saving — are added to the figures guard's allowed set, so the sentence cannot be
+produced by anything but the pricing layer. A27's shortfall sentence, when it
+lands, sits beside it rather than in it.
+
+**Verification.** `./run.sh test` 1229 collected / 1226 passed + 3 skipped;
+`./run.sh eval` 24/24; `verify-refresh --keep` 12/12 (12 injected changes);
+`./run.sh eval --catalog v2` 21/21. The recorded single-turn replies are
+unchanged: every one of the 28 cases asks for a quantity that is already at or
+past its last useful tier, so none of them gains the sentence.
+
+**Status: FIXED.**
 
 ---
 
