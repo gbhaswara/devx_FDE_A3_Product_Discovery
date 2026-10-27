@@ -635,7 +635,7 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A24 FIXED, A25 OPEN, A26–A27 FIXED, A28 OPEN, A29–A30 FIXED
+## Part 2c — Gaps found by the brief audit · A20–A24 FIXED, A25 OPEN, A26–A30 FIXED
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
 from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A30 came from
@@ -1110,7 +1110,39 @@ availability filter), and
 `TestNoMatch::test_the_near_match_carries_its_restock_date` in
 `tests/test_assistant.py` (the sentence must name the item and its date). Both
 run over the real snapshot; the assistant test fails today because the reply
-contains "could not find anything close" and no `PL-CL-A4-100-IVY`.
+contains "could not find anything close" and no `PL-CL-A4-100-IVY`. A third,
+`test_the_false_claim_is_not_made`, asserts the sentence itself is gone.
+
+The search-side test uses criteria that relax to *only* unavailable items —
+`A4` / `ivory` / `120 gsm`, where relaxing the weight finds the 100 gsm ivory
+and no later relaxation finds anything available. The simpler `A4 ivory` case
+still returns available colour-relaxed papers, which is the behaviour the entry
+describes as the second, milder defect and which this fix deliberately does not
+change: an available alternative ranks above an unavailable one.
+
+**Fix.** `_relax` keeps the first relaxation's ranked set when every candidate
+in it is unavailable, and returns it (with its `relaxed` attribute) only if no
+later relaxation finds an available item. `assistant._no_match` sees that every
+alternative is unavailable and reports them through `refusal_text`, so the
+sentence reuses the existing unorderable-item wording:
+
+```
+Nothing in the catalog satisfies every requirement you gave.
+The closest match cannot be supplied today:
+Heritage Ivory A4 100gsm (PL-CL-A4-100-IVY) is out of stock, so I cannot quote
+it as a purchase today. It is expected back 20 November 2026.
+I have not quoted it, because I can only price items you can actually order.
+```
+
+The outcome stays `no_match`: nothing satisfied the request. What changed is
+that the reply no longer denies the item exists.
+
+**Verification.** `./run.sh test` 1235 collected / 1232 passed + 3 skipped;
+`./run.sh eval` 24/24; `verify-refresh --keep` 12/12 (12 injected changes);
+`./run.sh eval --catalog v2` 21/21. The recorded single-turn replies are
+unchanged: no recorded case relaxes to an all-unavailable set.
+
+**Status: FIXED.**
 
 ### A29 — A request for two products is merged into one impossible request, or half-answered
 
