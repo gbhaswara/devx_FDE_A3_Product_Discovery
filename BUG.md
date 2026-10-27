@@ -635,6 +635,86 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
+## Part 2c — Gaps found by the brief audit · REGISTERED, OPEN
+
+Three requirements that PR6–PR8 state and the shipped code does not yet meet.
+They were found by a compliance audit against `00_START_HERE_All_Briefs.md`,
+probing the running service rather than reading the modules — the same method as
+A12–A19. Each was reproduced before being written down, with the reproduction in
+`/tmp/opencode/a3-gap-probe.py`. Registered before being fixed, per the rule at
+the end of this file; the status changes to FIXED only when the guard named in
+its entry has been seen to fail first and then pass.
+
+### A20 — A budget's basis is read by pattern order, not by what the customer said
+
+```
+parse_budget("... under 240 a pack including VAT ...")
+  -> (240.00, 'per pack, before VAT')          # wrong: the customer said including
+```
+
+**Root cause.** `interpret._BASIS_PATTERNS` is scanned in listed order and the
+first match wins. The unit patterns (`per|a|each pack`) precede the VAT pattern
+(`including vat`), so *"a pack including VAT"* matches `a pack` and the VAT
+qualifier is never reached. PR7 requires the reply to state **which assumption
+was used**; here it states the opposite of the one the customer gave.
+
+**Why it matters.** The stated basis is the only signal the customer has that
+the ceiling they gave was interpreted the way they meant. Stating `before VAT`
+for an inclusive budget is worse than stating nothing: it is confidently wrong.
+
+**Falsification.** `TestBudgetBasis::test_a_vat_qualifier_beats_the_unit_word`
+and `test_a_vat_qualifier_combines_with_the_unit_word`, both calling
+`parse_budget` directly. Both fail against the current `_BASIS_PATTERNS` order.
+
+### A21 — An inclusive-VAT budget is labelled, never applied
+
+```
+check_budget(facts, 20, 240.00, basis="per pack, including VAT")
+  -> within_budget=True
+     233.20 at 20 (within 240.00, per pack, including VAT)
+```
+
+The unit price is 233.20 **before** VAT; the same pack costs 249.52 including
+it, which is over the 240.00 ceiling. `check_budget` carries the basis as a
+label and compares ex-VAT regardless, so `search._evaluate` keeps the item and
+`/api/ask` quotes it. PR6 fixes the comparison at *before VAT*; PR7 says the
+customer may say otherwise, and when they do the comparison must honour it.
+
+**Why it matters.** This is the same class as A8 — a comparison against the
+wrong number — reached from the other direction. The arithmetic is exact; the
+number it is exact about is the wrong number.
+
+**Falsification.** `TestBudget::test_inclusive_basis_compares_the_gross_price`
+(pricing) and `TestBudgetFilter::test_an_inclusive_budget_excludes_an_over_item`
+(search). Both assert `within_budget is False` for a gross price over the
+ceiling and both fail against the current comparison.
+
+### A22 — The multi-line endpoint quotes an out-of-stock item as available
+
+```
+POST /api/quote/lines {"lines":[{"sku":"PL-CL-A4-100-IVY","quantity":1}]}
+  -> 200 {"outcome":"quoted",
+          "figures":{"subtotal":"168.00","delivery":"150.00",
+                     "total":"340.26", ...}}          # no stock field
+```
+
+`PL-CL-A4-100-IVY` is out of stock, with a restock date of 20 November 2026.
+`/api/ask` and `/api/quote` both refuse it correctly, because availability is
+enforced in `search.py` — but `/api/quote/lines` prices known SKUs through
+`pricing.quote()` directly and never consults stock state. PR8 is unconditional:
+an unavailable item must not be quoted as available, on any entry point.
+
+**Why it matters.** It is the one endpoint a cart or a sales UI would use to
+build an order, so it is exactly where an unorderable line must not go unnoticed
+— and it returns a total the customer could act on.
+
+**Falsification.** `TestMultiLine::test_an_out_of_stock_line_is_refused` and
+`test_a_discontinued_line_is_refused`, posting the two v1 out-of-stock SKUs and
+asserting the endpoint does not return a `quoted` figures block. Both fail
+against the current handler, which returns 200.
+
+---
+
 ## Part 3 — Accepted risks in the design
 
 Carried deliberately. Each is stated in the README as a known limitation.
