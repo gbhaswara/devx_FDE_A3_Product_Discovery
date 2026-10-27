@@ -467,6 +467,33 @@ class TestTurnNumbering:
             numbers.append(store.get("c").turns[-1].index)
         assert numbers == list(range(1, 11))
 
+    def test_a_refinement_past_the_cap_still_carries_everything(self):
+        """Trimming the *history* must not trim the *requirements*.
+
+        The store keeps only the last ``max_turns`` turns, but the merged criteria
+        live outside that list. If they were derived from the retained turns, the
+        number of refinements a conversation could support would be a real limit —
+        answers would start losing the product around turn 21. They are not: past
+        the cap every refinement is still answered from the full requirement set.
+        """
+        store = InMemoryConversationStore(max_turns=3)
+        start = criterion_from("PaperLane Card A4 160gsm Assorted Pastels, 10 reams")
+        store.put(record_turn(Conversation(id="c"), merge_turn(None, start)))
+
+        for quantity in range(11, 31):      # 20 refinements, nearly seven times the cap
+            stored = store.get("c")         # exactly what a request reads back
+            merge = merge_turn(
+                continuation_basis(stored), criterion_from(f"change it to {quantity}")
+            )
+            assert merge.continued
+            assert merge.criteria.quantity == quantity
+            assert merge.criteria.weight_gsm == 160
+            assert merge.criteria.category == "Card and photo paper"
+            assert merge.criteria.size_code == "A4"
+            store.put(record_turn(stored, merge))
+
+        assert len(store.get("c").turns) == 3, "the history is still bounded"
+
     def test_the_number_survives_a_restart(self, tmp_path):
         path = tmp_path / "conversations.jsonl"
         store = JsonlConversationStore(path, max_turns=2)

@@ -272,6 +272,11 @@ inherited something and did.
   — inspection of the guarantee, not of the schema
 - **The turn number always advances** past the retained-turn cap (`BUG.md` A14):
   25 turns number 1…25, and the CLI reports turn 22 at 22
+- **Refinements outlive the retained history.** The store keeps the last
+  `MAX_TURNS` turns, but the merged criteria are kept outside that list, so the
+  21st refinement is as exact as the 2nd — pinned at 20 refinements with
+  `max_turns=3`. The cap bounds history, not the number of changes a customer can
+  make
 - **A first turn that states only a quantity, or only a budget, is still a
   continuation basis** (`BUG.md` A12), so the next turn extends it
 - **A turn that understood nothing is answered fresh but does not erase the
@@ -306,7 +311,7 @@ carrying a total is checked structurally instead.
 | `test_ask_cli.py` | 32 | 3 |
 | `test_assistant.py` | 67 | 3 |
 | `test_catalog.py` | 48 | 3 |
-| `test_conversation.py` | 66 | 8 |
+| `test_conversation.py` | 67 | 8 |
 | `test_conversation_api.py` | 38 | 8 |
 | `test_conversation_eval.py` | 19 | 8 |
 | `test_crawl.py` | 13 | 2 |
@@ -330,10 +335,10 @@ carrying a total is checked structurally instead.
 | `test_snapshot_path.py` | 26 | 7 |
 | `test_ui_catalog.py` | 19 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1182** | |
+| **Total** | **1183** | |
 
-Online: 1182 collected, 4 skip (provider- and loopback-dependent). Offline
-(`unshare -rn`): 1182 collected, 7 skip — the same four plus the three loopback
+Online: 1183 collected, 4 skip (provider- and loopback-dependent). Offline
+(`unshare -rn`): 1183 collected, 7 skip — the same four plus the three loopback
 tests that legitimately cannot run without a network interface.
 
 ## What is tested where
@@ -387,7 +392,7 @@ tests that legitimately cannot run without a network interface.
 ## Running the tests
 
 ```
-./run.sh test             # 1182 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1183 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design
 ./run.sh eval --cases eval/conversation-cases.json   # 12 conversations, 27 turns

@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1182 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1183 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -97,9 +97,13 @@ already lived there. An explicit *100 gsm* still corrects the weight.
   `test_conversation_api.py::TestABareNumberThatIsAlsoAGrammage` (3), which replays
   the reported sequence and asserts the recovered total.
 - `eval/conversation-cases.json` case 12 scores the same sequence.
+- `test_conversation.py` also pins that refinements past the retained-history cap
+  still carry the full requirement set: 20 refinements with `max_turns=3` keep the
+  category, size and weight. "How many changes can I make?" has no answer bounded
+  by the store.
 - **Falsification:** reverting the merge change fails 4 of the new tests and leaves
   the explicit-weight guard passing.
-- The suite is 1182 tests, up from 1169; the conversation set is 12 conversations
+- The suite is 1183 tests, up from 1169; the conversation set is 12 conversations
   over 27 turns.
 
 ### Changed — 2026-10-27 · the page is a catalog list beside the assistant
