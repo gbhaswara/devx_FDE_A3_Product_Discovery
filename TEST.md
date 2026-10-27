@@ -328,7 +328,7 @@ carrying a total is checked structurally instead.
 | `test_crawl.py` | 13 | 2 |
 | `test_embeddings.py` | 66 | 6 |
 | `test_evaluate.py` | 71 | 5 |
-| `test_extract.py` | 51 | 2 |
+| `test_extract.py` | 54 | 2 |
 | `test_hygiene.py` | 13 | 7 |
 | `test_ingest.py` | 14 | 2 |
 | `test_metrics.py` | 59 | 7 |
@@ -346,10 +346,10 @@ carrying a total is checked structurally instead.
 | `test_snapshot_path.py` | 26 | 7 |
 | `test_ui_catalog.py` | 26 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1215** | |
+| **Total** | **1218** | |
 
-Online: 1215 collected, 4 skip (provider- and loopback-dependent) — 1211 passed.
-Offline (`unshare -rn`): 1215 collected, 7 skip — 1208 passed; the same four plus
+Online: 1218 collected, 4 skip (provider- and loopback-dependent) — 1214 passed.
+Offline (`unshare -rn`): 1218 collected, 7 skip — 1211 passed; the same four plus
 the three loopback tests that legitimately cannot run without a network interface.
 
 One further skip is state-dependent, not environmental: `test_evaluate.py` skips
@@ -409,7 +409,7 @@ tree, which is what a fresh clone sees — the artefact directory is git-ignored
 ## Running the tests
 
 ```
-./run.sh test             # 1215 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1218 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot (24/24)
 ./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21, after verify-refresh --keep
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design

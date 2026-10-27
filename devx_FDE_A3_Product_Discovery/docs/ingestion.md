@@ -157,7 +157,12 @@ Three label differences from `table`, all silent if unmapped:
   spellings `8.5 × 11 in` and `8½ × 11 in`.
 * Pack size comes from the **column header** ("Price per pack of 100").
 * Availability is **per row**: `PL-PR-A4-GL-170-44` is out of stock while its
-  neighbours are in stock.
+  neighbours are in stock. The row's own availability cell decides **both**
+  fields — status and restock date — because a whole-page scan for "out of
+  stock" finds the one unavailable row and would otherwise attach its date to
+  every sibling, giving an in-stock record a restock date it cannot have
+  (`BUG.md` A23). The page-level scan survives only for a table with no
+  availability column, where nothing else states availability.
 * Columns are located **by header name**, never by fixed index.
 
 ### Shape 4 — `prose` (10 pages)

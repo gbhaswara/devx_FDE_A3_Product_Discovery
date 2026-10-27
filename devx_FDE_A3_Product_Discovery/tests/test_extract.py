@@ -122,6 +122,65 @@ class TestFourShapesAgree:
 # ---------------------------------------------------------------------------
 
 
+class TestVariantAvailability:
+    """BUG.md A23: availability is per row, so a row's date is per row too.
+
+    The page-level scan runs over the whole document, so it finds the one
+    unavailable row's "expected back" date and hands it to every row. Seeding
+    from it is what made five in-stock flyers claim a restock date.
+    """
+
+    OUT_OF_STOCK = (
+        '<td><span class="stock-out">Out of stock &mdash; expected back '
+        "12 November 2026</span></td>"
+    )
+
+    def page_with_one_unavailable_row(self) -> str:
+        # The committed fixture marks all six rows in stock, so the last row's
+        # cell is replaced with the shape the live page uses for an unavailable
+        # one. Everything else stays the real page.
+        html = load("flyers-ltr-gloss.html")
+        marker = '<td><span class="stock-in">In stock</span></td></tr></table>'
+        assert marker in html
+        return html.replace(marker, self.OUT_OF_STOCK + "</tr></table>")
+
+    def test_an_in_stock_row_carries_no_restock_date(self):
+        products, reviews = extract(
+            self.page_with_one_unavailable_row(),
+            "http://localhost:8000/paperlane/product/flyers-ltr-gloss.html",
+        )
+        assert reviews == []
+        dated = [
+            (p.sku, p.back_in_stock_date)
+            for p in products
+            if p.stock_status == "in_stock" and p.back_in_stock_date
+        ]
+        assert dated == []
+
+    def test_the_out_of_stock_row_still_carries_its_own(self):
+        products, _ = extract(
+            self.page_with_one_unavailable_row(),
+            "http://localhost:8000/paperlane/product/flyers-ltr-gloss.html",
+        )
+        row = next(p for p in products if p.sku == "PL-PR-LTR-GL-170-44")
+        assert row.stock_status == "out_of_stock"
+        assert row.back_in_stock_date == "12 November 2026"
+
+    def test_no_stored_product_contradicts_itself(self):
+        # The invariant over the committed snapshot, not just one page: an item
+        # that is in stock has nothing to be back from.
+        from paperlane import catalog
+
+        if not catalog.snapshot_exists():
+            pytest.skip("no committed catalog snapshot")
+        bad = [
+            (p["sku"], p["back_in_stock_date"])
+            for p in catalog.load_products()
+            if p["stock_status"] == "in_stock" and p.get("back_in_stock_date")
+        ]
+        assert bad == []
+
+
 class TestLabelNormalisation:
     def test_brand_and_manufacturer_are_one_field(self):
         assert one("pl-cp-a4-80-eco.html").brand == "PaperLane Essentials"  # Brand

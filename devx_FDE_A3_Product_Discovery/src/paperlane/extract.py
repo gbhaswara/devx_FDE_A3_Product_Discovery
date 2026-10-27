@@ -548,20 +548,25 @@ def extract_variant_table(html: str, url: str) -> tuple[list[ExtractedProduct], 
             product.list_price = _money(values[i_price])
             product.sale_price = None
 
-        # Availability is per row on this shape.
-        product.stock_status, product.back_in_stock_date = page_stock, page_restock
+        # Availability is per row on this shape. When the table has an
+        # availability column the cell is authoritative for *both* fields, so
+        # the page is not seeded at all: the whole-page scan finds the one
+        # unavailable row's "expected back" date and would hand it to every
+        # sibling, making an in-stock row carry a restock date it cannot have
+        # (BUG.md A23). The page scan survives only for a table with no such
+        # column, where nothing else states availability.
         if "availability" in headers:
             i_avail = headers.index("availability")
-            if i_avail < len(cells):
-                avail = values[i_avail]
-                if re.search(r"out of stock", avail, re.I):
-                    product.stock_status = "out_of_stock"
-                    m = _RESTOCK_RE.search(avail)
-                    product.back_in_stock_date = m.group(1) if m else None
-                elif re.search(r"discontinued", avail, re.I):
-                    product.stock_status = "discontinued"
-                elif avail:
-                    product.stock_status = "in_stock"
+            avail = values[i_avail] if i_avail < len(values) else ""
+            product.stock_status, product.back_in_stock_date = "in_stock", None
+            if re.search(r"out of stock", avail, re.I):
+                product.stock_status = "out_of_stock"
+                m = _RESTOCK_RE.search(avail)
+                product.back_in_stock_date = m.group(1) if m else None
+            elif re.search(r"discontinued", avail, re.I):
+                product.stock_status = "discontinued"
+        else:
+            product.stock_status, product.back_in_stock_date = page_stock, page_restock
 
         product.unit_word = f"pack of {pack_sheets} printed sheets" if pack_sheets else None
         products.append(product)
