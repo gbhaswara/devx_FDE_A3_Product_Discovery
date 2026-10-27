@@ -94,6 +94,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Snapshot to score against (default: PAPERLANE_DB, else the committed one)",
     )
+    evaluate.add_argument(
+        "--catalog",
+        choices=("v1", "v2"),
+        default="v1",
+        help="Which catalog the case expectations are written for. "
+             "The default is the committed snapshot; v2 is the mutated one "
+             "`verify-refresh --keep` builds.",
+    )
 
     sub.add_parser("diff", help="Compare the current snapshot with the previous")
 
@@ -246,10 +254,45 @@ def main(argv: list[str] | None = None) -> int:
         if cases_path is not None and _is_conversation_file(cases_path):
             from .conversation_eval import run_conversation_eval
 
+            # The conversation cases were authored against v1 and carry no
+            # per-catalog expectation. Refusing is better than running them
+            # under a label that would be wrong: an ignored flag looks like it
+            # was applied.
+            if args.catalog != "v1":
+                print(
+                    f"{cases_path} is a conversation set, and its expectations "
+                    f"are written for v1; --catalog {args.catalog} cannot be "
+                    f"applied to it.",
+                    file=sys.stderr,
+                )
+                return 2
             return run_conversation_eval(
                 as_json=args.json, cases_path=cases_path, db_path=args.db
             )
-        return run_eval(as_json=args.json, cases_path=cases_path, db_path=args.db)
+        from . import catalog
+
+        # v2 expectations describe the mutated catalog. Pairing them with the
+        # committed snapshot is a mislabel, not a result. The reverse (v1
+        # expectations against a newer snapshot) stays allowed: that compares
+        # what changed against the recorded set.
+        if args.catalog == "v2" and (
+            Path(catalog.resolve_db_path(args.db)).resolve()
+            == Path(catalog.DEFAULT_DB_PATH).resolve()
+        ):
+            print(
+                "--catalog v2 scores expectations written for the mutated "
+                "catalog, but the snapshot is the committed v1 one. Build it "
+                "with `./run.sh verify-refresh --keep` and pass "
+                "`--db .refresh-verification/mutated.duckdb`.",
+                file=sys.stderr,
+            )
+            return 2
+        return run_eval(
+            as_json=args.json,
+            cases_path=cases_path,
+            db_path=args.db,
+            catalog_name=args.catalog,
+        )
     if args.command == "diff":
         from .catalog import run_diff
 

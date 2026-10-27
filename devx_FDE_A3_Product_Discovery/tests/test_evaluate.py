@@ -18,12 +18,14 @@ from pathlib import Path
 
 import pytest
 
-from paperlane import catalog
+from paperlane import catalog, cli
 from paperlane.evaluate import (
     AXES,
     FAIL,
     NA,
     PASS,
+    V1,
+    V2,
     Case,
     CaseResult,
     _load_facts,
@@ -951,6 +953,51 @@ class TestCrossCatalogScoring:
                           catalog_name="v2")
         assert result.verdict == "not run"
         assert "v1" in result.skipped_reason
+
+
+class TestTheCatalogFlagOnTheCommandLine:
+    """`--catalog v2` has to reach the runner, not just parse.
+
+    The number 21/21 was already true through the Python API; the defect was
+    that ``./run.sh`` could not ask for it. These pin the command-line path and
+    the two pairings that would otherwise be labelled wrongly.
+    """
+
+    def test_the_flag_defaults_to_the_committed_catalog(self):
+        assert cli.build_parser().parse_args(["eval"]).catalog == V1
+
+    def test_the_flag_reaches_the_runner(self, monkeypatch):
+        seen: dict = {}
+
+        def fake_run_eval(**kwargs):
+            seen.update(kwargs)
+            return 0
+
+        monkeypatch.setattr("paperlane.evaluate.run_eval", fake_run_eval)
+        code = cli.main(["eval", "--catalog", V2, "--db", "/tmp/mutated.duckdb"])
+        assert code == 0
+        assert seen["catalog_name"] == V2
+        assert seen["db_path"] == "/tmp/mutated.duckdb"
+
+    def test_v2_against_the_committed_snapshot_is_refused(self, capsys, monkeypatch):
+        """The flag names the expectations; the snapshot has to be the one they
+        describe. Scoring v2 cases against v1 data would print a v2 label over a
+        v1 run — the same mislabel the flag exists to remove."""
+        monkeypatch.delenv("PAPERLANE_DB", raising=False)
+        code = cli.main(["eval", "--catalog", V2])
+        assert code == 2
+        assert "--catalog v2" in capsys.readouterr().err
+
+    def test_a_conversation_set_refuses_a_catalog_it_cannot_use(self, capsys):
+        """The conversation cases have no per-catalog expectation.
+
+        Ignoring the flag would be worse than refusing: the run would carry a
+        label that is not what was scored.
+        """
+        cases = Path(__file__).resolve().parents[1] / "eval" / "conversation-cases.json"
+        code = cli.main(["eval", "--cases", str(cases), "--catalog", V2])
+        assert code == 2
+        assert "conversation set" in capsys.readouterr().err
 
 
 class TestCatalogRecordedInResults:

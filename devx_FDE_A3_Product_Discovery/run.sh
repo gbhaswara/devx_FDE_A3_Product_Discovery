@@ -30,6 +30,7 @@ Commands:
            --conversation ID continues a conversation; --forget discards it
   test     Run unit, extraction and integration tests (offline, no model)
   eval     Run the recorded evaluation cases against a loaded snapshot
+           --catalog v2 scores the mutated catalog (see verify-refresh --keep)
   diff     Compare the current snapshot with the previous one
   similarity      Measure the semantic tiebreak against the recorded cases
   metrics  Print the five operational measures derived from request records
@@ -42,6 +43,7 @@ Examples:
   ./run.sh ask "make it 50" --conversation demo   # continues the previous turn
   ./run.sh ask --forget --conversation demo       # discards it
   ./run.sh test
+  ./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb
   ./run.sh metrics
   ./run.sh metrics --eval      # the most recent evaluation run's records
   PAPERLANE_EMBED_BASE_URL=http://localhost:11434 \

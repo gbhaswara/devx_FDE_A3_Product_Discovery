@@ -32,7 +32,9 @@ rather than demonstrate it, and none is needed to see the system work:
 - `./run.sh verify-refresh` (~55s) mutates a git-ignored copy of the site,
   ingests it into a throwaway snapshot, and checks that every change it declared
   in advance is reported under the correct kind. It needs no server and no
-  network beyond loopback.
+  network beyond loopback. With `--keep` it leaves the snapshot behind, and
+  `./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb` scores
+  the same case set against that second catalog.
 - `./run.sh metrics` reads the records the assistant writes and reports five
   measures — fallback rate, zero-result rate, extraction backlog, p95 latency,
   and reply/total disagreement. On a fresh checkout it says plainly that there is
@@ -360,7 +362,15 @@ rather than being counted as passes against v1.
 **No single evaluation run scores all 28 cases.** Four behaviours have no live
 data in v1, so they are scored against the mutated v2 snapshot that
 `./run.sh verify-refresh` builds. The honest summary is **24/24 on v1 and 21/21
-on v2** — seven cases are pinned to v1 because their expected product sets
+on v2**, and both numbers come from `./run.sh`:
+
+```bash
+./run.sh verify-refresh --keep
+./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21
+./run.sh eval                                                          # 24/24
+```
+
+Seven cases are pinned to v1 because their expected product sets
 enumerate v1's exact offering, which v2 genuinely extends; rewriting them from
 v2's own output would make the expectation circular. Per-case reasoning is in
 `eval/results.md`.
@@ -512,6 +522,7 @@ a reply — those are deterministic code paths with their own tests.
 |---|---|
 | Prices are correct to the satang | `tests/test_pricing.py` (49 tests), `docs/pricing.md` |
 | The evaluation passes | `./run.sh eval`, and `eval/results.md` for the full run |
+| The second catalog scores the rest | `./run.sh verify-refresh --keep` then `./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb` — 21/21, and the run names the catalog it scored |
 | The evaluation *can* fail | `./run.sh eval --cases eval/negative-control.json` — four deliberate corruptions, one per scoring axis |
 | The scoring detects what it claims | `./run.sh eval --self-check` |
 | A misread request is scored, not just a mis-ranked one | `./run.sh eval` — `interpretation` is the first axis; `tests/test_evaluate.py::TestInterpretationAxis` |
@@ -530,7 +541,7 @@ a reply — those are deterministic code paths with their own tests.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The four conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1190) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1194) |
 
 ---
 

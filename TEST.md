@@ -35,6 +35,12 @@ Of the 28 recorded cases, **24 run against v1** and **4 run against v2** — cas
 
 Inapplicability is therefore a fact about a *named catalog*, not a permanent verdict on a case: each case declares `requires_catalog`, and a run declares which catalog it scored. Seven cases are pinned to v1 (their expected product *sets* enumerate v1's exact offering, which v2 genuinely extends); rewriting those from v2's own output would make the expectation circular. The full picture is in `eval/results.md`.
 
+```bash
+./run.sh verify-refresh --keep
+./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21
+./run.sh eval                                                          # 24/24
+```
+
 ### Layer 1 — Unit tests
 
 Pure functions with hand-verified expectations. This is where the money is proven.
@@ -143,7 +149,7 @@ exercised by `./run.sh verify-refresh`, which runs in the normal environment.
 
 ### Layer 5 — Evaluation harness
 
-28 recorded requests against the running system. This is the layer the brief explicitly asks for. All 28 run, but not all against one catalog: 24 against the committed v1 snapshot and 4 against the mutated v2 snapshot that `verify-refresh` builds. A case names the catalog its requirement needs, and a run names the catalog it scored.
+28 recorded requests against the running system. This is the layer the brief explicitly asks for. All 28 run, but not all against one catalog: 24 against the committed v1 snapshot and 4 against the mutated v2 snapshot that `verify-refresh` builds. A case names the catalog its requirement needs, and a run names the catalog it scored. Two commands produce the two numbers: `./run.sh eval` scores 24/24 on v1, and `./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb` (after `./run.sh verify-refresh --keep`) scores 21/21 on v2.
 
 **Five axes, scored separately.** The reason for separating them: a case can have perfect prices and the wrong products, and a single pass/fail would hide that. `interpretation` was added first in the order because it is the earliest thing that can go wrong — a request read as the wrong size produces a valid quote for something nobody asked for, which the other four axes cannot see.
 
@@ -321,7 +327,7 @@ carrying a total is checked structurally instead.
 | `test_conversation_eval.py` | 19 | 8 |
 | `test_crawl.py` | 13 | 2 |
 | `test_embeddings.py` | 66 | 6 |
-| `test_evaluate.py` | 67 | 5 |
+| `test_evaluate.py` | 71 | 5 |
 | `test_extract.py` | 49 | 2 |
 | `test_hygiene.py` | 13 | 7 |
 | `test_ingest.py` | 14 | 2 |
@@ -340,10 +346,10 @@ carrying a total is checked structurally instead.
 | `test_snapshot_path.py` | 26 | 7 |
 | `test_ui_catalog.py` | 26 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1190** | |
+| **Total** | **1194** | |
 
-Online: 1190 collected, 4 skip (provider- and loopback-dependent). Offline
-(`unshare -rn`): 1190 collected, 7 skip — the same four plus the three loopback
+Online: 1194 collected, 4 skip (provider- and loopback-dependent). Offline
+(`unshare -rn`): 1194 collected, 7 skip — the same four plus the three loopback
 tests that legitimately cannot run without a network interface.
 
 ## What is tested where
@@ -397,8 +403,9 @@ tests that legitimately cannot run without a network interface.
 ## Running the tests
 
 ```
-./run.sh test             # 1190 tests: unit + extraction + integration + observability + conversation; offline, no model
-./run.sh eval             # 28 recorded cases against the committed snapshot
+./run.sh test             # 1194 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh eval             # 28 recorded cases against the committed snapshot (24/24)
+./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21, after verify-refresh --keep
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design
 ./run.sh eval --cases eval/conversation-cases.json   # 12 conversations, 27 turns
 ./run.sh metrics          # the five operational measures, derived from request records

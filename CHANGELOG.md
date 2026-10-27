@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1190 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1194 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,35 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Added — 2026-10-27 · the evaluation can name the catalog it scored
+
+`run_eval()` has taken `catalog_name` since the second catalog existed, but the
+CLI never passed it, so `./run.sh eval --db .refresh-verification/mutated.duckdb`
+labelled the run **v1** and scored 17/24: the four v2 cases were skipped and the
+seven v1-pinned cases were held against a catalog that had genuinely changed.
+The 21/21 figure was real but reachable only by importing `run_eval` in Python.
+
+`./run.sh eval --catalog {v1,v2}` now selects the catalog the expectations were
+written for, defaulting to `v1` so the existing command is unchanged. Two
+mismatches are refused with exit 2 rather than labelled wrongly: a conversation
+set given `--catalog v2` (those cases carry no per-catalog expectation), and
+`--catalog v2` with no `--db` (the committed snapshot is v1, so the run would
+print a v2 label over v1 data).
+
+Verified with the commands now written beside the claim:
+
+```
+./run.sh verify-refresh --keep
+./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21, exit 0
+./run.sh eval                                                          # 24/24, exit 0
+```
+
+`eval/results.md`'s second-catalog table was also stale — it predated the
+interpretation axis — and is repasted from the current run. No pricing, model,
+case file, or dependency changed.
+`tests/test_evaluate.py::TestTheCatalogFlagOnTheCommandLine` pins the flag
+reaching the runner and both refusals.
 
 ### Changed — 2026-10-27 · the split is half and half, and the catalog is a set of drop-downs
 

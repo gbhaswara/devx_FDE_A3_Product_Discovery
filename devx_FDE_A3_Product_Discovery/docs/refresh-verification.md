@@ -175,7 +175,16 @@ product, and the mutated one has all four.
 
 A case now names the catalog its requirement needs (`requires_catalog` in
 `eval/cases.json`), and a run names the catalog it scored (`catalog` in the JSON
-payload). See the "Second catalog" section of `eval/results.md` for both runs.
+payload). With `--keep`, the snapshot is still on disk and the CLI can be told
+which catalog it is:
+
+```bash
+./run.sh verify-refresh --keep
+./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21
+./run.sh eval                                                          # 24/24
+```
+
+See the "Second catalog" section of `eval/results.md` for both runs.
 
 ---
 

@@ -3,7 +3,15 @@
 The recorded set is `eval/cases.json`: 28 requests. All 28 run somewhere — 24
 against the committed v1 catalog, and the remaining four against the mutated v2
 catalog that `./run.sh verify-refresh` builds. Run it with `./run.sh eval`
-(`--json` for machine-readable output); the second catalog's run is in
+(`--json` for machine-readable output); the second catalog's run is
+
+```bash
+./run.sh verify-refresh --keep
+./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21
+./run.sh eval                                                          # 24/24
+```
+
+and is reported in full in
 [Second catalog](#second-catalog-the-same-cases-against-the-mutated-site).
 
 This file is the **result**, not the plan. Everything below was produced by the
@@ -537,41 +545,42 @@ run names the catalog it scored (`"catalog"` in the JSON payload, and the
 catalogs are therefore distinguishable rather than being two files of numbers.
 
 ```
+$ ./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb
 Evaluation against v2 (.refresh-verification/mutated.duckdb)
   77 products, 103 price tiers
   model: not configured
          Structured cases ran in full. Any case needing a model was reported as not run.
 
-  #  verdict  retr  match price reply  request
-----------------------------------------------
-  1  pass     pass  pass  pass  pass   letter-size flyers, one side, colour, under 250 a pa
-  2  pass     pass  pass  pass  pass   letter-size flyers, one side, colour, under 250 a pa
-  3  pass     pass  pass  pass  pass   letter flyers 170 gsm one side gloss, 20 packs
-  4  not run  n/a   n/a   n/a   n/a    A4 80gsm copy paper, 10 reams
-  5  not run  n/a   n/a   n/a   n/a    A4 80gsm copy paper, 50 reams
-  6  not run  n/a   n/a   n/a   n/a    1 ream A5 copy paper
-  7  not run  n/a   n/a   n/a   n/a    3 reams A5 copy paper
-  8  pass     pass  pass  pass  pass   glossy photo A4 230gsm
-  9  pass     pass  pass  pass  pass   card 250gsm black A4
- 10  pass     pass  pass  pass  pass   legal size paper 20 lb
- 11  pass     pass  pass  pass  pass   24 lb letter paper
- 12  pass     pass  pass  n/a   pass   ivory A4 100gsm
- 13  pass     pass  pass  n/a   pass   170gsm A4 gloss double sided
- 14  pass     pass  n/a   n/a   pass   flyers under 60 a pack, 2 packs
- 15  pass     pass  n/a   n/a   pass   I need paper
- 16  pass     pass  n/a   pass  pass   20 reams A4 copy paper plus 5 packs A4 matte flyer, 
- 17  pass     pass  pass  pass  pass   4/4 A5 gloss 130
- 18  not run  n/a   n/a   n/a   n/a    A4 copy paper 10 reams, budget 1500 including VAT
- 19  pass     pass  n/a   n/a   pass   letter-size, under 250 a pack
- 20  not run  n/a   n/a   n/a   n/a    A4 80gsm under 250 a pack, 1 pack
- 21  pass     pass  pass  n/a   pass   200 gsm A4 white card
- 22  pass     pass  pass  n/a   pass   A4 80gsm copy paper ream
- 23  pass     pass  pass  n/a   pass   28 lb paper
- 24  pass     pass  pass  n/a   pass   32 lb paper
- 25  pass     pass  pass  pass  pass   colour paper A4
- 26  not run  n/a   n/a   n/a   n/a    A4 copy paper
- 27  pass     pass  n/a   pass  pass   10 packs of the 100gsm A4 gloss flyers and 10 packs 
- 28  pass     pass  pass  pass  pass   letter flyers, one side, colour, under 250, 20 packs
+  #  verdict  interp retr  match price reply  request
+-----------------------------------------------------
+  1  pass     pass   pass  pass  pass  pass   letter-size flyers, one side, colour, under 250 a
+  2  pass     pass   pass  pass  pass  pass   letter-size flyers, one side, colour, under 250 a
+  3  pass     pass   pass  pass  pass  pass   letter flyers 170 gsm one side gloss, 20 packs
+  4  not run  n/a    n/a   n/a   n/a   n/a    A4 80gsm copy paper, 10 reams
+  5  not run  n/a    n/a   n/a   n/a   n/a    A4 80gsm copy paper, 50 reams
+  6  not run  n/a    n/a   n/a   n/a   n/a    1 ream A5 copy paper
+  7  not run  n/a    n/a   n/a   n/a   n/a    3 reams A5 copy paper
+  8  pass     pass   pass  pass  pass  pass   glossy photo A4 230gsm
+  9  pass     pass   pass  pass  pass  pass   card 250gsm black A4
+ 10  pass     pass   pass  pass  pass  pass   legal size paper 20 lb
+ 11  pass     pass   pass  pass  pass  pass   24 lb letter paper
+ 12  pass     pass   pass  pass  n/a   pass   ivory A4 100gsm
+ 13  pass     pass   pass  pass  n/a   pass   170gsm A4 gloss double sided
+ 14  pass     pass   pass  n/a   n/a   pass   flyers under 60 a pack, 2 packs
+ 15  pass     pass   pass  n/a   n/a   pass   I need paper
+ 16  pass     n/a    pass  n/a   pass  pass   20 reams A4 copy paper plus 5 packs A4 matte flyer
+ 17  pass     pass   pass  pass  pass  pass   4/4 A5 gloss 130
+ 18  not run  n/a    n/a   n/a   n/a   n/a    A4 copy paper 10 reams, budget 1500 including VAT
+ 19  pass     pass   pass  n/a   n/a   pass   letter-size, under 250 a pack
+ 20  not run  n/a    n/a   n/a   n/a   n/a    A4 80gsm under 250 a pack, 1 pack
+ 21  pass     pass   pass  pass  n/a   pass   200 gsm A4 white card
+ 22  pass     pass   pass  pass  n/a   pass   A4 80gsm copy paper ream
+ 23  pass     pass   pass  pass  n/a   pass   28 lb paper
+ 24  pass     pass   pass  pass  n/a   pass   32 lb paper
+ 25  pass     pass   pass  pass  pass  pass   colour paper A4
+ 26  not run  n/a    n/a   n/a   n/a   n/a    A4 copy paper
+ 27  pass     n/a    pass  n/a   pass  pass   10 packs of the 100gsm A4 gloss flyers and 10 packs
+ 28  pass     pass   pass  pass  pass  pass   letter flyers, one side, colour, under 250, 20 packs
 
 #4 A4 80gsm copy paper, 10 reams
    expected: {'outcome': 'quoted', 'skus': ['PL-CP-A4-80-NUSA', 'PL-CP-A4-80-ECO', 'PL-CP-A4-80'], 'total': None}
@@ -609,10 +618,11 @@ Evaluation against v2 (.refresh-verification/mutated.duckdb)
    not run: This case's expected product set is written for the v1 catalog: the expected set enumerates v1's A4 copy-paper range and its best-match price, which the price-change injection deliberately alters. It is scored against v1 and skipped elsewhere rather than rewritten to match whatever the mutated catalog happens to return, which would make the expectation circular. It runs against 'v1', not 'v2'.
 
 cases: 28  ran: 21  not run: 7  passed: 21  failed: 0
-  retrieval pass 21  fail  0  n/a  0
-  match     pass 16  fail  0  n/a  5
-  pricing   pass 12  fail  0  n/a  9
-  reply     pass 21  fail  0  n/a  0
+  interpretation pass 19  fail  0  n/a  2
+  retrieval      pass 21  fail  0  n/a  0
+  match          pass 16  fail  0  n/a  5
+  pricing        pass 12  fail  0  n/a  9
+  reply          pass 21  fail  0  n/a  0
   not run: [4, 5, 6, 7, 18, 20, 26]
 ```
 
