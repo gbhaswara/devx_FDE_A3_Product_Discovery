@@ -635,7 +635,7 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A24 FIXED, A25 OPEN, A26–A30 FIXED
+## Part 2c — Gaps found by the brief audit · A20–A30 FIXED
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
 from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A30 came from
@@ -920,7 +920,7 @@ model returns {"budget_basis": "per 500 sheets, excluding VAT"}
 
 `merge_model_and_rules` copies `budget_basis` from the model with no check —
 `merged = replace(merged, budget_basis=str(basis))` — and that string is the one
-PR7 exists to publish. The rule path can only ever produce four values
+PR7 exists to publish. The rule path can only ever produce six values
 (`per pack|ream|sheet, before|including VAT`, from `interpret._budget_basis`);
 the model path can produce anything, and it reaches the customer verbatim.
 
@@ -956,7 +956,34 @@ copy of it.
 **Falsification.** `TestModelMerge::test_a_model_basis_outside_the_canonical_set_is_ignored`
 and `test_a_canonical_model_basis_is_kept`, plus
 `TestReplyContract::test_the_stated_basis_is_always_one_the_engine_can_apply` and
-`TestClientErrors::test_an_unknown_basis_is_a_client_error`.
+`TestClientErrors::test_an_unknown_budget_basis_is_a_client_error`. The first and
+third failed first; the second and `test_a_canonical_budget_basis_is_accepted`
+are their mirrors, and they keep the guard from becoming "refuse every basis".
+
+**Fix.** `pricing.BUDGET_BASES` is the closed set of six strings the engine can
+apply — *per pack / per ream / per sheet*, each *before* or *including VAT* —
+with `is_canonical_basis` beside it. It is the engine's own vocabulary rather
+than a second copy, because `interpret._budget_basis` produces those forms and
+nothing else.
+
+The guard sits at both places the string can arrive:
+
+- `merge_model_and_rules` keeps the rules' basis for anything outside the set and
+  appends a `budget_basis:` note — the same treatment an invalid model size gets.
+- `interpret.validate` normalises the field for every entry point that reaches
+  it, so a `Criteria` built elsewhere cannot publish a basis the arithmetic did
+  not use.
+- `POST /api/quote` refuses an unknown basis with a `422` naming the field, in
+  the same way it refuses an unknown size. A valid request never gets a silently
+  corrected price basis.
+
+**Verification.** `./run.sh test` 1240 collected / 1237 passed + 3 skipped;
+`./run.sh eval` 24/24; `verify-refresh --keep` 12/12 (12 injected changes);
+`./run.sh eval --catalog v2` 21/21. The recorded single-turn replies are
+unchanged: the rule path was already producing canonical bases, so the guard is
+visible only on the two paths that could not.
+
+**Status: FIXED.**
 
 ### A26 — The same SKU split across two lines misses its volume tier
 
