@@ -635,7 +635,7 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A23 FIXED, A24–A25 OPEN, A26 FIXED, A27–A28 OPEN, A29 FIXED, A30 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A24 FIXED, A25 OPEN, A26 FIXED, A27–A28 OPEN, A29 FIXED, A30 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
 from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A30 came from
@@ -887,6 +887,29 @@ membership.
 **Note.** The fix must stay exact: compare `pack_price * sheets_per_stated_unit`
 against `budget * pack_sheets` so both sides are integers, rather than dividing
 money and rounding.
+
+**Fix.** `PriceFacts` gained `pack_sheets` (populated from the catalog row on
+both the snapshot path and the API path), and `pricing.budget_ok` decides the
+verdict on integers: `price × sheets_per_stated_unit` against
+`budget × pack_sheets`. A ream is 500 sheets, whatever the pack holds.
+`comparable_unit_price` returns the converted figure the reply prints — 890.00
+per ream, 0.26 per sheet — and is deliberately *not* the value the boundary is
+decided on, because a per-sheet price is only a rounded approximation. `search`
+and the quantity question call `budget_ok` too, so the filter, the clarification
+rule and the engine cannot disagree about "within budget".
+
+**Verification.** `./run.sh test` 1226 collected / 1223 passed + 3 skipped;
+`./run.sh eval` 24/24; `verify-refresh --keep` 12/12 (12 injected changes);
+`./run.sh eval --catalog v2` 21/21. End to end over the real snapshot:
+
+```
+"A4 200gsm white card under 900 a ream, 1 pack"  -> quoted
+  budget per unit: 890.00   890.00 at 1 (within 900.00, per ream, before VAT)
+"A4 200gsm white card under 250 a ream"          -> no_match
+"A4 copy paper under 1.00 a sheet"               -> quoted
+```
+
+**Status: FIXED.**
 
 ### A25 — The stated budget basis is never constrained to one the engine can apply
 
