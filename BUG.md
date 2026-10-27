@@ -635,7 +635,7 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A28 OPEN, A29 FIXED, A30 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A23 FIXED, A24–A28 OPEN, A29 FIXED, A30 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
 from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A30 came from
@@ -819,7 +819,38 @@ unavailable items alone; the contradiction is in the data, not in the sentence.
 **Falsification.** `TestVariantAvailability::test_an_in_stock_row_carries_no_restock_date`
 and `test_the_out_of_stock_row_still_carries_its_own`, extracted from the real
 `flyers-a4-gloss.html`. The first fails on five SKUs against the current
-extractor.
+extractor. A third, `test_no_stored_product_contradicts_itself`, asserts the
+same invariant over the committed snapshot rather than one page: no product
+whose status is `in_stock` may carry a `back_in_stock_date`.
+
+The committed fixture `flyers-ltr-gloss.html` marks all six rows in stock, so
+the failing test replaces the last row's availability cell with the shape the
+live page uses for an unavailable one and leaves the rest of the page real. The
+failing run before the fix:
+
+```
+FAILED TestVariantAvailability::test_an_in_stock_row_carries_no_restock_date
+FAILED TestVariantAvailability::test_no_stored_product_contradicts_itself
+E  Left contains 5 more items, first extra item: ('PL-PR-A4-GL-100-40', '12 November 2026')
+```
+
+**Fix.** When the table has an availability column, the row's own cell is
+authoritative for **both** fields: status starts at `in_stock` with no date and
+only the cell can make it otherwise. The whole-page scan is no longer seeded at
+all on that shape, and survives only for a table with no availability column,
+where nothing else states availability. The snapshot was then rebuilt over HTTP
+from the v1 site, because the defect is in the stored data and a code fix alone
+would leave the five rows contradicting themselves until the next re-ingest.
+
+**Verification.** `./run.sh test` 1218 collected / 1215 passed + 3 skipped;
+`./run.sh eval` 24/24; `verify-refresh --keep` 12/12 (12 injected changes);
+`./run.sh eval --catalog v2` 21/21. The re-ingest reproduced the catalog exactly
+— 72 SKUs, 42 variant-table / 10 table / 10 dl / 10 prose, 105 tiers across 59
+SKUs, 13 tier-less, 2 out of stock, 1 on sale — with **zero** in-stock rows
+carrying a date and both genuine dates intact (`PL-CL-A4-100-IVY` 20 November
+2026, `PL-PR-A4-GL-170-44` 12 November 2026).
+
+**Status: FIXED.**
 
 ### A24 — A budget stated per ream or per sheet is compared as if it were per pack
 
