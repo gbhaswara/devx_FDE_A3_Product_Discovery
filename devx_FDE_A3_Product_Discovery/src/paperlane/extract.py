@@ -92,6 +92,8 @@ LABEL_MAP_DL = {
 #: Currency amounts: "฿1,234.56" or "1,234.56 THB".
 _MONEY_RE = re.compile(r"[฿]\s*([0-9][0-9,]*\.\d{2})|([0-9][0-9,]*\.\d{2})\s*THB")
 _STOCK_OUT_RE = re.compile(r"stock-out[^>]*>\s*([^<]*)", re.I)
+_OUT_OF_STOCK_RE = re.compile(r"out of stock[^<]*", re.I)
+_IN_STOCK_RE = re.compile(r"\bin stock\b", re.I)
 _RESTOCK_RE = re.compile(r"expected back\s+(\d{1,2}\s+\w+\s+\d{4})", re.I)
 _DISCONTINUED_RE = re.compile(r"discontinued", re.I)
 _ITEM_CODE_RE = re.compile(r"Item code:?\s*([A-Z0-9][A-Z0-9-]+)", re.I)
@@ -201,14 +203,34 @@ def _detect_shape(html: str) -> str:
 
 
 def _stock_state(html: str) -> tuple[str, str | None]:
-    """Return ``(stock_status, restock_date)`` for a page or row."""
+    """Return ``(stock_status, restock_date)`` for a page or row.
+
+    Availability is read from a closed set of wordings. Text that states none
+    of them returns ``"unknown"`` rather than ``"in_stock"``: an unrecognised
+    wording becomes a review row instead of a catalog of items that cannot be
+    bought (BUG.md A31).
+    """
     if _DISCONTINUED_RE.search(html):
         return "discontinued", None
-    m = _STOCK_OUT_RE.search(html)
+    m = _STOCK_OUT_RE.search(html) or _OUT_OF_STOCK_RE.search(html)
     if m:
-        r = _RESTOCK_RE.search(m.group(1))
+        r = _RESTOCK_RE.search(m.group(0))
         return "out_of_stock", r.group(1) if r else None
-    return "in_stock", None
+    if _IN_STOCK_RE.search(html):
+        return "in_stock", None
+    return "unknown", None
+
+
+def _apply_page_stock(
+    product: ExtractedProduct, html: str, reviews: list[ReviewRow], url: str
+) -> None:
+    """Set a page-level product's availability, flagging an unreadable badge."""
+    product.stock_status, product.back_in_stock_date = _stock_state(html)
+    if product.stock_status == "unknown":
+        reviews.append(
+            ReviewRow(url, "availability not recognised", html[:200], product.sku or None)
+        )
+
 
 
 def _category(tree: LexborHTMLParser) -> str | None:
@@ -372,7 +394,7 @@ def extract_table(html: str, url: str) -> tuple[list[ExtractedProduct], list[Rev
     product.sku = product.sku or (_item_code(tree) or "")
 
     product.list_price, product.sale_price, product.unit_word = _read_pricebox(tree)
-    product.stock_status, product.back_in_stock_date = _stock_state(html)
+    _apply_page_stock(product, html, reviews, url)
     return _finish([product], reviews, url)
 
 
@@ -427,7 +449,7 @@ def extract_dl(html: str, url: str) -> tuple[list[ExtractedProduct], list[Review
     product.sku = product.sku or (_item_code(tree) or "")
 
     product.list_price, product.sale_price, product.unit_word = _read_pricebox(tree)
-    product.stock_status, product.back_in_stock_date = _stock_state(html)
+    _apply_page_stock(product, html, reviews, url)
     return _finish([product], reviews, url)
 
 
@@ -474,6 +496,10 @@ def extract_variant_table(html: str, url: str) -> tuple[list[ExtractedProduct], 
     category = _category(tree)
     description = _description(tree)
     page_stock, page_restock = _stock_state(html)
+    if page_stock == "unknown":
+        reviews.append(
+            ReviewRow(url, "availability not recognised", html[:200])
+        )
 
     table = tree.css_first("table")
     if table is None:
@@ -558,13 +584,11 @@ def extract_variant_table(html: str, url: str) -> tuple[list[ExtractedProduct], 
         if "availability" in headers:
             i_avail = headers.index("availability")
             avail = values[i_avail] if i_avail < len(values) else ""
-            product.stock_status, product.back_in_stock_date = "in_stock", None
-            if re.search(r"out of stock", avail, re.I):
-                product.stock_status = "out_of_stock"
-                m = _RESTOCK_RE.search(avail)
-                product.back_in_stock_date = m.group(1) if m else None
-            elif re.search(r"discontinued", avail, re.I):
-                product.stock_status = "discontinued"
+            product.stock_status, product.back_in_stock_date = _stock_state(avail)
+            if product.stock_status == "unknown":
+                reviews.append(
+                    ReviewRow(url, "availability not recognised", avail, sku)
+                )
         else:
             product.stock_status, product.back_in_stock_date = page_stock, page_restock
 
@@ -640,7 +664,7 @@ def extract_prose(html: str, url: str) -> tuple[list[ExtractedProduct], list[Rev
     product.list_price, product.sale_price, product.unit_word = _read_pricebox(tree)
     if product.unit_word is None and product.pack_sheets is not None:
         product.unit_word = f"pack of {product.pack_sheets} sheets"
-    product.stock_status, product.back_in_stock_date = _stock_state(html)
+    _apply_page_stock(product, html, reviews, url)
     return _finish([product], reviews, url)
 
 

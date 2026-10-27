@@ -163,6 +163,12 @@ Three label differences from `table`, all silent if unmapped:
   every sibling, giving an in-stock record a restock date it cannot have
   (`BUG.md` A23). The page-level scan survives only for a table with no
   availability column, where nothing else states availability.
+* Availability is **read from a closed set of wordings**, never assumed:
+  `In stock`, `Out of stock … expected back <date>`, `Discontinued`. Wording the
+  parser does not recognise makes the row `unknown` and produces a review row
+  carrying the raw cell text, because an `in_stock` default turns a copy edit on
+  the site into a catalog of items that cannot be bought (`BUG.md` A31). The
+  same rule applies to a page-level badge.
 * Columns are located **by header name**, never by fixed index.
 
 ### Shape 4 — `prose` (10 pages)
@@ -335,6 +341,7 @@ Reasons that produce a review row:
 | `no price found on page` | price box unreadable |
 | `size: …` | unmappable size |
 | `weight: …` | unparseable or unlisted weight |
+| `availability not recognised` | wording outside the known set; row is `unknown` |
 | `availability_disagreement` | card contradicts page |
 | `tier_document` | advertised but missing or empty |
 
@@ -384,8 +391,18 @@ the previous snapshot keeps serving, untouched.
 
 ```python
 staged = catalog.build_snapshot(...)   # may fail; nothing served is touched
+_swap_refusal(len(new_skus), len(serving_skus), accept_shrink)  # gate
 catalog.swap_into_place(staged)        # atomic
 ```
+
+The gate is a count, checked before the swap: a run that extracted **zero**
+SKUs, or **under half** of what the serving snapshot holds, keeps the serving
+catalog and exits **3**, with the staged file left on disk for inspection. A
+collapse to zero is a failed parse, not a smaller catalog, and swapping it in
+takes the service down until someone notices (`BUG.md` A32). A first ingest has
+nothing to protect and is never refused; a genuine catalog cut passes
+`--accept-shrink`. Exit codes: **0** swapped, **2** crawl failed, **3** swap
+refused.
 
 ### Read-only per request
 

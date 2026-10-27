@@ -145,11 +145,37 @@ def _advertised_skus(html: str) -> set[str]:
     return skus
 
 
+def _swap_refusal(
+    new_skus: int, previous_skus: int | None, accept_shrink: bool
+) -> str | None:
+    """Why this snapshot must not replace the serving one, or ``None``.
+
+    A snapshot that parses almost nothing is not a smaller catalog, it is a
+    failed parse, and swapping it in takes the service down until someone
+    notices (BUG.md A32). The gate compares counts, so it cannot be fooled by a
+    page that half-parses: a collapse to zero, or to under half of what is being
+    served, is refused unless the caller says the shrink is real.
+
+    A first ingest has nothing to protect and is never refused.
+    """
+    if accept_shrink or previous_skus is None:
+        return None
+    if new_skus == 0:
+        return f"0 SKUs extracted; the serving snapshot has {previous_skus}"
+    if new_skus * 2 < previous_skus:
+        return (
+            f"{new_skus} SKUs extracted, under half of the serving snapshot's "
+            f"{previous_skus}"
+        )
+    return None
+
+
 def run_ingest(
     base_url: str,
     rate: float = 1.0,
     *,
     db_path: Path | None = None,
+    accept_shrink: bool = False,
 ) -> int:
     """Crawl, extract, cross-check, build, and swap. Returns a process code.
 
@@ -157,6 +183,10 @@ def run_ingest(
     harness can ingest a mutated copy of the site into a throwaway snapshot
     instead of overwriting the committed catalog — a demonstration that mutates
     the artefact under review is not a demonstration.
+
+    ``accept_shrink`` overrides the pre-swap gate for a genuine catalog cut.
+    Without it, a run that extracts zero SKUs, or under half of the serving
+    snapshot's count, keeps the serving snapshot and returns 3.
     """
     result = IngestResult()
     target_db = catalog.resolve_db_path(db_path)
@@ -312,6 +342,16 @@ def run_ingest(
         target=target_db.with_suffix(".tmp.duckdb"),
         crawl_started_at=crawl_started_at,
     )
+
+    serving_count = (
+        len(catalog.load_products(target_db)) if target_db.exists() else None
+    )
+    refusal = _swap_refusal(len(result.products), serving_count, accept_shrink)
+    if refusal is not None:
+        print(f"ingest refused: {refusal}")
+        print(f"staged snapshot kept for inspection: {staged}")
+        return 3
+
     catalog.swap_into_place(staged, target_db)
     print(f"snapshot: {target_db}")
     return 0

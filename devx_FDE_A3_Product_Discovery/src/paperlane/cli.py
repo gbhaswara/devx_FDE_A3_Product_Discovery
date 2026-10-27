@@ -60,6 +60,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    ingest.add_argument(
+        "--accept-shrink",
+        action="store_true",
+        help=(
+            "Allow the swap even when the crawl extracted zero SKUs or under "
+            "half of the serving snapshot's count (a genuine catalog cut). "
+            "Without it the run keeps the serving snapshot and exits 3."
+        ),
+    )
+
     serve = sub.add_parser("serve", help="Run the HTTP API")
     serve.add_argument(
         "--port",
@@ -237,7 +247,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ingest":
         from .ingest import run_ingest
 
-        return run_ingest(args.base_url, args.rate, db_path=args.db)
+        return run_ingest(
+            args.base_url, args.rate, db_path=args.db,
+            accept_shrink=args.accept_shrink,
+        )
     if args.command == "serve":
         from .api import run_server
 

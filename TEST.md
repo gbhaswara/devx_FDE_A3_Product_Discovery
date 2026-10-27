@@ -328,9 +328,9 @@ carrying a total is checked structurally instead.
 | `test_crawl.py` | 13 | 2 |
 | `test_embeddings.py` | 66 | 6 |
 | `test_evaluate.py` | 71 | 5 |
-| `test_extract.py` | 54 | 2 |
+| `test_extract.py` | 57 | 2 |
 | `test_hygiene.py` | 13 | 7 |
-| `test_ingest.py` | 14 | 2 |
+| `test_ingest.py` | 22 | 2 |
 | `test_metrics.py` | 59 | 7 |
 | `test_model.py` | 42 | 3 |
 | `test_money.py` | 25 | 1 |
@@ -346,17 +346,17 @@ carrying a total is checked structurally instead.
 | `test_snapshot_path.py` | 26 | 7 |
 | `test_ui_catalog.py` | 26 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1240** | |
+| **Total** | **1251** | |
 
-Online: 1240 collected, 4 skip (provider- and loopback-dependent) — 1236 passed.
-Offline (`unshare -rn`): 1240 collected, 7 skip — 1233 passed; the same four plus
-the three loopback tests that legitimately cannot run without a network interface.
+Online: 1251 collected, 3 skip (provider-dependent) — 1248 passed.
+Offline (`unshare -rn`): 1251 collected, 8 skip — 1243 passed; the same three plus
+the five loopback tests that legitimately cannot run without a network interface.
 
 One further skip is state-dependent, not environmental: `test_evaluate.py` skips
 its second-catalog case until `./run.sh verify-refresh --keep` has produced
-`.refresh-verification/mutated.duckdb`. With that artefact present the offline run
-is 1204 passed + 6 skipped rather than 1203 + 7. The figures above are for a clean
-tree, which is what a fresh clone sees — the artefact directory is git-ignored.
+`.refresh-verification/mutated.duckdb`. With that artefact present that skip
+becomes a pass. The figures above are for a clean tree, which is what a fresh
+clone sees — the artefact directory is git-ignored.
 
 ## What is tested where
 

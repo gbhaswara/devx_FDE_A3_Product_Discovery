@@ -79,7 +79,10 @@ python3 -m http.server 8000                # serve the catalog site, from THIS d
 ```
 
 `ingest` crawls 103 pages at one request per second — about two minutes — then
-swaps the new snapshot into place atomically. Re-running it against an unchanged
+swaps the new snapshot into place atomically. It refuses the swap, keeping the
+serving catalog and exiting 3, when the crawl extracted zero SKUs or under half
+of the previous count — a parse collapse is not a smaller catalog. Pass
+`--accept-shrink` for a genuine catalog cut. Re-running it against an unchanged
 site reports `no_change: true` and commits nothing.
 
 **Ingesting without disturbing the committed snapshot.** The demo round supplies
@@ -524,7 +527,7 @@ never prices, selects a product or writes a total.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The four conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1240) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1251) |
 
 ---
 

@@ -181,6 +181,51 @@ class TestVariantAvailability:
         assert bad == []
 
 
+class TestUnknownAvailability:
+    """BUG.md A31: availability is read, never assumed.
+
+    The variant-table branch seeded every row ``in_stock`` and tore that
+    assumption down only for two known wordings, so a site rewrite saying
+    "Unavailable" produced six healthy-looking SKUs and zero review rows.
+    Unknown wording must land in review, and a known wording must not.
+    """
+
+    URL = "http://localhost:8000/paperlane/product/flyers-ltr-gloss.html"
+
+    def page_with_unknown_wording(self) -> str:
+        html = load("flyers-ltr-gloss.html")
+        marker = '<span class="stock-in">In stock</span></td></tr></table>'
+        assert marker in html
+        return html.replace(
+            marker,
+            '<span class="stock-wait">Unavailable &mdash; back '
+            "12 December 2026</span></td></tr></table>",
+        )
+
+    def test_an_unrecognised_row_wording_is_not_read_as_in_stock(self):
+        products, reviews = extract(self.page_with_unknown_wording(), self.URL)
+        row = next(p for p in products if p.sku == "PL-PR-LTR-GL-170-44")
+        assert row.stock_status != "in_stock"
+        assert [r.sku for r in reviews] == ["PL-PR-LTR-GL-170-44"]
+        assert "availability" in reviews[0].reason
+
+    def test_the_all_in_stock_fixture_is_not_flagged(self):
+        products, reviews = extract(load("flyers-ltr-gloss.html"), self.URL)
+        assert all(p.stock_status == "in_stock" for p in products)
+        assert [r for r in reviews if "availability" in r.reason] == []
+
+    def test_an_unrecognised_page_badge_is_not_read_as_in_stock(self):
+        html = load("pl-cp-a4-80.html").replace(
+            '<span class="stock-in">In stock</span>',
+            '<span class="stock-unknown">Ask us</span>',
+        )
+        products, reviews = extract(
+            html, "http://localhost:8000/paperlane/product/pl-cp-a4-80.html"
+        )
+        assert products[0].stock_status != "in_stock"
+        assert any("availability" in r.reason for r in reviews)
+
+
 class TestLabelNormalisation:
     def test_brand_and_manufacturer_are_one_field(self):
         assert one("pl-cp-a4-80-eco.html").brand == "PaperLane Essentials"  # Brand

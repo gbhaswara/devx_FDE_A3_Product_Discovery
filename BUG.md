@@ -1339,7 +1339,7 @@ past its last useful tier, so none of them gains the sentence.
 
 ---
 
-## Part 2d — Gaps found by the demo-round refresh question · A31–A32 OPEN
+## Part 2d — Gaps found by the demo-round refresh question · A31–A32 FIXED
 
 The demo round supplies an **updated site** and asks for a re-ingest with **no code
 change**. That turns every assumption in the parser into a contract with a site
@@ -1350,9 +1350,9 @@ end to end with `./run.sh verify-refresh --keep` and `./run.sh eval --catalog v2
 
 Content changes are already proven: prices, stock, a withdrawn SKU and a new row
 all survive (`verify-refresh --keep` 12/12; `eval --catalog v2` 21/21). Two
-structural changes are not covered. Both are registered here, **unfixed**, because
-each is a design decision rather than a typo — see "Reporting a new issue": a bug
-found during the demo round becomes a test before it becomes a fix.
+structural changes were not covered. Both were registered here **before** being
+fixed, per the rule at the end of this file, and each carries the failing run it
+was seen to produce first.
 
 | Mutation | SKUs | Review rows | Outcome |
 |---|---|---|---|
@@ -1360,10 +1360,10 @@ found during the demo round becomes a test before it becomes a fix.
 | price / stock / new row | 6 | 0 | absorbed |
 | column appended | 6 | 0 | absorbed |
 | column inserted | 6 | 0 | absorbed |
-| columns reordered | **0** | **6** | loud, but the run still swaps (A32) |
-| header reworded | **0** | **1** | loud, but the run still swaps (A32) |
-| `table` → `dl` markup | 0 | 2 | loud, but the run still swaps (A32) |
-| availability wording changed | 6 | **0** | **silent — every row becomes in stock (A31)** |
+| columns reordered | **0** | **6** | was loud, but the run still swapped (A32, fixed) |
+| header reworded | **0** | **1** | was loud, but the run still swapped (A32, fixed) |
+| `table` → `dl` markup | 0 | 2 | was loud, but the run still swapped (A32, fixed) |
+| availability wording changed | 6 | **0** | **silent — every row became in stock (A31, fixed)** |
 
 ### A31 — Unknown availability wording is read as "in stock"
 
@@ -1412,15 +1412,43 @@ asserts the row is **not** `in_stock` and that a review row is produced naming t
 SKU. Run against today's code it must fail on `stock_status == "in_stock"`, which
 is the probe's result. A second test asserts the unchanged fixture still yields
 six `in_stock` rows and zero availability reviews, so the fix cannot be "flag
-everything".
+everything". The first two failed first:
 
-**Status: OPEN.** Not implemented; the demo round is where this would bite, and
-choosing the wording set is a decision to take with the customer, not silently.
+```
+FAILED TestUnknownAvailability::test_an_unrecognised_row_wording_is_not_read_as_in_stock
+E  assert 'in_stock' != 'in_stock'
+FAILED TestUnknownAvailability::test_an_unrecognised_page_badge_is_not_read_as_in_stock
+E  assert 'in_stock' != 'in_stock'
+2 failed, 1 passed, 54 deselected
+```
+
+**Fix.** `extract._stock_state` now reads availability from a closed set —
+`In stock`, `Out of stock … expected back <date>`, `Discontinued` — and returns
+`"unknown"` when none matches, instead of defaulting to `in_stock`. All four call
+sites go through one helper: the variant-table branch reads the row's own cell
+(so A23's per-row rule is unchanged), and `_apply_page_stock` wraps the
+page-level badge for `table`, `dl` and `prose`. The planned sibling inference was
+dropped: an empty cell is `unknown` too, because "nothing else states
+availability" is not evidence of availability. An `unknown` row is kept —
+counted, priced, searchable — and always carries an `availability not recognised`
+review row with the raw text, so the catalog never silently claims an item can be
+bought.
+
+Checked before flipping the default: all **36** live product pages state one of
+the known wordings, so the reference site stays at 72 in-stock-equivalent rows
+and 0 review items; only a rewording moves the count.
+
+**Verification.** The three new tests pass, and the fixture guard keeps the
+committed page at six `in_stock` rows and zero availability reviews, so the fix
+cannot be "flag everything". Full suite 1251 collected / 1248 passed + 3 skipped;
+`./run.sh eval` 24/24; `verify-refresh --keep` 12/12; `eval --catalog v2` 21/21.
+
+**Status: FIXED.**
 
 ### A32 — A refresh that parses almost nothing still replaces the serving catalog
 
 ```
-ingest.py:301-317
+run_ingest
   staged = catalog.build_snapshot(products=result.products, ...)
   catalog.swap_into_place(staged, target_db)   # no count check
   return 0
@@ -1464,10 +1492,30 @@ lost.
 ingest over a stub that returns one page with no recognisable variant table, and
 assert (a) exit code is non-zero, (b) the serving snapshot still holds N SKUs and
 the original prices, (c) the staging file exists, (d) `--accept-shrink` lets the
-same run through. Today (b) fails: the serving catalog is empty. A fifth assertion
-covers the first-ever ingest with no previous snapshot, which must still succeed.
+same run through. A fifth assertion covers the first-ever ingest with no previous
+snapshot, which must still succeed. All eight ingest tests failed first — six on
+the missing `_swap_refusal`, two on `run_ingest() got an unexpected keyword
+argument 'accept_shrink'` — and the gate tests were written against the old
+behaviour, so they could not pass by the fix simply existing.
 
-**Status: OPEN.** Registered before the fix, per the rule at the end of this file.
+**Fix.** `ingest._swap_refusal(new_skus, previous_skus, accept_shrink)` is a
+pure count check; `run_ingest` reads the serving snapshot's product count before
+the swap and refuses with exit **3** when the new count is zero or under half of
+it. The staged file is left in place, so the failed build is inspectable, and
+nothing is deleted. Exit codes are now **0** swapped, **2** crawl failed, **3**
+swap refused. `--accept-shrink` overrides the gate for a genuine catalog cut; a
+first ingest has no previous snapshot and is never refused.
+
+**Verification.** The gate is tested as a count (first ingest, zero, under half,
+exactly half, growth, override) and once end to end: a loopback site whose three
+pages parse to nothing is crawled against a two-SKU serving snapshot, and the
+serving rows and prices survive untouched while the staging file remains. Full
+suite 1251 collected / 1248 passed + 3 skipped; `./run.sh eval` 24/24;
+`verify-refresh --keep` 12/12 (72 SKUs in, 72 out, so the gate does not fire);
+`eval --catalog v2` 21/21. The eight ingest tests failed first, on the missing
+`_swap_refusal` import and the missing `accept_shrink` argument.
+
+**Status: FIXED.**
 
 ---
 
@@ -1496,9 +1544,9 @@ These are the conditions that indicate the system is degrading rather than faili
 |---|---|---|
 | Rising rule-based fallback share | model degraded, or credentials expired | model reachability in `/health` |
 | Rising zero-result share | parsing defect, or a genuine catalog gap | run a known-good request through `/quote` |
-| Review set grew after a refresh | the site changed markup shape | inspect the recorded excerpt for the failing page. If the SKU count fell at the same time, the run should have been refused — A32 (open) |
-| Every item reads as in stock and no review rows appeared after a refresh | availability wording the parser does not know | A31 (open) — compare each row's availability cell with the stored `stock_status` |
-| Catalog shrank between snapshots | a parser silently stopped matching | `/diff` — withdrawn items without a review entry. This path is now exercised: `./run.sh verify-refresh` withdraws `PL-CP-A4-75` and the diff reports exactly one withdrawal. A collapse to zero is A32 (open): the swap is not yet gated on SKU count |
+| Review set grew after a refresh | the site changed markup shape | inspect the recorded excerpt for the failing page. A refresh that also collapsed the SKU count is now refused before the swap (A32) |
+| Every item reads as in stock and no review rows appeared after a refresh | availability wording the parser does not know | compare each row's availability cell with the stored `stock_status`; unknown wording is now flagged per row (A31) |
+| Catalog shrank between snapshots | a parser silently stopped matching | `/diff` — withdrawn items without a review entry. This path is now exercised: `./run.sh verify-refresh` withdraws `PL-CP-A4-75` and the diff reports exactly one withdrawal. A collapse to zero is refused before the swap by A32's gate |
 | p95 latency climbing | model latency, not pricing (pricing is local) | per-stage timings in the request record |
 | Stated total ≠ computed total | reply prose is paraphrasing a figure instead of inserting it | this should be structurally impossible; any occurrence is a code defect |
 | A quote includes an item that does not exist | the no-invented-products assertion failed to fire | this should be structurally impossible; treat as a P0 |
