@@ -100,6 +100,82 @@ with `HTTP 404` on `index.html`.
 the crawler reads; 8001 serves the *assistant*. Binding the assistant to 8000
 collides with the site. `./run.sh serve` defaults to 8001 for that reason.
 
+### Deploying the UI
+
+`./run.sh serve` **is** the deployment. One process serves the page, the fragment
+it swaps in, the asset it loads and the JSON API, all on one origin. There is no
+build step, no bundle, no second server and no static-file mount to configure —
+the page is a Python string in `ui.py` and the result panel is rendered by the
+same code path that answers `/api/ask`.
+
+```bash
+./run.sh serve                          # 127.0.0.1:8001, the default
+./run.sh serve --port 8020              # a different port
+./run.sh serve --host 0.0.0.0           # bind every interface
+./run.sh serve --db /tmp/v2.duckdb      # serve a different snapshot
+```
+
+| Route | What it is | Returns |
+|---|---|---|
+| `GET /` | the whole UI | one HTML document |
+| `POST /ask` | what htmx calls | a `<div class="panel">` fragment, not a page |
+| `GET /static/htmx.min.js` | the vendored script | ~48 KB, `application/javascript` |
+| `GET /api/*` | the documented JSON API | see `docs/api.md` |
+
+**It needs no internet, and that is deliberate.** The page used to load htmx from
+`unpkg.com`. That made the one interactive surface the only part of the system
+depending on a CDN — while the tests, the evaluation and the CLI are all offline
+by design. Worse, it failed *silently*: the form carries `hx-post` and no
+`method` or `action`, so with no script the browser just issues a `GET` of the
+current URL and the page reloads with the input cleared. The API kept answering,
+so every `curl` check still passed while a human saw a dead form.
+
+htmx 1.9.12 is now vendored at `src/paperlane/static/htmx.min.js` and served from
+this origin. Its SHA-384 is recorded in `src/paperlane/static/VENDOR.md` and is
+the same value the page carried as its Subresource Integrity hash, so these are
+provably the bytes the CDN used to serve. `tests/test_ui_offline.py` holds both
+halves: the page names no external host, and the route returns those exact bytes.
+
+**Reaching it from another machine.** `--host 0.0.0.0` binds every interface,
+but read the limitation in §4 first: there is **no authentication and no rate
+limiting** on the app. Do not expose the port directly; put it behind a proxy
+that terminates TLS and authenticates. With nginx:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name paperlane.example.com;
+    # ssl_certificate / ssl_certificate_key …
+
+    location / {
+        auth_basic           "PaperLane";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+        proxy_pass           http://127.0.0.1:8001;
+    }
+}
+```
+
+**What it reports at startup.** It prints the product and tier counts and the
+snapshot path it is serving, then the catalog's age — `Catalog is 4h old (stale
+above 24h)`. Age is stated, never gated on, because a server that refuses to
+start on an old snapshot would fail the demo round. With no snapshot at all it
+refuses to start and prints the `ingest` command rather than running a service
+whose every request returns 503.
+
+**One process, not many.** It calls `uvicorn.run` once with `log_level="warning"`.
+There is no `--reload` flag — `serve` is the serving command, and `./run.sh serve
+--reload` is rejected as an unknown argument. For a dev loop, run the same
+application through uvicorn directly:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m uvicorn paperlane.api:create_app \
+  --factory --reload --port 8001
+```
+
+DuckDB is opened read-only per request, so concurrent reads are fine, but do not
+put multiple workers behind a load balancer while a re-ingest may swap the
+snapshot file underneath them.
+
 **The model is optional.** With no environment variables set, every structured
 case still runs and every request is still answered — by the rule-based
 interpreter, which is a complete first-class path, not a stub. To enable the
@@ -199,7 +275,7 @@ Module map:
 | `search.py` | Hard filtering, deterministic ranking, justification |
 | `assistant.py` | Four outcomes and reply rendering, with guards |
 | `conversation.py` | The continuation rule, the two bounded stores, no text retained |
-| `api.py` / `ui.py` | JSON endpoints and the single page |
+| `api.py` / `ui.py` | JSON endpoints, the single page, and the route that serves the vendored script |
 | `evaluate.py` | The recorded evaluation harness |
 | `conversation_eval.py` | The conversation harness and the single-turn replay digest |
 | `records.py` / `metrics.py` | One request record; five measures derived on read, never counted |
@@ -430,6 +506,8 @@ a reply — those are deterministic code paths with their own tests.
 | The catalog's age is visible | `./run.sh metrics` (prints `catalog age:`), `GET /api/health`, and the `snapshot.freshness` block in every API payload |
 | The crawler is faithful | `./run.sh diff`, `tests/test_extract.py`, `docs/ingestion.md` |
 | The documented API is real | `tests/test_api.py::TestDocumentedExamples` executes every example |
+| The page works with no internet | `tests/test_ui_offline.py` — no external host in the markup, and `GET /static/htmx.min.js` serves the vendored build |
+| The vendored script is the CDN artefact, not a lookalike | SHA-384 in `src/paperlane/static/VENDOR.md` equals the SRI value the page carried before vendoring |
 | No credential is committed | `.gitignore`; `./run.sh test` includes a scan |
 | No credential reaches a record | `tests/test_records.py::TestNoCredentialInRecords` sets a sentinel key, makes a model call, and scans the log |
 | The metrics are derived, not counted | `tests/test_metrics.py::TestDerivedOnRead` deletes a record and asserts the metric moves |
@@ -438,7 +516,7 @@ a reply — those are deterministic code paths with their own tests.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The three conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1141) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1150) |
 
 ---
 

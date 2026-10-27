@@ -255,7 +255,7 @@ What shipped instead: `request_chars` (a length) and `request_digest` (16 hex ch
 
 ## Part 2b — Defects found in the shipped code
 
-Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. All three are in conversation memory. Registered before being fixed, per the rule at the end of this file. **All three are now FIXED** — A13 required answering a question D3 left open, which is recorded in its entry.
+Found after `add-conversation-memory` shipped, by probing the running service rather than by reading the module. A12–A14 are in conversation memory. A15 is separate: it was found later, while answering "how is the UI deployed?", and it is in the page rather than in the assistant. Registered before being fixed, per the rule at the end of this file — except A15, which says so in its own entry. **All four are now FIXED** — A13 required answering a question D3 left open, which is recorded in its entry.
 
 ### A12 — A first turn that states only a quantity or a budget cannot be continued
 
@@ -329,6 +329,52 @@ counter past the cap, its strict monotonicity, and its survival across a restart
 `tests/test_conversation_api.py::TestRecords::test_the_recorded_turn_number_keeps_advancing`
 pins the number that reaches the record. Verified against the running service:
 25 turns now write `1…25` where they wrote `… 20, 21, 21, 21`.
+
+### A15 — The page loaded its only script from a CDN, so an offline host got a silently dead form
+
+```html
+<script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1…"></script>
+<form hx-post="/ask" hx-target="#result" hx-swap="innerHTML">   <!-- no method, no action -->
+```
+
+On a host with no route to `unpkg.com` the script never loads. A `<form>` with
+no `method` and no `action` defaults to `GET` of the current URL, so pressing
+**Ask** reloads the page and clears the input. There is no error, no console
+message a user would act on, and no server request to notice in a log.
+
+**Why it survived the whole build.** The interesting part is not the CDN, it is
+that nothing could see the failure. The suite, the evaluation and the CLI are
+all deliberately offline — they run under `unshare -rn` — but no test loaded the
+page's assets, so "offline" was verified for the assistant and never for the one
+interactive surface. Every `curl`-based check kept passing, because the JSON API
+does not need htmx. The failure was only reachable by asking a different
+question: *how would someone deploy this?* The README answered that in one line
+(`./run.sh serve`) and mentioned neither `--host`, binding, a proxy, nor the
+script's origin.
+
+**Fix.** htmx 1.9.12 is vendored at `src/paperlane/static/htmx.min.js` and served
+same-origin by `GET /static/htmx.min.js`; the page references that path. The
+vendored bytes are provably the ones the CDN was serving: their SHA-384
+(`ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2`) is the same
+value the page carried as its Subresource Integrity hash, and
+`src/paperlane/static/VENDOR.md` records it with the licence. A missing asset
+returns 500 with a remedy rather than an empty 200 that leaves the browser with a
+script doing nothing.
+
+**Guard:** `tests/test_ui_offline.py`, 9 tests — no external host in the markup,
+the same-origin script tag, the form is still htmx-only (the premise of the whole
+argument), the route returns the exact bytes with a JavaScript content type, the
+cache header is not `immutable`, the route is absent from the OpenAPI paths, the
+page's `src` resolves to the same hash, and `VENDOR.md` describes the shipped
+file. **Falsification:** restoring the CDN tag fails three of them. Packaging was
+checked too — `uv build` puts `static/htmx.min.js` in the wheel, and an
+installed-wheel copy serves all 48,101 bytes.
+
+**Status: FIXED.** Registered retroactively: found and fixed in one pass while
+writing the deployment section, so unlike A12–A14 it was not written down before
+the change. Recorded anyway, because an unregistered defect is indistinguishable
+from one that never existed, and because the *reason it was invisible* is the
+transferable part.
 
 ---
 

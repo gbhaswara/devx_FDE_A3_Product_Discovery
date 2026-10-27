@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1141 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 11/11 over 24 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1150 tests pass** (online 4 skip, offline 7 skip), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 11/11 over 24 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,53 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Fixed — 2026-10-27 · the page no longer depends on a CDN, and its deployment is documented
+
+Found while answering a question the README could not: *how do you serve the
+UI?* It could not answer because there was no deployment section at all —
+`--host`, `0.0.0.0`, reverse proxies and TLS appeared nowhere — and reading
+`ui.py` to write one turned up a worse problem than a missing paragraph.
+
+**The defect.** The page's only script came from `unpkg.com`, and the form is
+htmx-only: `hx-post` with no `method` and no `action`. With no internet the script
+never loads, the browser falls back to a `GET` of the current URL, and pressing
+**Ask** reloads the page and discards the input. No error, no request, nothing in
+a log. Every `curl` check kept passing, because the JSON API never needed htmx.
+
+The uncomfortable part is *why* the test suite could not see it. Offline is a
+property this project verifies obsessively — `unshare -rn`, no model, no
+provider — but it was verified for the assistant and never for the page. "Runs
+offline" had been checked everywhere except the one surface a human touches.
+It is registered as **A15** in `BUG.md` Part 2b.
+
+**The fix.** htmx 1.9.12 is vendored at `src/paperlane/static/htmx.min.js` and
+served same-origin from `GET /static/htmx.min.js`. The bytes are provably the
+ones the CDN was serving: their SHA-384 is the same value the page carried as its
+Subresource Integrity hash, and `static/VENDOR.md` records it with the licence
+and the reason. A missing asset returns 500 with a remedy, not an empty 200.
+
+- `tests/test_ui_offline.py` — 9 tests. No external host in the markup, the
+  same-origin script tag, *the form is still htmx-only* (the premise the whole
+  argument rests on), the exact bytes and content type, a cache header that is
+  not `immutable`, absence from the OpenAPI paths, hash equality end to end, and
+  `VENDOR.md` still describing the shipped file. Reverting to the CDN tag fails
+  three of them — verified, then restored.
+- Wheel packaging checked, not assumed: `uv build` includes `static/htmx.min.js`,
+  and an installed-wheel copy serves all 48,101 bytes.
+- `README.md` gains **Deploying the UI**: the routes, `--host`/`--port`/`--db`,
+  the offline guarantee and what used to break, an nginx example with TLS and
+  basic auth because the app has neither, what the server prints at startup, and
+  why it is one process rather than a worker pool.
+- The suite is 1150 tests, up from 1141. Every recorded count was updated
+  (`TEST.md`, `CLAUDE.md`, `README.md`, the status line above) — a stale count is
+  the same class of defect as a stale hash.
+
+**What this is not.** Not a no-JS fallback. The page still needs JavaScript to
+submit; making `POST /ask` return a full document to a non-htmx caller would
+change the response contract and the tests around it, and the brief asks for one
+simple interface, not a progressive-enhancement exercise. Stated as a limitation
+rather than left implied.
 
 ### Added — 2026-10-27 · `add-gap-closure` (acting on the gap analysis)
 

@@ -29,7 +29,7 @@ from typing import Any, Sequence
 
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
 from . import catalog, conversation, embeddings, records
@@ -939,6 +939,37 @@ def create_app(
         return derive(writer=writer(), db_path=db_path).as_dict()
 
     # -- the single page ------------------------------------------------
+
+    @app.get("/static/htmx.min.js", include_in_schema=False)
+    def htmx_asset():
+        """The vendored htmx build, served same-origin.
+
+        The page is htmx-only — the form has ``hx-post`` and no ``method`` or
+        ``action`` — so a failed script load does not degrade to a working form,
+        it degrades to a page reload that quietly discards what was typed. That
+        is why the asset is shipped in the package rather than fetched from a
+        CDN, and why it is served from the same origin as the fragment it
+        targets: no CORS, no third-party availability, works air-gapped.
+
+        A missing file is a packaging fault rather than a client error, so it
+        fails loudly here instead of returning an empty 200 that leaves the
+        browser with a script doing nothing.
+        """
+        from .ui import HTMX_ASSET
+
+        if not HTMX_ASSET.is_file():
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "the htmx asset is missing from the installed package; "
+                    "see src/paperlane/static/VENDOR.md"
+                ),
+            )
+        return Response(
+            content=HTMX_ASSET.read_bytes(),
+            media_type="application/javascript",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
     @app.get("/", response_class=HTMLResponse)
     def index():

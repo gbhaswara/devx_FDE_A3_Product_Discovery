@@ -11,13 +11,26 @@ blocked item, and only a quote is styled as a result.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+#: Where the vendored htmx build lives. Served by ``GET /static/htmx.min.js``.
+#:
+#: It used to be a ``<script src="https://unpkg.com/...">``. That made the one
+#: interactive surface the only part of the system needing internet access, and
+#: it failed *silently*: the form carries ``hx-post`` and no ``method``/``action``,
+#: so with no htmx loaded the browser issues a plain GET of the current URL and
+#: the page merely reloads. The API kept answering, so every curl-based check
+#: still passed while a human saw a dead page. Same bytes, same hash, no network.
+#: Provenance and licence: ``static/VENDOR.md``.
+HTMX_ASSET = Path(__file__).with_name("static") / "htmx.min.js"
+
 PAGE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PaperLane sales assistant</title>
-<script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
+<script src="/static/htmx.min.js"></script>
 <style>
   :root {
     --ink: #1a1a1a; --muted: #6b6b6b; --line: #dcdcdc;

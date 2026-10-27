@@ -103,6 +103,10 @@ Whole-path tests through the API, no network, no model.
 - `/health` names the snapshot and counts
 - `/diff` with no previous snapshot reports that rather than failing
 - A failed ingest leaves the serving catalog readable and unchanged
+- The page depends on no external host: the script it names is served from this
+  origin, and the bytes match the vendored build's recorded SHA-384
+  (`test_ui_offline.py` — it also asserts the form is still htmx-only, which is
+  what makes a missing script a silent no-op rather than a server round-trip)
 
 ### Layer 4 — Refresh verification
 
@@ -313,10 +317,11 @@ carrying a total is checked structurally instead.
 | `test_single_turn_unchanged.py` | 3 | 8 |
 | `test_snapshot_cli.py` | 5 | 3 |
 | `test_snapshot_path.py` | 26 | 7 |
-| **Total** | **1141** | |
+| `test_ui_offline.py` | 9 | 3 |
+| **Total** | **1150** | |
 
-Online: 1141 collected, 4 skip (provider- and loopback-dependent). Offline
-(`unshare -rn`): 1141 collected, 7 skip — the same four plus the three loopback
+Online: 1150 collected, 4 skip (provider- and loopback-dependent). Offline
+(`unshare -rn`): 1150 collected, 7 skip — the same four plus the three loopback
 tests that legitimately cannot run without a network interface.
 
 ## What is tested where
@@ -370,7 +375,7 @@ tests that legitimately cannot run without a network interface.
 ## Running the tests
 
 ```
-./run.sh test             # 1141 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1150 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design
 ./run.sh eval --cases eval/conversation-cases.json   # 11 conversations, 24 turns
