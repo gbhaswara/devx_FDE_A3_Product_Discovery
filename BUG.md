@@ -635,7 +635,7 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A24 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A22 FIXED, A23–A25 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
 from a compliance audit against `00_START_HERE_All_Briefs.md`; A23 came from the
@@ -856,6 +856,37 @@ membership.
 **Note.** The fix must stay exact: compare `pack_price * sheets_per_stated_unit`
 against `budget * pack_sheets` so both sides are integers, rather than dividing
 money and rounding.
+
+### A25 — The model can rewrite the sentence that states the budget assumption
+
+```
+model returns {"budget_basis": "per 500 sheets, excluding VAT"}
+  -> reply: "104.64 at 20 (within 250.00, per 500 sheets, excluding VAT)"
+```
+
+`merge_model_and_rules` copies `budget_basis` from the model with no check —
+`merged = replace(merged, budget_basis=str(basis))` — and that string is the one
+PR7 exists to publish. The rule path can only ever produce four values
+(`per pack|ream|sheet, before|including VAT`, from `interpret._budget_basis`);
+the model path can produce anything, and it reaches the customer verbatim.
+
+**Why it matters.** This is not cosmetic. PR7's requirement is *"say which
+assumption you used"*, and the model can make the reply say an assumption that
+is not the one applied: here the prose asserts *excluding VAT* while
+`pricing._basis_includes_vat` compares ex-VAT — the two agree by coincidence, not
+by construction. Reword it to `"including VAT"` and the text and the arithmetic
+disagree. It is also the only model-supplied string that reaches the reply at
+all, which is exactly the boundary `docs/assistant.md` draws and the reason every
+other model value is re-resolved through an alias table first.
+
+**Fix direction.** Treat it like the size boundary three lines above: accept a
+model basis only if it is one of the canonical forms, otherwise keep the basis
+the rules parsed from the same text and record a note. Two lines, no new
+vocabulary.
+
+**Falsification.** `TestModelMerge::test_a_model_basis_outside_the_canonical_set_is_ignored`
+and `test_a_canonical_model_basis_is_kept`, plus
+`TestReplyContract::test_the_stated_basis_is_always_one_the_engine_can_apply`.
 
 ---
 
