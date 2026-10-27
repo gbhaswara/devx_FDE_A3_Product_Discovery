@@ -635,7 +635,7 @@ local-time write fail on the next ingest rather than on the next demo.
 
 ---
 
-## Part 2c — Gaps found by the brief audit · A20–A23 FIXED, A24–A28 OPEN, A29 FIXED, A30 OPEN
+## Part 2c — Gaps found by the brief audit · A20–A23 FIXED, A24–A25 OPEN, A26 FIXED, A27–A28 OPEN, A29 FIXED, A30 OPEN
 
 Requirements the brief states that the shipped code did not meet. A20–A22 came
 from a compliance audit against `00_START_HERE_All_Briefs.md`; A23–A30 came from
@@ -969,7 +969,32 @@ would change the response shape and lose which line was which.
 **Falsification.** `TestMultiLine::test_a_sku_split_across_lines_reaches_its_tier`
 and `test_splitting_a_sku_never_costs_more_than_one_line` in
 `tests/test_api.py`, plus `TestTiersArePerSku::test_a_split_line_is_priced_on_the_total_quantity`
-in `tests/test_pricing.py`: the first fails on 4,042.00 against 3,784.00 today.
+in `tests/test_pricing.py`. The endpoint tests compare the split order against
+the single-line order rather than transcribing a total, so the expectation is
+recomputed from the same source both times. All three failed first:
+
+```
+FAILED TestMultiLine::test_a_sku_split_across_lines_reaches_its_tier
+E  assert '4,042.00' == '3,784.00'
+FAILED TestMultiLine::test_splitting_a_sku_never_costs_more_than_one_line
+E  assert '4,324.94' == '4,048.88'
+FAILED TestTiersArePerSku::test_a_split_line_is_priced_on_the_total_quantity
+E  assert Money(satang=404200) == Money(satang=378400)
+```
+
+**Fix.** `quote` sums the quantity per SKU first and passes it to
+`price_line(request, tier_quantity)`, which selects the tier from that number
+while still reporting and charging the line's own quantity. The output keeps one
+line per requested line — merging them was rejected because it would change the
+response shape and lose which line was which. `price_line`'s new argument is
+optional, so a single-line caller is unchanged.
+
+**Verification.** `./run.sh test` 1221 collected / 1218 passed + 3 skipped;
+`./run.sh eval` 24/24; `verify-refresh --keep` 12/12 (12 injected changes);
+`./run.sh eval --catalog v2` 21/21. Single-line quotes are untouched: the split
+order now matches the single-line order exactly, in both subtotal and total.
+
+**Status: FIXED.**
 
 ### A27 — The free-delivery threshold is named only to the customer who has already met it
 
