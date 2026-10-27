@@ -12,9 +12,55 @@ not when the code is written.
 
 ---
 
+## How these two items map to the brief
+
+The A3 brief is the customer's agreed specification. Neither item adds a feature,
+changes a pricing rule, or touches the assistant's behaviour. Both are small
+enough to sit inside the brief's six-hour scope, and neither may violate a
+constraint to close.
+
+| Item | Brief requirement it serves | Scoring area | Constraint it must respect |
+|---|---|---|---|
+| **F-1** (A16) | Must-have 1 — normalised product records; A3 “Data” — complete, correctly typed records | Data · technical correctness · honesty | HTTP only · ≤2 req/s · deterministic code · provenance kept |
+| **F-2** (`--catalog`) | Must-have 7 — test set and results; submission item 3 — evaluation results including failures | AI and data evaluation · communication · honesty | Default command unchanged · no new dependency · no pricing or model change |
+
+**What is not claimed.** F-1 is a display-only field. It is not one of the fields
+the brief names — size, weight, colour, finish, sides, colour mode, pack size,
+prices, stock — so it is a correctness fix for a published record, not a
+must-have gap. F-2 is not a customer-facing requirement at all; it makes an
+existing evaluation claim reproducible with the documented command. If time were
+short, F-1 would still be the one to fix, because it is a wrong value in the
+data; F-2 is evidence quality.
+
+**Constraints that apply to both fixes.**
+
+- The catalog site is served over HTTP. Never `file://`, never a direct file read.
+- Crawl at **1 req/s**. The brief permits up to 2; `robots.txt` states
+  `Crawl-delay: 1`, and the lower rate is the one the rest of the project uses.
+- No API key is committed; credentials stay in environment variables. Nothing in
+  either fix reads one.
+- Pricing stays deterministic and untouched. No price, total or tier may move
+  because of either fix.
+- The data is used only for this assignment.
+- The demo path stays runnable: after F-1 a fresh site re-ingests without code
+  changes, and after F-2 the evaluation can name the catalog it scored. Neither
+  fix adds a required step to the README's five-command quickstart.
+- Failures stay in the results. Neither fix may turn a documented failure into a
+  pass by changing the expectation.
+
+---
+
 ## F-1 — A16: `unit_word` still holds the volume-pricing note on four SKUs
 
 **Type:** shipped-code defect · **Severity:** low · **Status:** OPEN
+
+**Brief alignment.** Must-have 1 asks for a database of *normalised* product
+records, and the brief's “what we look for” asks for *complete, correctly typed
+records*. This field is correctly typed — it is a string — but its value is a
+sentence about pricing, not a unit, so it is not normalised. It is not a missing
+field: size, weight, colour, finish, sides, colour mode, pack size, prices and
+stock are all present and correct. This is the one wrong value in a published
+record, which is why it is worth fixing rather than only documenting.
 
 `/api/products` returns `"No volume pricing for this item."` as the `unit_word`
 for four products. Replies and the catalog column are unaffected because both use
@@ -62,13 +108,17 @@ at read time.
 - a test on the four-SKU shape fails against the current branch order and passes
   after the change (the fix is seen to fail first);
 - the re-ingested snapshot still has 72 products, 105 tiers, 2 out of stock, and
-  0 review items — i.e. only `unit_word` moved;
+  0 review items — i.e. only `unit_word` and the `crawled_at` provenance
+  timestamps moved. A timestamp change is expected and required by must-have 1;
+  any other field moving is a defect;
 - `unshare -rn .venv/bin/python -m pytest` passes;
-- `BUG.md` A16 moves to **FIXED** with the falsification note, and the change gets
-  its own `CHANGELOG.md` entry.
+- `BUG.md` A16 moves to **FIXED** with the falsification note, the item is
+  removed from this file, and the change gets its own `CHANGELOG.md` entry.
 
-**Note.** The catalog site must be served over HTTP at 1 req/s for the re-ingest.
-Do not crawl `file://`, and do not hand-edit the DuckDB file.
+**Note.** The catalog site must be served over HTTP at 1 req/s for the re-ingest
+(the brief permits 2; `robots.txt` says 1). Do not crawl `file://`, and do not
+hand-edit the DuckDB file — the only way the brief's “re-ingest without code
+changes” story stays true is if the snapshot is produced by the crawler.
 
 ---
 
@@ -77,6 +127,21 @@ Do not crawl `file://`, and do not hand-edit the DuckDB file.
 **Type:** reproducibility gap (CLI + docs), not a shipped-behaviour defect ·
 **Severity:** medium for the submission, because the claim is scored ·
 **Status:** OPEN
+
+**Brief alignment.** Must-have 7 asks for a test set *and your results*, and
+submission item 3 asks for the evaluation results *including cases where the
+system fails*. The brief also says it cares about *evidence that the system works,
+and honesty about where it does not*. A result that is true but cannot be
+reproduced with the documented command is weak evidence, and the 21/21 figure sits
+in the README where a reviewer will try it. The fix adds no product behaviour: it
+makes the evaluation name the catalog it already knows it scored.
+
+Must-have 8 — the refresh path — is already met by `./run.sh verify-refresh`; this
+fix does not implement refresh. It makes the two-catalog evaluation legible, which
+is part of the demo-round story rather than a new capability. If scope were
+tighter, the zero-code alternative would be to document the Python invocation
+beside the claim; the flag is preferred because the run should be able to say
+which catalog it scored without a reader writing Python.
 
 `run_eval` takes `catalog_name`, and `BUG.md`/`README.md` claim **21/21 on v2**.
 The CLI never passes the argument, so it always defaults to `v1`:
@@ -119,10 +184,11 @@ module), `README.md`, `TEST.md`, `eval/results.md`.
 
 ## Order
 
-F-2 first: it is small, it touches no data, and it makes the existing evidence
-reproducible before the snapshot changes. F-1 second: it is the only actual
-defect, and it rewrites `data/catalog.duckdb`, so it wants a quiet tree and its
-own commit.
+The order is practical, not a priority ranking: **F-2 first** because it is small,
+touches no data, and makes the existing evidence reproducible before the snapshot
+changes; **F-1 second** because it rewrites `data/catalog.duckdb` and wants a
+quiet tree. If only one could be done, it would be **F-1** — a wrong value in the
+data outranks a missing convenience flag.
 
 Each item gets its own commit and its own verification run. Do not batch them.
 
