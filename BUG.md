@@ -4,7 +4,7 @@ This file began as the **register of failure modes we already knew about** — t
 
 Its purpose is the demo and interview: the brief scores *"honesty about where it does not work"*, and the live-engineering round is a debugging exercise. This is where the known-unknowns are written down before they are found the hard way.
 
-Status values: **OPEN** — not yet addressed · **MITIGATED** — design prevents it · **VERIFIED** — checked against the real site · **FIXED** — found and corrected during analysis.
+Status values: **OPEN** — not yet addressed · **MITIGATED** — design prevents it · **VERIFIED** — checked against the real site · **CLOSED** — the gap or the unexercised path has been closed · **FIXED** — found and corrected, with a guard in the suite.
 
 ---
 
@@ -285,7 +285,7 @@ place. Cases 9 and 10 were added to `eval/conversation-cases.json` and **proven
 falsifiable**: restoring the old predicate makes exactly those two fail and the
 run exit 1. `tests/test_conversation.py::TestContinuationFromACommercialOnlyTurn`,
 `tests/test_conversation_api.py::TestCommercialOnlyFirstTurn` and
-`tests/test_ask_cli.py::TestConversations::test_a_commercial_only_first_turn_is_continued`
+`tests/test_ask_cli.py::TestConversation::test_a_commercial_only_first_turn_is_continued`
 pin it at the unit, HTTP and CLI layers.
 
 ### A13 — One unparseable turn permanently forgets the conversation
