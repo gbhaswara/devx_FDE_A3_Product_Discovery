@@ -368,6 +368,17 @@ def _cheaper_at_a_larger_quantity(
     return nxt.min_qty, bigger
 
 
+def _delivery_shortfall(order: OrderQuote) -> Money | None:
+    """How much more would clear the free-delivery threshold, if it is charged.
+
+    ``None`` when delivery is already free. The figure is one subtraction of two
+    values ``pricing`` produced — never derived in prose (BUG.md A27).
+    """
+    if order.delivery.satang == 0:
+        return None
+    return FREE_DELIVERY_THRESHOLD - order.subtotal
+
+
 def _render_breakdown(order: OrderQuote) -> str:
     """The full cost breakdown, with the discount identified per line."""
     parts = ["Breakdown"]
@@ -377,12 +388,19 @@ def _render_breakdown(order: OrderQuote) -> str:
             f" = {line.line_total.format()}  ({line.discount_source})"
         )
     parts.append(f"  Subtotal      {order.subtotal.format()}")
-    if order.delivery.satang == 0:
+    shortfall = _delivery_shortfall(order)
+    if shortfall is None:
         parts.append(
             f"  Delivery      0.00  (free from {FREE_DELIVERY_THRESHOLD.format()})"
         )
     else:
-        parts.append(f"  Delivery      {order.delivery.format()}")
+        # The threshold is stated to the customer it costs 150.00, not only to
+        # the one it costs nothing: a forwarded quote has no page banner on it.
+        parts.append(
+            f"  Delivery      {order.delivery.format()}  "
+            f"(free from {FREE_DELIVERY_THRESHOLD.format()} — "
+            f"{shortfall.format()} more)"
+        )
     parts.append(f"  VAT {order.vat_rate}%        {order.vat.format()}")
     parts.append(f"  Total         {order.total.format()}")
     parts.append("  All prices exclude VAT; VAT is charged on goods plus delivery.")
@@ -800,6 +818,13 @@ def _quote_reply(
         allowed.add(bigger.subtotal.format())
         allowed.add(bigger.vat.format())
         allowed.add((order.total - bigger.total).format())
+    shortfall = _delivery_shortfall(order)
+    if shortfall is not None:
+        # Both the threshold and the shortfall appear in the charged branch of
+        # the breakdown; the shortfall is one subtraction of two computed values
+        # (BUG.md A27).
+        allowed.add(FREE_DELIVERY_THRESHOLD.format())
+        allowed.add(shortfall.format())
     if criteria.budget_per_unit is not None:
         allowed.add(criteria.budget_per_unit.format())
         check = check_budget(

@@ -56,8 +56,15 @@ from paperlane.interpret import interpret_rules, validate
 #: case through POST /api/quote/lines, which still returns 4,666.91. Only the
 #: single-item assistant path changed, and it changed to stop answering half a
 #: request. Every other case is unchanged.
+#:
+#: change (BUG.md A27): the charged-delivery branch of the breakdown now states
+#: the free-delivery threshold and the shortfall, so the fifteen cases whose
+#: order pays delivery gained one line each: 2, 4, 6, 7, 8, 9, 10, 11, 17, 18,
+#: 20, 21, 22, 25, 26. Nothing else about those replies changed — the delivery
+#: charge, the VAT and the total are the same figures — and no other case is
+#: affected, because an order that clears the threshold already named it.
 PRE_CHANGE_DIGEST = (
-    "14371e4288fee707a06e974a58561c25c78e0597ff124a7759d0876026c1c79f"
+    "454b65d91ce9532a89ce868c306e0dec43077d945a9cc4549a6736b745971027"
 )
 
 

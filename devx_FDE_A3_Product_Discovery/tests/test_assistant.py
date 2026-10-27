@@ -402,6 +402,32 @@ class TestReplyContract:
         assert reply.outcome == OUTCOME_QUOTED
         assert "would come to" not in reply.text
 
+    def test_a_charged_delivery_states_the_threshold(self):
+        # BUG.md A27. The threshold was named only in the branch where delivery
+        # was already free — published to the customer it costs nothing and
+        # withheld from the one paying 150.00.
+        reply = ask("A5 paper, 3 reams")
+        assert reply.outcome == OUTCOME_QUOTED
+        assert reply.quote.delivery.satang > 0
+        assert "free from 3,000.00" in reply.text
+
+    def test_the_free_delivery_shortfall_is_exact(self):
+        # Recomputed from the quote, not from the reply: what is asserted is the
+        # relation between the two, so a wrong constant cannot be transcribed
+        # into the test.
+        from paperlane.pricing import FREE_DELIVERY_THRESHOLD
+
+        reply = ask("A5 paper, 3 reams")
+        shortfall = FREE_DELIVERY_THRESHOLD - reply.quote.subtotal
+        assert shortfall.satang > 0
+        assert f"{shortfall.format()} more" in reply.text
+
+    def test_a_free_delivery_order_does_not_state_a_shortfall(self):
+        # The mirror guard: nothing to add up to when delivery is already free.
+        reply = ask("A4 copy paper 80 gsm, 50 reams")
+        assert reply.quote.delivery.satang == 0
+        assert "more)" not in reply.text
+
     def test_list_price_case_identified_as_list(self):
         reply = ask("A5 paper")
         assert "list price" in reply.text

@@ -153,7 +153,23 @@ names what was dropped.
 * the budget verdict, when a budget was stated
 * up to three other options that also match
 * a full breakdown: lines, subtotal, delivery, VAT, total
+* the free-delivery threshold **and the shortfall**, when delivery is charged
 * the next volume tier, when buying it would cost **less** (see below)
+
+### Delivery is never a surprise
+
+The threshold is named in both branches. Naming it only when delivery is already
+free publishes the rule to the customer it costs nothing and withholds it from
+the one paying 150.00 — and a forwarded quote carries no page banner (`BUG.md`
+A27):
+
+```
+  Delivery      150.00  (free from 3,000.00 — 2,100.00 more)
+```
+
+The shortfall is one subtraction of two figures `pricing` produced, and it is
+added to the figures guard's allowed set. An order that clears the threshold
+says nothing about being short, because nothing is.
 
 ### A larger order that costs less is named
 
