@@ -1339,6 +1339,138 @@ past its last useful tier, so none of them gains the sentence.
 
 ---
 
+## Part 2d — Gaps found by the demo-round refresh question · A31–A32 OPEN
+
+The demo round supplies an **updated site** and asks for a re-ingest with **no code
+change**. That turns every assumption in the parser into a contract with a site
+nobody has seen yet, so the refresh path was probed directly rather than reasoned
+about: `/tmp/opencode/struct-probe.py` and `/tmp/opencode/struct-probe2.py` mutate
+a real variant page and run it through `extract`, then the whole path was exercised
+end to end with `./run.sh verify-refresh --keep` and `./run.sh eval --catalog v2`.
+
+Content changes are already proven: prices, stock, a withdrawn SKU and a new row
+all survive (`verify-refresh --keep` 12/12; `eval --catalog v2` 21/21). Two
+structural changes are not covered. Both are registered here, **unfixed**, because
+each is a design decision rather than a typo — see "Reporting a new issue": a bug
+found during the demo round becomes a test before it becomes a fix.
+
+| Mutation | SKUs | Review rows | Outcome |
+|---|---|---|---|
+| baseline | 6 | 0 | correct |
+| price / stock / new row | 6 | 0 | absorbed |
+| column appended | 6 | 0 | absorbed |
+| column inserted | 6 | 0 | absorbed |
+| columns reordered | **0** | **6** | loud, but the run still swaps (A32) |
+| header reworded | **0** | **1** | loud, but the run still swaps (A32) |
+| `table` → `dl` markup | 0 | 2 | loud, but the run still swaps (A32) |
+| availability wording changed | 6 | **0** | **silent — every row becomes in stock (A31)** |
+
+### A31 — Unknown availability wording is read as "in stock"
+
+```
+availability cell: "Unavailable — back 12 December 2026"
+  -> stock_status = "in_stock", back_in_stock_date = None
+     0 review rows, 6 SKUs, no signal anywhere
+```
+
+**Root cause.** Two places default to availability rather than prove it.
+`extract._stock_state` (line 211) returns `("in_stock", None)` when neither the
+`discontinued` nor the `stock-out` pattern matches, and the variant-table branch
+(line 561) seeds every row as `"in_stock"` before testing the cell for the two
+phrases it knows. So the parser does not read availability and fall back — it
+assumes availability and only ever tears the assumption down. Any wording it has
+not seen (`Unavailable`, `Sold out`, `On backorder`, `Currently unavailable`,
+a date with no "expected back") leaves the assumption standing.
+
+**Why it matters.** This is the one mutation in the table that fails *quietly*.
+Every other structural change empties the catalog or fills the review set, and
+both are visible in the Part 4 metrics. Here the run reports six healthy SKUs, new
+low prices, zero review items, and the assistant will quote and recommend items
+the site says cannot be bought. `T3` in Part 1 is the trap this reopens: an
+out-of-stock item quoted as available is the defect the whole availability path
+exists to prevent, and it is currently reachable by a copy edit.
+
+**Trigger.** Any change to the availability cell that drops the exact strings
+`out of stock` / `discontinued`, or a restock date phrased other than
+`expected back <D Month YYYY>` (`_RESTOCK_RE`, line 95). A redesign that moves
+availability from a table cell into a badge, an icon plus `title`, or a class name
+without text hits the same path.
+
+**Fix direction.** Invert the default where a value is read: match a closed set of
+*known-available* wordings (`in stock`, `available`, empty cell on a row whose
+siblings are known) to `in_stock`; anything else becomes a review row carrying the
+raw cell text, not an `in_stock` guess. Keep `out_of_stock` and `discontinued`
+patterns as they are so no existing behaviour changes. The variant-table branch
+already has the cell in hand, so the change is a lookup table plus one else-branch.
+Second, unchanged behaviour must stay unchanged: the current six-row fixture has
+all rows `In stock`, which is in the set, so the fixture asserts the new path
+rather than being rewritten around it.
+
+**Falsification.** A test in `TestVariantAvailability` (`tests/test_extract.py`)
+that rewrites one row's availability to `Unavailable — back 12 December 2026` and
+asserts the row is **not** `in_stock` and that a review row is produced naming the
+SKU. Run against today's code it must fail on `stock_status == "in_stock"`, which
+is the probe's result. A second test asserts the unchanged fixture still yields
+six `in_stock` rows and zero availability reviews, so the fix cannot be "flag
+everything".
+
+**Status: OPEN.** Not implemented; the demo round is where this would bite, and
+choosing the wording set is a decision to take with the customer, not silently.
+
+### A32 — A refresh that parses almost nothing still replaces the serving catalog
+
+```
+ingest.py:301-317
+  staged = catalog.build_snapshot(products=result.products, ...)
+  catalog.swap_into_place(staged, target_db)   # no count check
+  return 0
+```
+
+`run_ingest` builds the staging file and calls `catalog.swap_into_place`
+unconditionally. The only refusal paths are a crawl error (returns 2) and an
+exception out of `build_snapshot`. There is no check on what the crawl actually
+produced. The column-reorder and header-rename mutations above are both valid
+pages returning **zero products** and a handful of review rows; that staging file
+becomes the one served, with exit status 0. (Registered from the parser-level
+probe, not from a full end-to-end collapse run: the mutation is the measured part,
+the swap is unconditional by inspection.)
+
+**Why it matters.** The review backlog is designed to survive a bad page (A19,
+`carry_reviews_from`) but nothing survives a bad *catalog*. After the swap:
+`/search` returns nothing, `/quote` refuses everything, `/diff` reports a
+wholesale withdrawal, and the assistant answers "I could not find anything close"
+to every request — with a clean exit code and six review rows that read like six
+flagged items rather than a dead site. Recovery needs the previous `.duckdb`,
+which the next run overwrites. The failure is loud in the metrics (Part 4, "catalog
+shrank") and silent in the automation: a cron-driven refresh would take the
+service down and keep it there.
+
+**Trigger.** A markup or label change the parser does not recognise, on enough
+pages that few or no SKUs extract; a site moved behind an interstitial or a 200
+"maintenance" page; a base URL typo that still returns HTML.
+
+**Fix direction.** A pre-swap sanity gate between `build_snapshot` and
+`swap_into_place`: compare the staged SKU count with the serving snapshot and
+refuse the swap (exit non-zero, keep the old catalog, print both counts and the
+review count) when the new count is zero, or below half the previous count, unless
+the caller passes an explicit `--accept-shrink` flag for a genuine catalog cut.
+Both numbers are already available — `catalog.previous_path` / `load_products`
+for the old side, `result.products` for the new. A first ingest has no previous
+snapshot, so the gate must not block it; it only guards a replacement. The staged
+file is written and left on disk, so the failed run is inspectable rather than
+lost.
+
+**Falsification.** In `tests/test_ingest.py`, build a snapshot with N SKUs, run an
+ingest over a stub that returns one page with no recognisable variant table, and
+assert (a) exit code is non-zero, (b) the serving snapshot still holds N SKUs and
+the original prices, (c) the staging file exists, (d) `--accept-shrink` lets the
+same run through. Today (b) fails: the serving catalog is empty. A fifth assertion
+covers the first-ever ingest with no previous snapshot, which must still succeed.
+
+**Status: OPEN.** Registered before the fix, per the rule at the end of this file.
+
+---
+
 ## Part 3 — Accepted risks in the design
 
 Carried deliberately. Each is stated in the README as a known limitation.
@@ -1364,8 +1496,9 @@ These are the conditions that indicate the system is degrading rather than faili
 |---|---|---|
 | Rising rule-based fallback share | model degraded, or credentials expired | model reachability in `/health` |
 | Rising zero-result share | parsing defect, or a genuine catalog gap | run a known-good request through `/quote` |
-| Review set grew after a refresh | the site changed markup shape | inspect the recorded excerpt for the failing page |
-| Catalog shrank between snapshots | a parser silently stopped matching | `/diff` — withdrawn items without a review entry. This path is now exercised: `./run.sh verify-refresh` withdraws `PL-CP-A4-75` and the diff reports exactly one withdrawal |
+| Review set grew after a refresh | the site changed markup shape | inspect the recorded excerpt for the failing page. If the SKU count fell at the same time, the run should have been refused — A32 (open) |
+| Every item reads as in stock and no review rows appeared after a refresh | availability wording the parser does not know | A31 (open) — compare each row's availability cell with the stored `stock_status` |
+| Catalog shrank between snapshots | a parser silently stopped matching | `/diff` — withdrawn items without a review entry. This path is now exercised: `./run.sh verify-refresh` withdraws `PL-CP-A4-75` and the diff reports exactly one withdrawal. A collapse to zero is A32 (open): the swap is not yet gated on SKU count |
 | p95 latency climbing | model latency, not pricing (pricing is local) | per-stage timings in the request record |
 | Stated total ≠ computed total | reply prose is paraphrasing a figure instead of inserting it | this should be structurally impossible; any occurrence is a code defect |
 | A quote includes an item that does not exist | the no-invented-products assertion failed to fire | this should be structurally impossible; treat as a P0 |
