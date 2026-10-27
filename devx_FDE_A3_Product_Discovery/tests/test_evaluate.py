@@ -27,6 +27,7 @@ from paperlane.evaluate import (
     Case,
     CaseResult,
     _load_facts,
+    _result_dict,
     _score_interpretation,
     _score_pricing,
     _score_reply,
@@ -776,6 +777,97 @@ class TestNegativeControl:
         code = run_eval(cases_path=self.CONTROL, out=buffer)
         assert code == 1, "a failing case must produce a non-zero exit"
         assert "failed: 4" in buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# The held-out set
+# ---------------------------------------------------------------------------
+
+
+class TestHeldOutSet:
+    """A set the rules were not developed against.
+
+    `cases.json` was written while the rules path was being built and was used
+    to fix it, which makes it a good regression set and a biased estimate of
+    behaviour on unseen wording. This file is the unbiased one, and the two
+    properties that matter are that it stays separate and that it is scored by
+    the same harness rather than a parallel one.
+    """
+
+    HELD_OUT = Path(__file__).resolve().parents[1] / "eval" / "held-out-cases.json"
+
+    def test_it_exists_and_loads_through_the_same_loader(self):
+        cases = load_cases(self.HELD_OUT)
+        assert len(cases) >= 10
+        assert [c.number for c in cases] == list(range(1, len(cases) + 1))
+
+    def test_it_is_a_separate_file_from_the_regression_set(self):
+        """The separation is the whole value; merging it would quietly consume it."""
+        regression = {c.request for c in load_cases()}
+        held_out = {c.request for c in load_cases(self.HELD_OUT)}
+        assert held_out, "the held-out set is empty"
+        assert not (held_out & regression), (
+            "a request appears in both sets, so it was used to develop the rules "
+            "and is no longer held out"
+        )
+
+    def test_a_default_run_does_not_load_it(self, products, facts):
+        """The regression run's counts must not change because a second file exists."""
+        buffer = io.StringIO()
+        run_eval(out=buffer)
+        assert "held-out" not in buffer.getvalue()
+
+    def test_it_is_scored_by_the_same_harness(self, products, facts):
+        """Same loader, same axes, same scoring — no parallel reporting path."""
+        cases = load_cases(self.HELD_OUT)
+        result = run_case(cases[0], products=products, facts=facts)
+        assert set(result.axes) == set(AXES)
+        for axis in AXES:
+            assert result.axes[axis] in (PASS, FAIL, NA), axis
+
+    def test_it_carries_no_transcribed_totals(self):
+        """Same rule as the recorded set: totals are recomputed, never written."""
+        raw = json.loads(self.HELD_OUT.read_text())
+        for entry in raw["cases"]:
+            expect = entry.get("expect", {})
+            for key in ("total", "subtotal", "vat", "delivery"):
+                assert key not in expect, (entry["number"], key)
+
+    def test_it_records_at_least_one_failure(self, products, facts):
+        """A held-out set that passes completely is evidence about its author.
+
+        The failures currently recorded are all one defect — an unmappable noun
+        ("pink", "grey", "lb") is dropped rather than honoured, widening the
+        answer to every paper of that size. Asserting a failure remains is how
+        that finding cannot be quietly lost by a later change that deletes the
+        cases instead of fixing the cause.
+        """
+        cases = {c.number: c for c in load_cases(self.HELD_OUT)}
+        results = [
+            run_case(case, products=products, facts=facts)
+            for case in cases.values()
+        ]
+        failed = [r.case.number for r in results if r.verdict == "fail"]
+        assert failed, (
+            "the held-out set now passes entirely. That is possible — but if it "
+            "is real, say so explicitly rather than deleting this assertion"
+        )
+
+    def test_a_failure_names_the_case_and_carries_its_expectation(
+        self, products, facts
+    ):
+        """A failure must be legible: what was expected, and what was read."""
+        cases = {c.number: c for c in load_cases(self.HELD_OUT)}
+        for number, case in cases.items():
+            result = run_case(case, products=products, facts=facts)
+            if result.verdict != "fail":
+                continue
+            assert result.notes, number
+            # The expectation travels with the result, so a reader sees both
+            # sides rather than only the verdict.
+            payload = _result_dict(result)
+            assert payload["expected"]["outcome"] == case.expect_outcome
+            break
 
 
 # ---------------------------------------------------------------------------

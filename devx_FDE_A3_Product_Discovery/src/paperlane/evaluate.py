@@ -449,7 +449,9 @@ def _same_value(got: Any, want: Any) -> bool:
     Amounts arrive as formatted strings from the engine and are written in the
     case file as strings, so an exact comparison is right. Ints and strings are
     normalised so ``20`` and ``"20"`` agree without the case file having to know
-    the engine's spelling — while a genuinely different value still fails.
+    the engine's spelling. Strings compare case-insensitively, because a shade
+    or a finish is not case-sensitive — ``"White"`` and ``"white"`` are the same
+    paper — while a genuinely different value still fails.
     """
     if isinstance(want, (int, float)) and not isinstance(want, bool):
         try:
@@ -457,7 +459,7 @@ def _same_value(got: Any, want: Any) -> bool:
         except (TypeError, ValueError):
             return False
     if isinstance(got, str) and isinstance(want, str):
-        return got.strip() == want.strip()
+        return got.strip().casefold() == want.strip().casefold()
     return got == want
 
 
