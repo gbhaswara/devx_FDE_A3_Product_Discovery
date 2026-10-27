@@ -167,6 +167,51 @@ class TestHealthCarriesFreshness:
         }
 
 
+class TestMetricsReportsTheAge:
+    """The catalog's age belongs beside the review backlog.
+
+    Both are facts about the snapshot rather than rates over records, so neither
+    depends on traffic and neither is a sixth derived measure. It is reported in
+    the empty-record branch too, because how old the catalog is does not stop
+    being true when no requests have been served.
+    """
+
+    def _render(self, **kwargs):
+        import io
+
+        from paperlane import metrics as metrics_mod
+
+        buffer = io.StringIO()
+        metrics_mod.render(metrics_mod.derive(**kwargs), out=buffer)
+        return buffer.getvalue()
+
+    def test_the_age_is_printed(self):
+        text = self._render()
+        assert "catalog age:" in text
+
+    def test_it_is_printed_even_with_no_records(self, tmp_path):
+        # A log with nothing in it must not hide the snapshot's age.
+        from paperlane import metrics as metrics_mod
+        from paperlane import records as records_mod
+
+        empty = tmp_path / "records.jsonl"
+        empty.write_text("")
+        text = self._render(writer=records_mod.RecordWriter(empty))
+        assert "catalog age:" in text
+
+    def test_the_stale_flag_is_printed_when_it_applies(self, monkeypatch):
+        monkeypatch.setenv(catalog.STALE_AFTER_ENV, "0.001")
+        assert "STALE" in self._render()
+
+    def test_the_payload_carries_it_too(self):
+        from paperlane import metrics as metrics_mod
+
+        payload = metrics_mod.derive().as_dict()
+        fresh = payload["snapshot"]["freshness"]
+        assert fresh["age_seconds"] is not None
+        assert fresh["stale_after_hours"] == 24.0
+
+
 class TestFreshnessNeverBlocks:
     def test_a_stale_catalog_still_answers(self, monkeypatch):
         """Reported, never gating.
