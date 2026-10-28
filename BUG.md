@@ -10,7 +10,7 @@ Status values: **OPEN** — not yet addressed · **MITIGATED** — design preven
 
 ## Part 1 — Traps in the source data
 
-These are properties of the PaperLane site that will silently produce a wrong answer rather than an error. Verified against `paperlane/` during analysis; see `ANALYZE_01.md` §2 and §12.
+These are properties of the PaperLane site that will silently produce a wrong answer rather than an error. Verified against `paperlane/` during analysis; see `devx_FDE_A3_Product_Discovery/docs/pre/ANALYZE_01.md` §2 and §12.
 
 ### T1 — Budget compared at list price instead of at the requested quantity · MITIGATED
 
@@ -1521,7 +1521,7 @@ suite 1251 collected / 1248 passed + 3 skipped; `./run.sh eval` 24/24;
 
 ## Part 3 — Accepted risks in the design
 
-Carried deliberately. Each is stated in the README as a known limitation.
+Carried deliberately. Each is stated as a limitation in the README, the customer summary, or the document cited in the row.
 
 | Risk | Impact | Why accepted |
 |---|---|---|
@@ -1533,6 +1533,7 @@ Carried deliberately. Each is stated in the README as a known limitation.
 | Model behaviour may change without notice | interpretation quality drifts silently | Rule fallback, disclosed interpretation source, and a fallback-rate metric turn drift into a visible metric. |
 | No auth, no rate limiting beyond the crawler | not production-hardened | Local demonstration service; the brief scores the assistant, not deployment hardening. |
 | One site, one layout family | cannot onboard another supplier without work | The ladder covers four shapes plus a structured fallback; a parser profile per site is the stated next step. |
+| **A33** — Card text is trusted only when its wording is known | a card/page contradiction phrased in an unrecognised way is not flagged | `ingest._card_stock_claim` recognises `out of stock` (`_CARD_OUT_RE`) and `discontinued` (`_CARD_DISCONTINUED_RE`). Measured across the seven category listing pages (35 cards) on 2026-10-28: every card's `div.muted` is the unit line except one, only the `PL-CL-A4-100-IVY` card adds `out of stock`, and no card ever claims `in stock`. The product page is authoritative, and A31 already sends unrecognised **page** wording to review. Revisit if a site revision moves stock claims onto cards. |
 
 ---
 

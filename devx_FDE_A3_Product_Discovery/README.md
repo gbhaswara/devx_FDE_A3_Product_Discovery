@@ -309,10 +309,12 @@ configured.
 Full detail in `docs/`: `pricing.md`, `ingestion.md`, `search.md`,
 `assistant.md`, `api.md`, `refresh.md`, `refresh-verification.md`,
 `semantic-ranking.md`, `observability.md`, `conversation-memory.md`,
-`chat-channel.md`. In the repository root, `TEST.md` lists the eight test layers
-and the per-module test inventory, and `ANALYZE_POST.md` is this design written
-out in full — the data, search, agent and pricing layers, and why the build is
-ordered the way it is.
+`chat-channel.md`, plus `pre/ANALYZE_01.md` (the planning evidence),
+`post/ANALYZE_POST.md` (this design written out in full), `post/FIXED.md` (the
+closed fix list) and `post/MVC_PLAN.md` (a separate scoping exercise).
+
+At the repository root, `TEST.md` lists the eight test layers and the per-module
+test inventory.
 
 ---
 
@@ -383,6 +385,16 @@ against whatever unit the product is actually sold in — a ream, a pack, a pad.
 When a customer's "pack" might mean 50 sheets or 500, the reply states the basis
 it used rather than guessing silently. That is honest, but it is not a
 resolution.
+
+**Stock is a status, not a count.** The site publishes `In stock`,
+`Out of stock — expected back …` or `Discontinued`, and no numeric quantity
+anywhere — not on the product page, the variant table, the category card or the
+pricing JSON. The assistant therefore never compares a requested quantity with
+stock: an out-of-stock item is refused at any quantity, and an in-stock item is
+quoted at any quantity, because there is no number to compare against. If only 45
+packs remain and a customer asks for 50, the quote is for 50 and fulfilment is
+the merchant's problem. Inventing a count would be the enrichment the brief
+forbids, and it would put a fabricated figure into the pricing path.
 
 **The held-out set fails, and that is the honest result.** Against 11 requests in
 phrasings the rules were never tuned on (`eval/held-out-cases.json`), 8 pass and 3
@@ -488,17 +500,37 @@ In order, because the order is the judgement:
 
 ## 6. How I used AI tools
 
-I used **opencode** with the **9router** endpoint (`9inference`, resolving to
-`deepseek-v4.1-flash`) and a spec-driven workflow of my own (`openspec`) to keep
-the proposal, eight capability specs, design decisions and an 86-task list in one
-place. The model drafted the site analysis, the specs and most of the code; I
-reviewed and corrected all of it, and the scope verdict is mine. It earned its
-place finding defects: the live-model evaluation exposed a clarification branch
-that tests had made unreachable, plus a colour ambiguity only the model's
-phrasing triggered. The register holds 15 data traps, 9 analysis defects and 5
-shipped-code defects. I kept the pricing arithmetic, the evaluation design and
-the five-axis definitions. At runtime the model interprets free text only — it
-never prices, selects a product or writes a total.
+I used **OpenCode** with the **9router** endpoint (deepseek-v4.1-flash) as the
+primary coding agent, backed by a spec-driven workflow I built myself
+(**openspec**) that kept proposal, capability specs, design decisions and task
+lists in one place. The model drafted the site analysis, the eleven capability
+specs and most of the code across 89 commits; I reviewed and corrected every
+draft, and the scope decisions are mine. The model earned its place by finding
+defects: live-model evaluation exposed a clarification branch that unit tests had
+made unreachable, plus a colour ambiguity only the model's phrasing triggered. I
+kept the pricing arithmetic, the evaluation design and the five-axis definitions
+(interpretation, retrieval, match, pricing, reply) under human ownership. At
+runtime the model interprets free-text requests only — it never prices, never
+selects a product, and never writes a total; every figure comes from
+deterministic code. I also used **Context7** for library documentation, and
+**MCP tools** (local-memory, hindsight) for persistent memory across sessions,
+recording decisions, facts, mistakes and patterns after every phase boundary.
+The build progressed in six archived openspec changes: Tier 1 (0.5.0), three
+Tier 2 extras, conversation memory, and the gap-closure that fixed the first
+brief-audit findings. A section-by-section review against the brief's five "what
+we look for" criteria then found eight more defects (`BUG.md` A23–A30) — a
+restock date copied onto in-stock rows, a per-ream budget compared as if per
+pack, a duplicated SKU losing its volume tier, two products merged into one
+impossible request, and replies that withheld the free-delivery threshold and a
+cheaper larger quantity — and the demo-round refresh probe found two more
+(A31–A32): a changed availability wording that silently made every row in stock,
+and a collapsed crawl that still replaced the serving catalog. Each was
+reproduced first, registered, fixed with a failing test, and closed only after
+the suite, the evaluation set and the refresh harness all passed.
+
+Across the register, that is 47 entries — 15 data traps (T1–T15), 11 analysis
+defects (A1–A11) and 21 shipped-code defects (A12–A32), each with its guard;
+A33 is carried separately as an accepted risk.
 
 ---
 
@@ -506,7 +538,7 @@ never prices, selects a product or writes a total.
 
 | Claim | Where to check |
 |---|---|
-| Prices are correct to the satang | `tests/test_pricing.py` (49 tests), `docs/pricing.md` |
+| Prices are correct to the satang | `tests/test_pricing.py` (55 tests), `docs/pricing.md` |
 | The evaluation passes | `./run.sh eval`, and `eval/results.md` for the full run |
 | The second catalog scores the rest | `./run.sh verify-refresh --keep` then `./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb` — 21/21, and the run names the catalog it scored |
 | The evaluation *can* fail | `./run.sh eval --cases eval/negative-control.json` — four deliberate corruptions, one per scoring axis |
@@ -557,8 +589,9 @@ under `openspec/changes/archive/`, with its own capability spec:
 | Structured logging and the five metrics | Built — `records.py`, `metrics.py`, `./run.sh metrics`, `GET /api/metrics`. Closed by `add-observability`. See `docs/observability.md` |
 | Conversation memory | Built — `conversation.py`, the continuation rule, two bounded stores, disclosure in every continued reply, and its own evaluation. Closed by `add-conversation-memory` |
 
-**221 tasks are closed across the five archived changes and none is open:**
-86 (Tier 1) + 26 + 27 + 28 + 54 (the four Tier 2 / nice-to-have changes).
+**239 tasks are closed across the six archived changes and none is open:**
+86 (Tier 1) + 26 + 27 + 28 + 54 (the four Tier 2 / nice-to-have changes) + 18
+(the gap-closure change).
 
 **The brief's five nice-to-haves, and where each landed:**
 

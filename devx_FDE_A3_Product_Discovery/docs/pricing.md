@@ -257,7 +257,7 @@ same output — which is what makes the evaluation set reproducible.
 ## Worked totals
 
 All recomputed from the live catalog with `Decimal` and explicit half-up
-(`ANALYZE_01.md` §5, re-verified in §12). These are the figures the tests assert.
+(`pre/ANALYZE_01.md` §5, re-verified in §12). These are the figures the tests assert.
 
 | SKU | qty | unit | subtotal | delivery | VAT | total |
 |---|---|---|---|---|---|---|

@@ -1,6 +1,6 @@
 # TEST.md — testing and evaluation strategy
 
-How correctness is established for the A3 submission. Requirements are in the ten main specs under `openspec/specs/`; each task in the archived changes' `tasks.md` names its own verification.
+How correctness is established for the A3 submission. Requirements are in the eleven main specs under `openspec/specs/`; each task in the archived changes' `tasks.md` names its own verification.
 
 ## The problem this strategy solves
 
@@ -9,7 +9,7 @@ The brief's scoring emphasis is *"right products and totals to the satang on uns
 Two failure modes matter more than any others, and they need different defences:
 
 1. **A correct-looking wrong answer.** Right price, wrong products — or right products, wrong price. Nothing crashes, so only a recorded expectation catches it.
-2. **A wrong expectation.** A test that asserts the wrong number will cause correct code to be "fixed" until it matches the error. This is worse than having no test, and it is the failure I actually hit while writing `ANALYZE_01.md`: two totals were transcribed wrongly and were only caught by recomputing them from source.
+2. **A wrong expectation.** A test that asserts the wrong number will cause correct code to be "fixed" until it matches the error. This is worse than having no test, and it is the failure I actually hit while writing `devx_FDE_A3_Product_Discovery/docs/pre/ANALYZE_01.md`: two totals were transcribed wrongly and were only caught by recomputing them from source.
 
 So the strategy has two rules that are not negotiable:
 

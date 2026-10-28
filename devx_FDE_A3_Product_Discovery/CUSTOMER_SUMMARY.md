@@ -40,6 +40,10 @@ refuses an unavailable item.
 - **A vague "pack" is stated, not resolved.** When products come in reams, pads and
   packs of different sizes, it says which basis it used instead of quietly assuming
   one.
+- **It does not track stock levels.** Your site says in stock, out of stock or
+  discontinued, but never how many are left, so a request for 50 packs is quoted
+  even if only 45 remain. It will not offer an out-of-stock item, but the count is
+  a fulfilment question it cannot see.
 - **Not ready for the open internet.** No login and no protection against heavy
   traffic; run it on a laptop or behind your own network. It reads one supplier; a
   second site needs additional work.

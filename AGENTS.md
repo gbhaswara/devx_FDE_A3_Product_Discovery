@@ -12,8 +12,8 @@ Sources of truth, in order of authority:
 |---|---|---|
 | 1 | `devx_FDE_A3_Product_Discovery/devx_FDE_A3_Brief.pdf` | The customer's agreed specification: PR1–PR8, must-haves 1–8, nice-to-haves, "what we look for" |
 | 2 | `00_START_HERE_All_Briefs.md` | Submission requirements, rules, the seven scoring areas, the three post-submission rounds |
-| 3 | `openspec/changes/add-paperlane-product-discovery/` | The PRD: `proposal.md`, eight capability specs, `design.md`, `tasks.md` |
-| 4 | `ANALYZE_01.md` | The analysis and evidence behind the decisions, including verified site facts |
+| 3 | `openspec/changes/archive/2026-10-26-add-paperlane-product-discovery/` | The PRD: `proposal.md`, eight capability specs, `design.md`, `tasks.md`. The five later changes are beside it; the live contracts are `openspec/specs/` |
+| 4 | `devx_FDE_A3_Product_Discovery/docs/` | `pre/ANALYZE_01.md` — the analysis and evidence behind the decisions, including verified site facts. `post/ANALYZE_POST.md`, `post/FIXED.md` and `post/MVC_PLAN.md` sit under the same tree |
 
 The A3 brief PDF and the A3 section of `00_START_HERE_All_Briefs.md` were extracted and diffed: **identical content, no drift**. If they ever disagree, treat the PDF as authoritative and raise the discrepancy.
 
@@ -49,24 +49,26 @@ Rules that follow:
 Planning and implementation are separate steps. Do not skip the boundary.
 
 ```
-1. Analyse      ANALYZE_01.md            (done)
-2. Propose      openspec/changes/...     (done — this is the PRD)
-3. Apply        /opsx-apply              (not started)
-4. Verify       tests + eval + clean-run (per task)
-5. Submit       repo link + README + customer summary + eval results
+1. Analyse      devx_FDE_A3_Product_Discovery/docs/pre/ANALYZE_01.md   (done)
+2. Propose      openspec/changes/archive/...            (done — the PRD, now archived)
+3. Apply        /opsx-apply                            (done — six archived changes, 239 tasks)
+4. Verify       tests + eval + clean-run               (done — 1251 tests, eval 24/24, v2 21/21)
+5. Submit       repo link + README + customer summary + eval results   (ready)
 ```
 
 Every step is bracketed by a **memory recall before** and a **memory write after** — see "Memory tooling" below. A phase that skipped its recall risks repeating a settled decision; one that skipped its write leaves the next phase blind.
 
-- Planning artifacts live in `openspec/changes/add-paperlane-product-discovery/`. Do not edit them while implementing; if reality contradicts a spec, stop and raise it.
+- Planning artifacts live in `openspec/changes/archive/2026-10-26-add-paperlane-product-discovery/` and the other archived changes. Do not edit them while implementing; if reality contradicts a spec, stop and raise it.
 - Implementation lives in `devx_FDE_A3_Product_Discovery/`. `paperlane/` and the brief PDF are **read-only inputs** — never modify the site to make a test pass.
 - Each task in `tasks.md` states its own verification. A task is not done because the code exists; it is done because its stated verification was run and passed.
 
 ### Repository state
 
-The project is a git repository with remote `origin` configured. At the time of writing it has **0 commits**, and **no `.gitignore` exists yet** — creating one (covering `.env`, `*.duckdb.wal`, `__pycache__`) is a prerequisite for the first commit, not an afterthought.
+The project is a git repository with remote `origin` configured and history pushed. `.gitignore` exists at the repository root and in `devx_FDE_A3_Product_Discovery/`, covering `.env`, `*.duckdb.wal`, `*.duckdb.tmp`, `*.previous.duckdb`, `__pycache__` and `.venv`.
 
-Before the first commit, confirm `git status` shows no `.env`, no credential file, and no `.duckdb.wal`. The brief's rule is absolute: never commit API keys.
+`devx_FDE_A3_Product_Discovery/devx_FDE_A3_Brief.md` is a committed text extraction of the brief; the PDF beside it remains authoritative. The planning artefacts — `ANALYZE_01.md`, `ANALYZE_POST.md`, `FIXED.md` and `MVC_PLAN.md` — live under `devx_FDE_A3_Product_Discovery/docs/pre/` and `docs/post/`.
+
+Before every commit, confirm `git status` shows no `.env`, no credential file, and no `.duckdb.wal`. The brief's rule is absolute: never commit API keys.
 
 ## Code conventions
 

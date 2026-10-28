@@ -279,29 +279,37 @@ class TestDocumentationIndex:
     """
 
     def _listed(self) -> set[str]:
-        """Doc filenames the README index mentions.
+        """Doc paths the README index mentions, relative to ``docs/``.
 
         Two forms are used in the README: an explicit ``docs/name.md`` link, and
         a bare ``name.md`` inside the "Full detail in ``docs/``:" sentence. Both
         count as listed — the index is that sentence — so both are collected.
+        Subdirectories (``pre/``, ``post/``) are part of the path, so a doc moved
+        between them is still checked.
         """
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        listed = set(re.findall(r"docs/([a-z0-9-]+\.md)", readme))
+        listed = set(re.findall(r"docs/([A-Za-z0-9_/-]+\.md)", readme))
 
         # The bare-name sentence, found by its own wording rather than by
         # position, so it can be reworded without silently emptying this check.
         index = re.search(r"Full detail in `docs/`:(.+?)\.\n", readme, re.S)
         if index:
-            listed |= set(re.findall(r"`([a-z0-9-]+\.md)`", index.group(1)))
+            listed |= set(re.findall(r"`([A-Za-z0-9_/-]+\.md)`", index.group(1)))
         return listed
 
+    def _present(self) -> set[str]:
+        """Every doc under ``docs/``, as a path relative to ``docs/``."""
+        return {
+            path.relative_to(ROOT / "docs").as_posix()
+            for path in (ROOT / "docs").rglob("*.md")
+        }
+
     def test_every_doc_is_listed(self):
-        present = {path.name for path in (ROOT / "docs").glob("*.md")}
-        missing = present - self._listed()
+        missing = self._present() - self._listed()
         assert not missing, f"docs exist but are not in the README index: {missing}"
 
     def test_every_listed_doc_exists(self):
-        absent = self._listed() - {path.name for path in (ROOT / "docs").glob("*.md")}
+        absent = self._listed() - self._present()
         assert not absent, f"the README index names docs that do not exist: {absent}"
 
     def test_the_conversation_doc_is_indexed(self):

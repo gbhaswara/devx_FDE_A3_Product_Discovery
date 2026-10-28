@@ -8,7 +8,7 @@ The **devx AI Labs AI Forward Deployed Engineer** take-home, **Option A3 — Pro
 
 A customer sends *"We need letter-size flyers, one side, colour, under 250 a pack, 20 packs."* The system reads the live catalog, finds matching products, explains why each matches, and returns a complete price breakdown — every figure computed in deterministic code.
 
-**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory and the gap-closure work. **221 tasks closed across the five earlier archived changes and none open** (86 Tier 1 + 26 + 27 + 28 + 54); `add-gap-closure` closed 5 more and is archived. 1199 tests, 1192 passing offline under `unshare -rn` (7 skip) with no model configured. The version is `0.9.0`. Nothing is under construction.
+**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory, the gap-closure work and the two follow-up reviews (brief audit A20–A30, demo-round refresh hardening A31–A32). **239 tasks closed across the six archived changes and none open** (86 + 26 + 27 + 28 + 54 + 18). 1251 tests, 1243 passing offline under `unshare -rn` (8 skip) with no model configured. The version is `0.9.0`. Nothing is under construction.
 
 ## Read in this order
 
@@ -18,8 +18,8 @@ A customer sends *"We need letter-size flyers, one side, colour, under 250 a pac
 | 2 | `00_START_HERE_All_Briefs.md` | Submission requirements, rules, the seven scoring areas, the three post-submission rounds. |
 | 3 | `openspec/specs/*/spec.md` | Behavioural contracts — **eleven** capabilities, **86 requirements, 227 scenarios**. These are the live specs. |
 | 4 | `openspec/changes/archive/` | The changes that produced them, each with `proposal.md` / `design.md` / `tasks.md`. **All archived** — there are no active changes. |
-| 5 | `ANALYZE_01.md` | The evidence, written during planning. §2 traps, §11b gap audit, §12 verification log. Cite it rather than re-deriving facts. |
-| 6 | `ANALYZE_POST.md` | The same system re-analysed from the code as built — §1 data, §2 search, §3 agents, §4 pricing. Read this for what actually shipped; `ANALYZE_01.md` for what was decided. |
+| 5 | `devx_FDE_A3_Product_Discovery/docs/pre/ANALYZE_01.md` | The evidence, written during planning. §2 traps, §11b gap audit, §12 verification log. Cite it rather than re-deriving facts. |
+| 6 | `devx_FDE_A3_Product_Discovery/docs/post/ANALYZE_POST.md` | The same system re-analysed from the code as built — §1 data, §2 search, §3 agents, §4 pricing. Read this for what actually shipped; `pre/ANALYZE_01.md` for what was decided. |
 | 7 | `ARCHITECTURE.md`, `DESIGN.md`, `TEST.md`, `BUG.md` | How it is built, how it reads, how it is proven, what is known to break. |
 | 8 | `devx_FDE_A3_Product_Discovery/README.md` | The submission's front door: the five-command demo path and the evidence table. |
 | 9 | `devx_FDE_A3_Product_Discovery/GAPS_ANALYSIS.md` + `GAPS_RESPONSE.md` | A production-readiness review of the finished system, and the finding-by-finding answer — which gaps were closed, which the brief puts out of scope, and why. |
@@ -36,9 +36,6 @@ DEVXLABS/
 ├── TEST.md                      testing and evaluation strategy (eight layers)
 ├── BUG.md                       data traps, analysis defects, shipped-code defects
 ├── CHANGELOG.md                 history; current status is 0.9.0
-├── ANALYZE_01.md                planning analysis and verification log
-├── ANALYZE_POST.md              post-implementation design, grounded in the code
-├── MVC_PLAN.md                  a separate scoping exercise — NOT this repo
 ├── 00_START_HERE_All_Briefs.md  all three assignment briefs + rules
 ├── openspec/
 │   ├── config.yaml              schema: spec-driven
@@ -54,10 +51,12 @@ DEVXLABS/
     ├── paperlane/               READ-ONLY input — the site to crawl
     ├── run.sh                   the command surface (see below)
     ├── src/paperlane/           27 modules
-    ├── tests/                   29 modules, 1199 tests
+    ├── tests/                   29 modules, 1251 tests
     ├── eval/                    cases.json, held-out-cases.json, conversation-cases.json,
     │                            the three negative/control sets, results.md
-    ├── docs/                    11 documents, one per layer or capability
+    ├── docs/                    15 documents: the 11 layer/capability docs,
+    │                            pre/ANALYZE_01, and post/ with ANALYZE_POST,
+    │                            FIXED and MVC_PLAN
     ├── data/                    catalog.duckdb is committed; *.jsonl is not
     ├── README.md  CUSTOMER_SUMMARY.md  GAPS_ANALYSIS.md  GAPS_RESPONSE.md
     └── pyproject.toml  uv.lock
@@ -75,13 +74,13 @@ DEVXLABS/
 | `duckdb` (Python) | 2.0.0 |
 | `pdftotext` / `pdfinfo` | available |
 | `duckdb` CLI / `sqlite3` CLI | **not installed** — use the Python module |
-| `git` | 35 commits, remote `origin` set, history pushed |
+| `git` | 89 commits, remote `origin` set, history pushed |
 
 **Always use the project virtualenv's interpreter: `devx_FDE_A3_Product_Discovery/.venv/bin/python`.** Bare `python3` resolves the project-root `paperlane/` directory as a namespace package and shadows the real package — a confusing `ImportError` for `paperlane.cli`. `run.sh` already does this; prefer `./run.sh`.
 
 There is no `pip` module and no `sqlite3` CLI. Use `uv`. Bare `python3` can only work when the module does not import `paperlane`.
 
-The store is **DuckDB**, not SQLite — decided and verified (`ANALYZE_01.md` §3).
+The store is **DuckDB**, not SQLite — decided and verified (`devx_FDE_A3_Product_Discovery/docs/pre/ANALYZE_01.md` §3).
 
 `.gitignore` exists at both the repository root and in `devx_FDE_A3_Product_Discovery/`, covering `.env`, `*.duckdb.wal`, `*.duckdb.tmp`, `*.previous.duckdb`, `__pycache__`, `.venv`. **Check `git status` for credentials before every commit** — `tests/test_hygiene.py` also scans for one on every test run, so this is a checked fact rather than a habit.
 
@@ -160,7 +159,9 @@ Full detail is in `AGENTS.md` §"Memory tooling". The short version:
 | `hindsight.retain({content})` | durable note | after a phase |
 | `local-memory.memory-write({content, type})` | `type` ∈ `decision` / `code_fact` / `mistake` / `pattern` / `task_archive` | after a phase |
 
-Scope is `owner=PORTOFOLIO`, `repo=DEVXLABS`. Write the phase boundary, not a summary of the code — the code is already in the repository.
+Scope is `repo=DEVXLABS`. The remote is a local Gitea path whose owner segment is `admin`, so writes use an empty owner for the single local scope; never substitute an agent name or a directory name as the owner.
+
+Write the phase boundary, not a summary of the code — the code is already in the repository.
 
 Record decisions with the alternative rejected, verified facts that were expensive to establish, and mistakes with how they were caught — `mistake` is the highest-value type for the interview and the one most likely to be skipped. **Never** record a credential, a key fragment, or an endpoint with embedded auth — both stores persist beyond this repository.
 
@@ -219,4 +220,4 @@ The model emits **criteria only**. Products and prices come from the filter and 
 - Ambiguity in the code → choose the option that is easier to explain out loud.
 - Spec versus site → the site wins on facts, the spec wins on intent. Record the conflict; never resolve it silently.
 - Do not edit a spec while implementing. If reality contradicts one, stop and raise it. The specs are the live artefact under `openspec/specs/`; the `openspec/changes/` copies are archived history and must not be edited at all.
-- A dated artefact (`ANALYZE_01.md`, an archived `tasks.md`) that has since been superseded is **superseded in place** with a note, not rewritten — see the convention at the end of `CHANGELOG.md`.
+- A dated artefact (`devx_FDE_A3_Product_Discovery/docs/pre/ANALYZE_01.md`, an archived `tasks.md`) that has since been superseded is **superseded in place** with a note, not rewritten — see the convention at the end of `CHANGELOG.md`.

@@ -10,7 +10,7 @@ of truth, so a metric cannot drift away from the events it claims to summarise.
 **What is deliberately absent.** The record does not carry the request text. It
 carries ``request_chars`` (a length) and ``request_digest`` (a short hash)
 instead, because the ``observability`` spec forbids retaining arbitrary
-conversation text — and this conflicts with `ANALYZE_01.md` §9a, which specifies
+conversation text — and this conflicts with `docs/pre/ANALYZE_01.md` §9a, which specifies
 logging ``raw_message``. The spec is the higher authority, so the analysis is
 recorded as a defect rather than quietly followed. Text capture is an explicit
 opt-in, bounded by a maximum length.

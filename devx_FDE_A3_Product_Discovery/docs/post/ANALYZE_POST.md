@@ -1,6 +1,6 @@
 # ANALYZE_POST.md — the system as built
 
-`ANALYZE_01.md` is the analysis that preceded the build: what the site is, which traps it contains, what the plan would be. This document is the other half. It is the end-to-end design **as the code actually implements it**, read back from `devx_FDE_A3_Product_Discovery/src/paperlane/`, and it covers the four layers the brief scores plus the workflow that produced them.
+`../pre/ANALYZE_01.md` is the analysis that preceded the build: what the site is, which traps it contains, what the plan would be. This document is the other half. It is the end-to-end design **as the code actually implements it**, read back from `devx_FDE_A3_Product_Discovery/src/paperlane/`, and it covers the four layers the brief scores plus the workflow that produced them.
 
 Every claim below is traceable to a named function or constant. Where a number is quoted it was measured, and where a decision had a rejected alternative the alternative is named — the reasoning is part of the design, not commentary on it.
 
@@ -35,7 +35,7 @@ That single decision is why the rest of the design can be split the way it is: i
 
 ### 1.1 The shape of the problem
 
-The reference site is static, small, and **inconsistent rather than complex** (`ANALYZE_01.md` §1.2). Measured facts:
+The reference site is static, small, and **inconsistent rather than complex** (`../pre/ANALYZE_01.md` §1.2). Measured facts:
 
 | Fact | Value |
 |---|---|
@@ -391,7 +391,7 @@ The API has two entry points for exactly this reason:
 
 ## 5. Why the plan goes in this order
 
-`ANALYZE_01.md` §8 planned a three-day build against a six-hour brief; the brief scores *"good judgment about scope"* explicitly, so the ordering is itself a design decision and it was defended in the proposal before any code existed.
+`../pre/ANALYZE_01.md` §8 planned a three-day build against a six-hour brief; the brief scores *"good judgment about scope"* explicitly, so the ordering is itself a design decision and it was defended in the proposal before any code existed.
 
 ### 5.1 Pricing before agent
 

@@ -5,11 +5,12 @@ Working list of what is **not** fixed, opened after the `BUG.md` audit on
 design, or an accepted risk.
 
 This file is the to-do list, not the record. The record stays in `BUG.md` (one
-entry per defect, with its guard), and the history stays in `CHANGELOG.md`. An
+entry per defect, with its guard), and the history stays in `CHANGELOG.md`. Both
+live at the repository root, three levels above this file. An
 item leaves this file only when its stated verification has been run and passed —
 not when the code is written.
 
-**Status: 0 open · 0 in progress · 2 closed since the audit (F-1, F-2 — both 2026-10-27).**
+**Status: 0 open · 0 in progress · 2 closed since the audit (F-1, F-2 — both 2026-10-27).** The later brief-audit and refresh fixes (A20–A32) were not tracked here: they arrived after this list was opened and are recorded directly in `BUG.md` Parts 2c and 2d, each with the failing run and the verification that closed it.
 
 ---
 
@@ -74,6 +75,8 @@ F-1 has its own commit, pushed separately from F-2. A19 does too.
   under `[Unreleased]`.
 - The 15 data traps and the accepted risks in `BUG.md` Parts 1 and 3 — mitigated
   or closed by design, not pending work.
-- A1–A19 — fixed, each with a guard that was seen to fail first.
+- A1–A32 — fixed, each with a guard that was seen to fail first. A1–A19 were on
+  this list or found while closing it; A20–A32 were closed by the later brief
+  audit and the refresh probe and are recorded only in `BUG.md`.
 - Anything in the held-out set's three retained failures — those are documented
   limitations of rule interpretation, not defects with a known fix.

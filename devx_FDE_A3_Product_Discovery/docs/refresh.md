@@ -38,10 +38,11 @@ supplier's catalog and the crawler treats it as one.
 ## What a refresh does
 
 ```
-crawl ──→ extract ──→ build to catalog.tmp.duckdb ──→ swap ──→ diff
-                              │                        │
-                              │                        └─ old file kept as
-                              │                           catalog.previous.duckdb
+crawl ──→ extract ──→ build to catalog.tmp.duckdb ──→ gate ──→ swap ──→ diff
+                              │                        │         │
+                              │                        │         └─ old file kept as
+                              │                        │            catalog.previous.duckdb
+                              │                        └─ 0 SKUs or < half → exit 3, staging kept
                               └─ any failure here leaves the serving file untouched
 ```
 
@@ -55,6 +56,16 @@ A reader therefore sees either the whole old catalog or the whole new one, never
 half-written one. If the build fails partway — a bad price, an unreachable page —
 the staging file is deleted and the serving catalog is byte-for-byte unchanged.
 Both are asserted by `TestFailedIngestIsHarmless`.
+
+**A structurally valid collapse is refused too.** Validation catches a bad row;
+it does not catch a good row set that is almost empty because the markup changed
+under the parser. `ingest._swap_refusal` therefore refuses the swap when the new
+snapshot has **zero SKUs**, or fewer than **half** the rows the serving snapshot
+has, and exits **3** with the staging file kept for inspection. A first ingest has
+nothing to protect, so it is never refused; exactly half is allowed. A genuine
+catalog cut passes `--accept-shrink`. This is a collapse guard, not a
+completeness heuristic — see `GAPS_RESPONSE.md` §3 for why a general threshold
+would fail the demo round.
 
 ### The baseline is kept
 

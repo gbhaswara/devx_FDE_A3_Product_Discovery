@@ -130,15 +130,28 @@ and the reason is the demo round: it re-ingests a **live, unseen site** and asks
 for answers immediately. A heuristic gate that refuses to publish when it is
 unhappy would fail the demonstration in the room — the exact failure the gate was
 meant to prevent. Incompleteness is **surfaced and counted** (review rows,
-carried-forward items, the diff report) and not gated on. §1's freshness signal
+carried-forward items, the diff report) and not gated on, with one narrow
+exception added later: a crawl that collapses to zero or below half the serving
+row count is refused before the swap (see the update below). §1's freshness signal
 follows the same rule.
+
+**Update, 2026-10-28 — a narrower gate does exist.** A later probe found that a
+structured change (the `table` → `dl` shape, or reworded availability) could
+produce a *structurally valid* snapshot with almost nothing in it, and the old
+snapshot would still be replaced. `ingest._swap_refusal` now refuses a swap when
+the new snapshot has **zero SKUs** or **fewer than half** the serving snapshot's
+rows, exits **3**, and keeps the staging file; `--accept-shrink` overrides it for
+a genuine catalog cut. That is a **collapse detector, not the proposed
+threshold**: it does not judge completeness, quality or freshness, and a swap
+that merely loses a handful of rows still publishes. The distinction matters
+because the demo round needs a working site to publish.
 
 The rest of layer A is answered by existing mechanisms, cited rather than
 claimed:
 
 | Gap the analysis raises | What the system does |
 |---|---|
-| Partial crawl mistaken for complete | Unparseable pages become review rows; `verify-refresh` injects 12 known changes and asserts each is detected |
+| Partial crawl mistaken for complete | Unparseable pages become review rows; `verify-refresh` injects 12 known changes and asserts each is detected. A crawl that collapses to zero, or below half the serving row count, is refused before the swap (A32) |
 | Incorrect extraction without a parse error | Provenance, not-applicable recording, and the injected-prompt test above |
 | Review rows accumulate | Review status persists across refreshes with `carried_from`, so a flagged item stays flagged until resolved |
 | Catalog rollback not described | The previous snapshot is kept as `catalog.previous.duckdb`, and the diff runs against it |
@@ -247,7 +260,7 @@ change — `verify-refresh`), freshness is now added, and one is out of scope:
 
 | Asked | Status |
 |---|---|
-| Catalog freshness and crawl completeness | **Freshness closed**; completeness surfaced via review rows, not gated (§3) |
+| Catalog freshness and crawl completeness | **Freshness closed**; completeness surfaced via review rows, not gated — except a collapse to zero or below half the serving row count, which is refused before the swap (§3, A32) |
 | Review-row counts and unresolved fields | Already — `metrics` reports the review backlog |
 | Interpretation success, fallback, clarification rates | Interpretation **closed** (§4); the other two already in `metrics` |
 | Product-match accuracy independent of price | Already — separate `retrieval` and `pricing` axes, cases 25–27 |

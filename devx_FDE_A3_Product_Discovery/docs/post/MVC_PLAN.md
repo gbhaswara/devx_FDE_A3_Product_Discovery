@@ -7,7 +7,7 @@ against `devx_FDE_A3_Product_Discovery/devx_FDE_A3_Brief.pdf`.
 produces evidence on every axis the brief scores. It does not mean
 Model-View-Controller.
 
-**This document is not a description of the repository next to it.** The submission
+**This document is not a description of the repository it now sits in.** The submission
 in `devx_FDE_A3_Product_Discovery/` is the full build: 11,043 lines of source, 9,986
 lines of tests, 28 evaluation cases, six Tier 2 extras. This is the plan for a
 deliberately smaller version — roughly 1,760 lines of source — and it is here

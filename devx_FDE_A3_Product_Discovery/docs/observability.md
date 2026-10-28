@@ -59,7 +59,7 @@ the service handles a request that interprets or quotes.
 
 **The request text.** By default the record carries `request_chars` and
 `request_digest` instead. This is the one place the spec overruled
-`ANALYZE_01.md` §9a, which specified logging `raw_message`; the reasoning is
+`pre/ANALYZE_01.md` §9a, which specified logging `raw_message`; the reasoning is
 recorded in `BUG.md` as defect A11.
 
 The digest is not anonymisation. A 16-character hash of a short string is

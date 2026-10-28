@@ -297,6 +297,27 @@ The struck-through list price comes **first** in the cell. A parser taking the
 first currency amount on the row quotes **299.00** — the higher, wrong price.
 The extractor reads `<del>` explicitly and keeps both amounts.
 
+### No quantity on hand — state only
+
+The site publishes a state, never a count. There is no "45 left", no inventory
+number on the page, the variant table, the category card or
+`api/pricing/<sku>.json`; `stock_status` is therefore the whole of the stock
+model, plus the restock date when the page supplies one.
+
+That absence is load-bearing: **a requested quantity is never compared with
+stock.** An out-of-stock SKU is refused at quantity 1 and at quantity 500 alike,
+and an in-stock SKU is quoted at any quantity because there is no number to
+compare against. If only 45 packs remain and a customer asks for 50, the quote is
+for 50; the count is a fulfilment question the source cannot answer. Inventing
+one would break the brief's no-enrichment rule and put a fabricated figure into
+the pricing path.
+
+Measured on 2026-10-28 across the seven category listing pages and all 36 product
+pages: every stock claim is one of the wordings above, no claim carries a number,
+and no page or card states a stock count. If a later site revision publishes a count,
+that is a new field and a new decision — not a silent reinterpretation of
+`stock_status`.
+
 ---
 
 ## Cross-checks that produce review rows
@@ -315,6 +336,14 @@ Category cards and product pages are separate renderings of the same claim.
 and the product page says `Out of stock — expected back 20 November 2026`. These
 agree. When they do **not**, both values are kept and a review row records the
 disagreement — neither source overwrites the other.
+
+The card is a **secondary** source, and only recognised wording counts.
+`ingest._card_stock_claim` reads `out of stock` and `discontinued`; a card that
+phrases a claim another way is treated as making no claim, so the product page
+stands and no disagreement is raised. Measured on 2026-10-28: 35 cards across the
+seven listing pages, 34 carry only the unit line, one adds `out of stock`, and
+none claims `in stock` — so the gap is not live on this site. It is carried as
+accepted risk **A33** in `BUG.md` Part 3.
 
 ### Tier-document count
 

@@ -186,8 +186,8 @@ reporting a zero that would look like a measured result.
 ## Tests
 
 ```bash
-./run.sh test              # 765 tests; provider-dependent ones skip
-unshare -rn ./run.sh test  # the offline guarantee, 7 skips
+./run.sh test              # 1251 tests; provider-dependent ones skip
+unshare -rn ./run.sh test  # the offline guarantee, 8 skips
 ```
 
 Provider-dependent tests are marked `needs_embedding` and **skip** when no

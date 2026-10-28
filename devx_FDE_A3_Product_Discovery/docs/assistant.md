@@ -133,6 +133,11 @@ product exists) nor silently offered (they would get a quote they cannot buy).
 The refusal is explicit that no price is given: *"I have not quoted it, because I
 can only price items you can actually order."*
 
+The refusal depends on **status, not quantity**: the site publishes no count on
+hand, so an out-of-stock item is refused whatever the requested quantity, and an
+in-stock item is never refused for being a large order. See
+[`ingestion.md`](ingestion.md).
+
 ### R6 — Nothing satisfies every requirement → `no_match`
 
 **Trigger:** no item passes all hard constraints and none is merely unavailable.

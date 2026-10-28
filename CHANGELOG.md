@@ -2,9 +2,9 @@
 
 All notable changes to this project. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`.
+This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`. The planning artefacts named below — `ANALYZE_01.md`, `ANALYZE_POST.md`, `FIXED.md` and `MVC_PLAN.md` — now live under `devx_FDE_A3_Product_Discovery/docs/pre/` and `docs/post/`; historical entries keep the names they were written with.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete.** 221 tasks closed across the five earlier archived changes, none open; `add-gap-closure` closed 5 more. **1251 tests** (offline 1243 passed + 8 skipped; online 1248 passed + 3 skipped), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete; the brief audit and the refresh hardening after it are closed too.** **239 tasks closed across the six archived changes, none open** (86 + 26 + 27 + 28 + 54 + 18). **1251 tests** (offline 1243 passed + 8 skipped; online 1248 passed + 3 skipped), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,63 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Fixed — 2026-10-27 · a refresh could replace a good catalog with a collapsed one
+
+The demo round supplies an updated site and asks for a re-ingest with no code
+change. Probing that path with a rewritten copy of the site found the two failures
+that matter most for it, both registered as `BUG.md` A31/A32 before either was
+touched.
+
+- **A31 — unknown availability read as in stock.** `extract._stock_state` treated
+  any page that did not contain a recognised out-of-stock phrase as `in_stock`.
+  When the availability wording changed, **all six affected rows silently became
+  available**; nothing crashed and no review row appeared. Availability is now a
+  closed set — `In stock`, `Out of stock … expected back <date>`, `Discontinued` —
+  and anything else becomes `unknown` plus an `availability not recognised` review
+  row, so the page is authoritative instead of the parser's default.
+- **A32 — a collapsed crawl still swapped.** A structurally valid snapshot with
+  almost no rows replaced the serving catalog. `ingest._swap_refusal` now refuses
+  a swap when the new snapshot has zero SKUs or fewer than half the serving row
+  count, exits **3**, and keeps the staging file for inspection. A first ingest is
+  never refused, exactly half is allowed, and a genuine catalog cut passes
+  `--accept-shrink`.
+
+Both were reproduced first. Tests were seen to fail against the old code: three
+for the availability set (`test_extract.py::TestUnknownAvailability`) and six for
+the gate (`test_ingest.py::TestSwapGate`), plus two loopback tests for the
+collapsed crawl. Full suite 1251 collected / 1248 passed + 3 skipped; offline
+1243 passed + 8 skipped; `./run.sh eval` 24/24; `verify-refresh --keep` 12/12;
+`eval --catalog v2` 21/21. The real 103-request ingest over HTTP still swaps 72
+products against 72, with zero review rows.
+
+### Fixed — 2026-10-27 · the brief audit's remaining eight defects
+
+The section-by-section review of the brief's five "what we look for" areas found
+eight defects beyond A20–A22, each reproduced against the running service and the
+stored snapshot before being written down. All eight are closed:
+
+- **A23** — a sibling variant's restock date was copied onto in-stock rows; each
+  row's own availability cell now decides both status and date.
+- **A24** — a budget stated per ream or per sheet was compared as if it were per
+  pack; `comparable_unit_price` now converts by the pack's sheet count.
+- **A25** — the stated budget basis was echoed without being constrained to one
+  the engine can apply; a non-canonical basis is now rejected at the API boundary
+  (422) and the canonical set lives in `pricing.BUDGET_BASES`.
+- **A26** — the same SKU split across two lines missed its volume tier; the tier
+  is chosen from the order's total for that SKU.
+- **A27** — the free-delivery threshold was named only to the customer who had
+  already met it; the reply now states the threshold and the shortfall.
+- **A28** — "I could not find anything close" was said about an item that exists
+  and is out of stock; the near match is kept and reported with its restock date.
+- **A29** — a request naming two products was merged into one impossible request
+  or half-answered; it now asks which one, rather than guessing.
+- **A30** — the reply never said that a slightly larger order would cost less; the
+  next tier is named when the total would fall.
+
+Verification for the closing run: 1251 collected / 1248 passed + 3 skipped,
+`./run.sh eval` 24/24, `verify-refresh --keep` 12/12, `eval --catalog v2` 21/21.
+Each fix carries its failing run and its guard in `BUG.md` Part 2c.
 
 ### Fixed — 2026-10-27 · an unavailable line was quoted in a multi-line basket
 

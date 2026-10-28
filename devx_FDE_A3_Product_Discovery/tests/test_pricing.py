@@ -1,7 +1,7 @@
 """Pricing engine tests.
 
 Every expected total here was recomputed from the live catalog with Decimal and
-explicit half-up (ANALYZE_01.md §5 and §12), never transcribed. The catalog
+explicit half-up (docs/pre/ANALYZE_01.md §5 and §12), never transcribed. The catalog
 facts used are the real ones:
 
     PL-CP-A4-80          list 129.00   tiers 10+ 122.55, 50+ 116.10

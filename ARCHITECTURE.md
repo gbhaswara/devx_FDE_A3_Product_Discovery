@@ -192,6 +192,8 @@ page_reviews
 
 `pack_sheets` is separate from price because "under 250 a pack" is unanswerable without it. `weight_raw` is kept alongside `weight_gsm` because the source states weight four different ways, and a conversion must be defensible in the interview.
 
+There is deliberately **no `stock_on_hand` column**. The source publishes a three-valued status and a restock date, never a count, so no requested quantity is compared with stock — an unavailable SKU is refused at any quantity, and an available one is priced at any quantity. See `devx_FDE_A3_Product_Discovery/docs/ingestion.md`.
+
 **Conversation state is deliberately not in this store.** It is not catalog data, it is per-customer and short-lived, and putting it in the snapshot would make it survive a refresh it has no business surviving. `conversation.py` holds it separately: an in-memory store for the service, and a JSONL store for the CLI, both bounded (`MAX_CONVERSATIONS = 100` LRU, `MAX_TURNS = 20`). Neither holds request text — only `Criteria`. See `docs/conversation-memory.md`.
 
 ## Pricing pipeline
@@ -256,13 +258,16 @@ The four-outcome enum is what makes the must-haves testable. "Clarifying questio
 
 ```
 ingest  ->  build catalog.<snapshot_id>.duckdb    (fresh file, never mutated)
-        ->  validate
+        ->  validate rows
+        ->  refuse the swap on 0 SKUs or < half the serving count (exit 3)
         ->  os.replace() over catalog.duckdb      (atomic swap; readers unaffected)
 diff    ->  attach old + new read-only, full outer join, group changes
 serve   ->  open catalog.duckdb read-only, one connection per request
 ```
 
 A single-writer store would normally be a limitation. Rebuild-and-swap removes it rather than working around it, and gives a failed ingest nowhere to damage a working catalog. A committed snapshot means the service starts without crawling.
+
+The collapse gate is a count check, not a completeness judgement: a genuine catalog cut passes `--accept-shrink`, a first ingest is never refused, and exactly half the previous count is allowed.
 
 ## Deployment
 
@@ -276,7 +281,7 @@ uv sync
 
 ## Verified site facts
 
-Measured against `paperlane/` during analysis; see `ANALYZE_01.md` §12 for the full log.
+Measured against `paperlane/` during analysis; see `devx_FDE_A3_Product_Discovery/docs/pre/ANALYZE_01.md` §12 for the full log.
 
 | Fact | Value |
 |---|---|

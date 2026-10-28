@@ -261,6 +261,11 @@ reproducible byte for byte.
 | `budget_per_unit` | decimal baht; compared at the requested quantity |
 | `budget_basis` | free text, default `per pack, before VAT`; a basis containing `including VAT` compares against the VAT-inclusive price (PR7) |
 
+`quantity` is an order size, not a stock check. The source publishes stock
+**status** only — no quantity on hand — so a quantity is bounded by the API
+(1–100000) but never rejected for exceeding stock; an unavailable SKU is refused
+at any quantity instead. See `docs/ingestion.md`.
+
 Vocabulary is **resolved, not trusted**. `"size": "letter"` and `"size": "LTR"`
 reach the same product, because the two entry points must not disagree about the
 same request. A value the catalog cannot express is a `422`, never a silent
