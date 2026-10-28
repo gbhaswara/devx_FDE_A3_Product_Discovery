@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`. The planning artefacts named below — `ANALYZE_01.md`, `ANALYZE_POST.md`, `FIXED.md` and `MVC_PLAN.md` — now live under `devx_FDE_A3_Product_Discovery/docs/pre/` and `docs/post/`; historical entries keep the names they were written with.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete; the brief audit and the refresh hardening after it are closed too.** **239 tasks closed across the six archived changes, none open** (86 + 26 + 27 + 28 + 54 + 18). **1252 tests** (1,249 passing offline under `./run.sh test-offline`, 3 provider tests skipped; 1,252 passing with a local Ollama embedding server), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 9/11 with two failures retained (`A34` closed the third). Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete; the brief audit and the refresh hardening after it are closed too.** **239 tasks closed across the six archived changes, none open** (86 + 26 + 27 + 28 + 54 + 18). **1260 tests** (1,257 passing offline under `./run.sh test-offline`, 3 provider tests skipped; 1,260 passing with a local Ollama embedding server), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 9/11 with two failures retained (`A34` closed the third). Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,50 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Changed — 2026-10-28 · the model path runs against a local Ollama
+
+The assistant's model-assisted path now works end to end against a local
+OpenAI-compatible server, with no credential. The embedding path already used
+Ollama (`bge-m3`); the criteria-extraction path did not, because three
+assumptions held only for the one hosted provider it was built against. All
+three are registered in `BUG.md` Part 2f.
+
+- **A35 — a keyless server was treated as unconfigured.** `ModelConfig.configured`
+  required `base_url and api_key and model`, so Ollama, llama.cpp and vLLM —
+  which accept requests with no `Authorization` header — were unreachable. The
+  fallback to rules was silent: no error, and no `fallback_reason`, because "no
+  client" means "no model deployed" by design. The key is now optional and the
+  header is sent only when one is set.
+- **A36 — a thinking model spent the budget and returned `content: ""` with HTTP
+  200.** `qwen3.5:0.8b` and `:2b` return empty at 2000 tokens; `:4b` answers but
+  takes 41 s, four seconds inside the 45 s timeout. `reasoning_effort: "none"`
+  turns thinking off on Ollama — `think: false` is ignored and `"low"` still
+  thinks. The parameter is opt-in via `PAPERLANE_LLM_REASONING_EFFORT`, because
+  the first provider returned empty content whenever it received it at all.
+- **A37 — the documented comparison never reached the model.** `./run.sh eval`
+  printed `model: not configured` whatever the environment held: the eval branch
+  of `cli.main` never built a client, and the side-by-side table in
+  `eval/results.md` came from a direct call during development. The branch now
+  constructs `ModelClient(ModelConfig.from_env())` when configured and passes
+  `None` otherwise, so the model-free run is unchanged.
+
+**Measured, not assumed.** `qwen3.5:4b` with `reasoning_effort=none` answers in
+**0.5 s warm** (7.8 s on the first call while the model loads) and is the most accurate local model tested; the
+"big model is too slow" figure was the thinking path, not the size. Over the 24
+v1 cases the rules path and the model reach the **same outcome on 20**; all four
+disagreements are model vocabulary errors and the rules are right in each —
+three are the model inventing `category: Copy paper` from the bare word "paper".
+A one-line prompt rule was measured and rejected: it fixed one case and broke
+two. The rules path therefore stays the default, and the model remains a
+decomposer whose output is re-resolved through the alias tables before use.
+
+Verification: `./run.sh test-offline` **1,257 passed + 3 skipped**;
+`./run.sh test` with the Ollama embedding provider **1,260 passed, 0 skipped**;
+`./run.sh eval` 24/24 with `model: available` and a populated comparison column;
+`--catalog v2` 21/21; held-out still 9/11 with two failures retained. Six new
+model tests and two new CLI-wiring tests; the configured wiring test fails
+against the old call with `KeyError: 'model_client'`.
 
 ### Changed — 2026-10-28 · the offline suite exercises loopback, and the provider tests run against Ollama
 

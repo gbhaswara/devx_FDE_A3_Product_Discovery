@@ -264,11 +264,14 @@ can refuse to send a reply with errors rather than trusting it.
 
 ---
 
-## The model client: four measured failures
+## The model client: five measured failures
 
-Every one of these was observed on the configured endpoint (`9router`,
-`9inference`, which resolves to `deepseek-v4.1-flash`), and each has a named
-remedy with a regression test in `tests/test_model.py`.
+Every one of these was observed on a live endpoint and each has a named remedy
+with a regression test in `tests/test_model.py`. F1, F2, F4 and F5 were observed
+on the original hosted provider (`9router`, `9inference`, resolving to
+`deepseek-v4.1-flash`); F3's remedy changed when the same client was pointed at a
+local Ollama, and both behaviours are recorded because the parameter is now
+opt-in for exactly that reason.
 
 ### F1 — A stray terminator, on the **envelope**
 
@@ -291,11 +294,17 @@ the response was HTTP 200 with `content: null`.
 ### F3 — Structured-output flags make it worse
 
 `response_format={"type": "json_object"}` produced empty content.
-`reasoning_effort="none"` was ignored.
+`reasoning_effort="none"` was ignored by `9inference` — and returned empty
+content whenever it was sent at all.
 
-**Remedy:** neither is sent. The JSON is recovered from the response text by
-`extract_json_object()`, which tries the whole body, then a fenced block, then
-the outermost brace-balanced span (respecting string literals).
+**Remedy:** `response_format` is never sent. The JSON is recovered from the
+response text by `extract_json_object()`, which tries the whole body, then a
+fenced block, then the outermost brace-balanced span (respecting string
+literals). `reasoning_effort` is sent **only** when
+`PAPERLANE_LLM_REASONING_EFFORT` is set, because on Ollama the same parameter is
+the switch that stops a thinking model spending the whole budget and returning
+`content: ""` with HTTP 200 (BUG.md A36). Opt-in keeps the recorded provider's
+behaviour and makes the local switch explicit.
 
 ### F4 — The format instruction must be in the **user** message
 

@@ -331,12 +331,12 @@ carrying a total is checked structurally instead.
 | `test_conversation_eval.py` | 19 | 8 |
 | `test_crawl.py` | 13 | 2 |
 | `test_embeddings.py` | 66 | 6 |
-| `test_evaluate.py` | 71 | 5 |
+| `test_evaluate.py` | 73 | 5 |
 | `test_extract.py` | 57 | 2 |
 | `test_hygiene.py` | 13 | 7 |
 | `test_ingest.py` | 22 | 2 |
 | `test_metrics.py` | 59 | 7 |
-| `test_model.py` | 42 | 3 |
+| `test_model.py` | 48 | 3 |
 | `test_money.py` | 25 | 1 |
 | `test_mutate.py` | 77 | 4 |
 | `test_normalize.py` | 37 | 1 |
@@ -350,11 +350,11 @@ carrying a total is checked structurally instead.
 | `test_snapshot_path.py` | 26 | 7 |
 | `test_ui_catalog.py` | 26 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1252** | |
+| **Total** | **1260** | |
 
 With the mutated catalog present (after `./run.sh verify-refresh --keep`):
-`./run.sh test` and `./run.sh test-offline` both collect 1252 and skip 3
-(provider-dependent) — **1249 passed**.
+`./run.sh test` and `./run.sh test-offline` both collect 1260 and skip 3
+(provider-dependent) — **1257 passed**.
 
 Offline, the five loopback tests run because the command brings `lo` up inside
 the namespace, which leaves the guarantee intact — there is still no route out.
@@ -364,7 +364,7 @@ embedding server is named:
 
 ```bash
 PAPERLANE_EMBED_BASE_URL=http://localhost:11434 \
-  PAPERLANE_EMBED_MODEL=bge-m3:latest ./run.sh test    # 1252 passed, 0 skipped
+  PAPERLANE_EMBED_MODEL=bge-m3:latest ./run.sh test    # 1260 passed, 0 skipped
 ```
 
 They still skip under `test-offline`: the provider is a process on the host, and
@@ -375,7 +375,7 @@ those three, and they are reported as skips — never as passes — when it is a
 One further skip is state-dependent, not environmental: `test_evaluate.py` skips
 its second-catalog case until `./run.sh verify-refresh --keep` has produced
 `.refresh-verification/mutated.duckdb`. On a fresh clone, which has no such
-artefact, the same command reports **1248 passed, 4 skipped**. The figures above
+artefact, the same command reports **1256 passed, 4 skipped**. The figures above
 are the ones this working tree produces with the artefact present.
 
 ## What is tested where
@@ -429,8 +429,8 @@ are the ones this working tree produces with the artefact present.
 ## Running the tests
 
 ```
-./run.sh test             # 1252 tests: unit + extraction + integration + observability + conversation; no model
-./run.sh test-offline     # the same, in a network namespace with loopback up: 1249 passed, 3 skipped
+./run.sh test             # 1260 tests: unit + extraction + integration + observability + conversation; no model
+./run.sh test-offline     # the same, in a network namespace with loopback up: 1257 passed, 3 skipped
 ./run.sh eval             # 28 recorded cases against the committed snapshot (24/24)
 ./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21, after verify-refresh --keep
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 9 pass 2 fail by design

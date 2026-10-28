@@ -189,10 +189,10 @@ reporting a zero that would look like a measured result.
 ## Tests
 
 ```bash
-./run.sh test              # 1252 tests; 1249 pass, 3 provider tests skip
-./run.sh test-offline      # the offline guarantee: 1249 pass, the same 3 skip
+./run.sh test              # 1260 tests; 1257 pass, 3 provider tests skip
+./run.sh test-offline      # the offline guarantee: 1257 pass, the same 3 skip
 PAPERLANE_EMBED_BASE_URL=http://localhost:11434 \
-  PAPERLANE_EMBED_MODEL=bge-m3:latest ./run.sh test   # 1252 pass, 0 skip
+  PAPERLANE_EMBED_MODEL=bge-m3:latest ./run.sh test   # 1260 pass, 0 skip
 ```
 
 The figures assume `.refresh-verification/mutated.duckdb` exists; on a fresh

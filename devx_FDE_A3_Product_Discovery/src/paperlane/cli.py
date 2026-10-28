@@ -259,6 +259,7 @@ def main(argv: list[str] | None = None) -> int:
         from pathlib import Path
 
         from .evaluate import run_eval, self_check
+        from .model import ModelClient, ModelConfig
 
         if args.self_check:
             return self_check()
@@ -300,11 +301,20 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
+        # The comparison is the reason this command accepts a client at all, and
+        # until A37 it never built one: the output said "model: not configured"
+        # no matter what the environment held. Built here rather than inside
+        # `run_eval` so the tests that pass a stub client keep working, and
+        # `None` when unconfigured so a model-free run is unchanged.
+        config = ModelConfig.from_env()
+        model_client = ModelClient(config) if config.configured else None
+
         return run_eval(
             as_json=args.json,
             cases_path=cases_path,
             db_path=args.db,
             catalog_name=args.catalog,
+            model_client=model_client,
         )
     if args.command == "diff":
         from .catalog import run_diff

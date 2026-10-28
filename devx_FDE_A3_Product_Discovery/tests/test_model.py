@@ -411,3 +411,80 @@ class TestKeyVocabulary:
     def test_end_to_end_sides_normalisation(self):
         body = envelope(json.dumps({"sides": "one-sided"}))
         assert client_returning(body).extract_criteria("x").criteria["sides"] == "single"
+
+
+# ---------------------------------------------------------------------------
+# A35/A36: the client must also work against a local, keyless server
+# ---------------------------------------------------------------------------
+
+
+class TestKeylessLocalServer:
+    """Ollama, llama.cpp and vLLM accept requests with no credential.
+
+    Requiring a key made a conforming server unreachable, and the fallback to
+    rules was silent — no error and no ``fallback_reason`` (BUG.md A35).
+    """
+
+    def test_a_keyless_config_is_available(self):
+        assert ModelClient(config(api_key="")).available is True
+
+    def test_no_authorization_header_is_sent(self):
+        seen = {}
+
+        def handler(request):
+            seen["authorization"] = request.headers.get("authorization")
+            return httpx.Response(200, text=envelope('{"size": "A4"}'))
+
+        client = ModelClient(
+            config(api_key=""),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        client.extract_criteria("A4 paper")
+        assert seen["authorization"] is None
+
+    def test_a_key_is_still_sent_when_present(self):
+        seen = {}
+
+        def handler(request):
+            seen["authorization"] = request.headers.get("authorization")
+            return httpx.Response(200, text=envelope('{"size": "A4"}'))
+
+        client = ModelClient(
+            config(api_key="test-key"),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        client.extract_criteria("A4 paper")
+        assert seen["authorization"] == "Bearer test-key"
+
+
+class TestReasoningEffortIsOptIn:
+    """A thinking model returns ``content: ""`` with HTTP 200 once the budget is spent.
+
+    Ollama turns that off with ``reasoning_effort="none"``. The parameter is
+    opt-in because the previous provider returned empty content whenever it
+    received it at all (BUG.md A36).
+    """
+
+    def _body(self, **overrides):
+        seen = {}
+
+        def handler(request):
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(200, text=envelope('{"size": "A4"}'))
+
+        client = ModelClient(
+            config(**overrides),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        client.extract_criteria("A4 paper")
+        return seen["body"]
+
+    def test_absent_by_default(self):
+        assert "reasoning_effort" not in self._body()
+
+    def test_sent_when_configured(self):
+        assert self._body(reasoning_effort="none")["reasoning_effort"] == "none"
+
+    def test_read_from_the_environment(self, monkeypatch):
+        monkeypatch.setenv("PAPERLANE_LLM_REASONING_EFFORT", "none")
+        assert ModelConfig.from_env().reasoning_effort == "none"

@@ -1000,6 +1000,58 @@ class TestTheCatalogFlagOnTheCommandLine:
         assert "conversation set" in capsys.readouterr().err
 
 
+class TestEvalCliModelWiring:
+    """A37: the documented comparison must actually reach the model.
+
+    ``run_eval`` has accepted a ``model_client`` since 0.5.0, and
+    ``eval/results.md`` records a rules-versus-model table under
+    ``./run.sh eval``. The command never built a client, so the run printed
+    ``model: not configured`` no matter what the environment held.
+    """
+
+    def test_a_configured_environment_passes_a_client(self, monkeypatch):
+        seen: dict = {}
+
+        def fake_run_eval(**kwargs):
+            seen.update(kwargs)
+            return 0
+
+        monkeypatch.setenv("PAPERLANE_LLM_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("PAPERLANE_LLM_MODEL", "qwen3.5:2b")
+        monkeypatch.setenv("PAPERLANE_LLM_REASONING_EFFORT", "none")
+        monkeypatch.setattr("paperlane.evaluate.run_eval", fake_run_eval)
+
+        assert cli.main(["eval"]) == 0
+        client = seen["model_client"]
+        assert client is not None
+        assert client.available is True
+        assert client.config.base_url == "http://localhost:11434/v1"
+        assert client.config.model == "qwen3.5:2b"
+        assert client.config.reasoning_effort == "none"
+
+    def test_an_unconfigured_environment_passes_none(self, monkeypatch):
+        """The model-free run must stay byte-identical: no client, no change."""
+        seen: dict = {}
+
+        def fake_run_eval(**kwargs):
+            seen.update(kwargs)
+            return 0
+
+        for name in (
+            "PAPERLANE_LLM_BASE_URL",
+            "PAPERLANE_LLM_MODEL",
+            "PAPERLANE_LLM_API_KEY",
+            "OPENAI_BASE_URL",
+            "OPENAI_MODEL",
+            "OPENAI_API_KEY",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr("paperlane.evaluate.run_eval", fake_run_eval)
+
+        assert cli.main(["eval"]) == 0
+        assert seen["model_client"] is None
+
+
 class TestCatalogRecordedInResults:
     def test_the_run_names_its_catalog(self):
         buffer = io.StringIO()

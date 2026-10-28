@@ -203,16 +203,39 @@ snapshot file underneath them.
 **The model is optional.** With no environment variables set, every structured
 case still runs and every request is still answered — by the rule-based
 interpreter, which is a complete first-class path, not a stub. To enable the
-model:
+model against a local [Ollama](https://ollama.com):
 
 ```bash
-export PAPERLANE_LLM_BASE_URL=http://127.0.0.1:20128/v1
-export PAPERLANE_LLM_API_KEY=...
-export PAPERLANE_LLM_MODEL=9inference
+ollama pull qwen3.5:4b
+
+export PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1
+export PAPERLANE_LLM_MODEL=qwen3.5:4b
+export PAPERLANE_LLM_REASONING_EFFORT=none   # required for a thinking model
 ```
+
+`PAPERLANE_LLM_API_KEY` is **optional**: Ollama, llama.cpp and vLLM accept
+requests with no `Authorization` header, and the client sends one only when a
+key is set. A hosted OpenAI-compatible endpoint works the same way — add the key
+and change the URL and model name.
+
+`PAPERLANE_LLM_REASONING_EFFORT=none` is what makes a thinking model usable.
+Without it, `qwen3.5:2b` and `:0.8b` spend the whole output budget reasoning and
+return `content: ""` with HTTP 200, and `qwen3.5:4b` takes 41 s — inside the 45 s
+timeout by four seconds. With it, 4b answers in **0.5 s warm** (7.8 s on the
+first call, while the model loads) and is the most accurate local model tested.
+The parameter is opt-in because the first hosted
+provider returned empty content whenever it received it (BUG.md A36).
 
 No credential is committed anywhere in this repository; configuration is by
 environment variable only.
+
+**What the model does and does not decide.** It decomposes a sentence into
+search criteria and nothing else. Every price, total, discount and SKU is
+computed by `pricing.py` from the catalog; the reply is rendered from those
+values. Measured over the 24 v1 cases, the rules path and `qwen3.5:4b` reach the
+same outcome on 20; all four disagreements are model vocabulary errors and the
+rules path is right in each (BUG.md A37). That is why the rules path stays the
+default and the model is an optional decomposer.
 
 ---
 
@@ -569,7 +592,7 @@ A33 is carried separately as an accepted risk.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The four conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1252) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1260) |
 
 ---
 

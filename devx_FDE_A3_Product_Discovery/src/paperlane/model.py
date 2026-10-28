@@ -13,10 +13,15 @@ were observed on the configured provider and each has a named remedy here:
    ``json.loads`` rejects with ``Extra data``. Stripped before parsing.
 2. **Reasoning eats the budget.** ``9inference`` is a reasoning model: with a
    small ``max_tokens`` it spends the whole allowance thinking and returns
-   ``content: null`` with HTTP 200. The budget is therefore set high.
-3. **Structured-output flags make it worse.** ``response_format={"type":
-   "json_object"}`` produced empty content; ``reasoning_effort="none"`` was
-   ignored. Neither is used. The JSON is extracted from prose instead.
+   ``content: null`` with HTTP 200. The budget is therefore set high — but on a
+   local thinking model a high budget only buys a longer wait, not an answer.
+   ``reasoning_effort="none"`` is the switch that turns thinking off (trap 3).
+3. **Structured-output flags are not portable.** ``response_format={"type":
+   "json_object"}`` produced empty content on the first provider, and
+   ``reasoning_effort="none"`` was ignored there. On Ollama the same parameter
+   is the switch that turns thinking off, so it is sent only when the operator
+   sets ``PAPERLANE_LLM_REASONING_EFFORT`` (BUG.md A36). The JSON is extracted
+   from prose instead of being demanded through a flag.
 """
 
 from __future__ import annotations
@@ -45,12 +50,19 @@ class ModelUnavailable(RuntimeError):
 
 @dataclass
 class ModelConfig:
-    """Where the model lives. Read from the environment, never hard-coded."""
+    """Where the model lives. Read from the environment, never hard-coded.
+
+    ``api_key`` is optional. A local OpenAI-compatible server — Ollama,
+    llama.cpp, vLLM — accepts requests with no credential, and requiring one
+    made a conforming server unreachable while the fallback to rules stayed
+    silent (BUG.md A35). A key is still sent when one is configured.
+    """
 
     base_url: str = ""
     api_key: str = ""
     model: str = ""
     max_tokens: int = DEFAULT_MAX_TOKENS
+    reasoning_effort: str = ""
     timeout: float = 45.0
 
     @classmethod
@@ -77,11 +89,24 @@ class ModelConfig:
                 or ""
             ),
             max_tokens=int(os.environ.get("PAPERLANE_LLM_MAX_TOKENS", DEFAULT_MAX_TOKENS)),
+            #: Opt-in: the previous provider returned empty content when it
+            #: received this at all, so it is never sent by default. Ollama
+            #: accepts "none" to stop a thinking model spending the budget.
+            reasoning_effort=(
+                os.environ.get("PAPERLANE_LLM_REASONING_EFFORT") or ""
+            ).strip().lower(),
         )
 
     @property
     def configured(self) -> bool:
-        return bool(self.base_url and self.api_key and self.model)
+        """An endpoint and a model are the minimum. A key is not.
+
+        Measured: Ollama's OpenAI-compatible endpoint answers without a
+        credential, so requiring one made a working local model look
+        unconfigured — and because ``fallback_reason`` is ``None`` when no
+        client is available, the degradation metric did not count it either.
+        """
+        return bool(self.base_url and self.model)
 
 
 # ---------------------------------------------------------------------------
@@ -355,8 +380,9 @@ class ModelClient:
         """Ask the model for criteria. Raises :class:`ModelUnavailable`."""
         if not self.available:
             raise ModelUnavailable(
-                "no model configured; set PAPERLANE_LLM_BASE_URL, "
-                "PAPERLANE_LLM_API_KEY and PAPERLANE_LLM_MODEL"
+                "no model configured; set PAPERLANE_LLM_BASE_URL and "
+                "PAPERLANE_LLM_MODEL (PAPERLANE_LLM_API_KEY only if the "
+                "server requires one)"
             )
 
         body = {
@@ -374,17 +400,23 @@ class ModelClient:
             "max_tokens": self.config.max_tokens,
             "temperature": 0,
         }
-        # No response_format and no reasoning_effort: both were measured to make
-        # this provider worse. The JSON is recovered from prose instead.
+        # No response_format: it produced empty content on the first provider,
+        # and the JSON is recovered from prose instead. reasoning_effort is
+        # opt-in — see ModelConfig and BUG.md A36.
+        if self.config.reasoning_effort:
+            body["reasoning_effort"] = self.config.reasoning_effort
+
+        headers = {"Content-Type": "application/json"}
+        # Only when there is a key: a local server needs no Authorization
+        # header, and an empty "Bearer " is a malformed credential (A35).
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         client = self._http()
         try:
             response = client.post(
                 f"{self.config.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.config.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 json=body,
             )
         except Exception as exc:  # noqa: BLE001 - any transport failure is the same

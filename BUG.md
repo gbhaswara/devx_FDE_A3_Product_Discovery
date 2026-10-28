@@ -1597,6 +1597,187 @@ on purpose, so `TestHeldOutSet::test_it_records_at_least_one_failure` still hold
 
 ---
 
+## Part 2f — Gaps found by running the model path on a local server · A35–A37 FIXED
+
+The model client was built against one hosted provider that requires a bearer key.
+Pointing the same client at a local Ollama — OpenAI-compatible, no credential —
+found three assumptions that held only for that provider. None touches the
+pricing path; the model still returns criteria only.
+
+### A35 — a keyless OpenAI-compatible server is treated as unconfigured
+
+```
+PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1
+PAPERLANE_LLM_MODEL=qwen3.5:2b
+(no PAPERLANE_LLM_API_KEY)
+
+  ModelConfig.configured        -> False
+  ./run.sh ask ... --json       -> "interpretation": "rules"
+  error / fallback_reason       -> none
+```
+
+**Root cause.** `ModelConfig.configured` required `base_url and api_key and
+model`. Ollama, llama.cpp and vLLM accept requests with no `Authorization`
+header, so a server speaking the documented protocol exactly was unreachable.
+
+**Why it matters.** The failure is silent. With no client available,
+`interpret.fallback_reason` returns `None` by design — "a deployment without a
+model, not degradation" — so the fallback metric does not count it either. A
+local deployment would look healthy while never once using the model, which is
+the same fail-open shape as A31: the default is mistaken for the fact.
+
+**Decision.** The key becomes optional; the header is sent only when a key is
+set. Rejected: a `PAPERLANE_LLM_REQUIRE_KEY` flag (two ways to say the same
+thing, and the safe default is the permissive one because the base URL is
+operator-chosen), and defaulting to a dummy key (sends a credential-shaped
+header that authenticates nothing, and hides whether a key was configured).
+
+**Falsification.** `tests/test_model.py::TestKeylessLocalServer::test_a_keyless_config_is_available`
+and `::test_no_authorization_header_is_sent` fail against the old contract.
+
+**Fix.** `configured` is `bool(base_url and model)`; `extract_criteria` builds
+the headers and adds `Authorization` only when `api_key` is non-empty.
+
+**Status: FIXED.** Verified: `TestKeylessLocalServer` (3 tests) fails against the
+old contract and passes now; the full suite is 1260 passed. End to end,
+`PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1 PAPERLANE_LLM_MODEL=qwen3.5:4b
+./run.sh ask "A4 80gsm copy paper, 20 reams" --json` reports
+`"interpretation": "mixed"` with the expected criteria and no credential set
+anywhere.
+
+### A36 — a thinking model spends the budget and returns `content: ""` with HTTP 200
+
+```
+qwen3.5:2b, max_tokens 2000, no reasoning_effort
+  -> HTTP 200, content "", reasoning ~1.8k chars, 18.0s
+qwen3.5:0.8b, same request
+  -> HTTP 200, content "", 14.5s
+qwen3.5:4b, same request
+  -> content with the criteria, 41.2s — inside the 45s timeout by 4s
+qwen3.5:2b, reasoning_effort "none"
+  -> content '{"category": "Flyer printing", ...}', 8.1s, no reasoning
+qwen3.5:4b, reasoning_effort "none"
+  -> content, 7.8s cold (model load) / 0.5s warm — and the most accurate
+qwen3.5:2b, think:false or reasoning_effort "low"
+  -> still reasons; content ""
+```
+
+**Root cause.** Trap 2 in `model.py` observed the old provider consuming a small
+`max_tokens` and concluded that raising the budget was the remedy. For a
+thinking model that is not a remedy but a delay: at 2000 tokens both small
+qwen3.5 models still return empty, and the 4b model answers only just inside the
+45s timeout. The parameter that turns thinking off on Ollama is
+`reasoning_effort: "none"`; `think: false` is ignored by the OpenAI-compatible
+endpoint, and `"low"` still thinks.
+
+The 41.2s figure is the *thinking* path. With thinking off the same 4b model
+answers in 7.8s on the first call (the model load) and 0.5s warm, so "the big
+model is too slow" was an artefact of the setting, not of the size.
+
+Measured on the seven cases where 2b and the rules path disagree, 4b fixes
+**four** at the outcome level — `letter`→`LTR` (#3), `legal`→`LGL` with 75 gsm
+(#10), budget not weight (#19), `colour paper`→Coloured paper (#25) — and one
+partially (#17: `4/4` becomes double-sided, but the invented category still
+filters the item out). It leaves #11 (`24 lb` → `LGL` + 170 gsm) and #12
+unchanged. That is a better model, not a solved problem, and the four remaining
+disagreements are recorded in A37 below.
+
+**Why it matters.** Empty content is indistinguishable from a model that had
+nothing to say, and the fallback to rules is silent — the request is answered,
+but the model path is never exercised. A chat deployment also cannot afford a
+41s turn (`docs/chat-channel.md` records the reply-token budget).
+
+**Decision.** Send `reasoning_effort` only when
+`PAPERLANE_LLM_REASONING_EFFORT` is set. Rejected: detecting Ollama from the URL
+(brittle and surprising — the same hostname can proxy anything), and sending it
+unconditionally (trap 3 records the previous provider returning empty content
+when it received the parameter at all). Opt-in keeps the recorded provider's
+behaviour and makes the local switch explicit.
+
+**Model choice.** `qwen3.5:4b` with `reasoning_effort=none` is the documented
+local default: fastest warm call of the models that answer at all, and the most
+accurate on this catalog's vocabulary. `qwen3.5:2b` is a second, lighter choice
+when memory is tight; it is measurably worse on domain words (`letter`→A4,
+`legal`→A3, `24 lb`→280 gsm, `colour paper`→Copy paper).
+
+**Falsification.** `tests/test_model.py::TestReasoningEffortIsOptIn` — absent by
+default, present when configured, read from the environment.
+
+**Fix.** `ModelConfig.reasoning_effort` from
+`PAPERLANE_LLM_REASONING_EFFORT`; the request body carries it only when
+non-empty.
+
+**Status: FIXED.** Verified: 6 new tests, and
+`PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1 PAPERLANE_LLM_MODEL=qwen3.5:4b
+PAPERLANE_LLM_REASONING_EFFORT=none ./run.sh eval` reports `model: available`
+with a populated comparison column. Without the variable the same command falls
+back to rules and the comparison is empty — the pre-fix behaviour, now opt-in
+rather than accidental.
+
+### A37 — the documented model comparison never reaches the model
+
+```
+$ PAPERLANE_LLM_BASE_URL=... PAPERLANE_LLM_MODEL=... ./run.sh eval
+  model: not configured
+```
+
+**Root cause.** The eval branch of `cli.main` calls `run_eval(...)` without a
+`model_client`. `run_eval` has accepted one since 0.5.0, and `eval/results.md`
+records a side-by-side table under exactly that command, but the wiring was
+never added — the recorded table came from a direct call during development.
+The command is documented as producing the comparison and silently does not.
+
+**Why it matters.** The same fail-open shape as A35: the operator sets the
+variables, the output says "model: not configured", and nothing distinguishes
+"no model deployed" from "the harness forgot to ask". The rules-versus-model
+comparison is the Tier 2 evidence for the interpretation layer, and it could not
+be reproduced from the command line at all.
+
+**Decision.** Build the client in the eval branch when
+`ModelConfig.from_env().configured`, and pass `None` otherwise, so the
+model-free run is byte-identical. Rejected: building it inside `run_eval` (the
+tests pass stub clients and would have to defeat the environment), and a
+`--model` flag (the environment is already the configuration surface everywhere
+else).
+
+**Falsification.** `tests/test_evaluate.py::TestEvalCliModelWiring` — the
+configured case fails against the old call because `model_client` is `None`.
+
+**Fix.** The eval branch constructs `ModelClient(config)` when configured and
+passes it through.
+
+**Status: FIXED.** Verified: `TestEvalCliModelWiring` (2 tests) fails against the
+old call with `KeyError: 'model_client'` and passes now. With
+`PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1 PAPERLANE_LLM_MODEL=qwen3.5:4b
+PAPERLANE_LLM_REASONING_EFFORT=none ./run.sh eval` the header reads
+`model: available` and the comparison table fills in: **20/24 requests reach the
+same outcome** under both strategies. The four disagreements are all model
+errors on domain vocabulary, and the rules path is right in each:
+
+| # | request | rules | model | model's error |
+|---|---|---|---|---|
+| 11 | 24 lb letter paper | quoted 333.84 | no_match | `LGL` + 170 gsm instead of `LTR` + 90 |
+| 12 | ivory A4 100gsm | refused | no_match | invents `category: Copy paper`, which excludes the ivory item |
+| 13 | 170gsm A4 gloss double sided | refused | no_match | the same invented category |
+| 17 | 4/4 A5 gloss 130 | quoted 384.13 | no_match | the same invented category, so the A5 130 flyer is filtered out |
+
+Three of the four are one error: the model reads the bare word "paper" as
+`category: Copy paper`, a value the request never states. A one-line prompt rule
+was tried — set the category only when the request names a product kind — and
+**rejected**: it fixed #12 but made #17 drop `sides: double` and made #11 report
+80 gsm instead of 75, so it traded one error for two. The instruction is already
+in the prompt ("If the request does not state something, omit the key entirely");
+a 4b model does not reliably obey it, which is a reason to keep the rules path
+as the default, not a reason to keep rewriting the prompt.
+
+The table is honest evidence for the design decision that the rules path stays
+the default: a model is a *decomposer*, and on this catalog's vocabulary the
+alias tables are more accurate than a 4b model. It is also the strongest
+argument for the reply being rendered from deterministic values — the model's
+mistakes change which products are *considered*, never a price.
+
+---
+
 ## Part 3 — Accepted risks in the design
 
 Carried deliberately. Each is stated as a limitation in the README, the customer summary, or the document cited in the row.

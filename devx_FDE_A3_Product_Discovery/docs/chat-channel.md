@@ -177,13 +177,13 @@ risk: `PAPERLANE_LLM_*` calls carry a **45 s timeout**, which is most of LINE's
 one-minute reply-token budget spent on a single request. Two consequences:
 
 - Choose a model that answers in a few seconds, not one that thinks for forty.
+  Measured on Ollama: `qwen3.5:4b` with `PAPERLANE_LLM_REASONING_EFFORT=none`
+  answers in **0.5 s warm**, with a 7.8 s first call while the model loads. The same model with thinking on takes
+  41 s — the timeout is not the constraint, the setting is.
 - Do not raise the timeout to "give it more room". On a chat channel it buys a
   better answer that the customer never receives, because the reply token has
   already expired. If the model is slow, answer with the rules path — which is a
   complete path, not a degraded one — and let the customer refine.
-
-Do not raise the model timeout to "give it more room". It will spend the reply
-token and the customer will get nothing.
 
 ---
 

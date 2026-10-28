@@ -388,11 +388,20 @@ The honest statement is: implemented, unit-tested, not demonstrated end to end.
 ## Interpretation strategies, side by side
 
 Both strategies are applied to the same requests in one run. `rules` is
-`interpret_rules()`; `model` is the 9router `9inference` endpoint, whose values
-are re-resolved through the catalog's own alias functions rather than trusted.
+`interpret_rules()`; `model` is a local Ollama `qwen3.5:4b` with
+`reasoning_effort=none`, whose values are re-resolved through the catalog's own
+alias functions rather than trusted.
+
+This table is **reproducible from the command shown**. Until 0.9.1 it was not:
+the CLI never built a model client, so the command printed `model: not
+configured` and the table above it came from a direct call during development
+(BUG.md A37).
 
 ```
-$ PAPERLANE_LLM_BASE_URL=... PAPERLANE_LLM_MODEL=9inference ./run.sh eval
+$ ollama pull qwen3.5:4b
+$ PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1 \
+  PAPERLANE_LLM_MODEL=qwen3.5:4b \
+  PAPERLANE_LLM_REASONING_EFFORT=none ./run.sh eval
     #  rules                  model                  request
     1  quoted (4,237.20)      quoted (4,237.20)      letter-size flyers, one side, colour, un
     2  quoted (1,123.50)      quoted (1,123.50)      letter-size flyers, one side, colour, un
@@ -404,13 +413,13 @@ $ PAPERLANE_LLM_BASE_URL=... PAPERLANE_LLM_MODEL=9inference ./run.sh eval
     8  quoted (416.23)        quoted (416.23)        glossy photo A4 230gsm
     9  quoted (426.93)        quoted (426.93)        card 250gsm black A4
    10  quoted (319.93)        quoted (319.93)        legal size paper 20 lb
-   11  quoted (333.84)        quoted (333.84)        24 lb letter paper
-   12  refused (-)            refused (-)            ivory A4 100gsm
-   13  refused (-)            refused (-)            170gsm A4 gloss double sided
+   11  quoted (333.84)        no_match (-)           24 lb letter paper
+   12  refused (-)            no_match (-)           ivory A4 100gsm
+   13  refused (-)            no_match (-)           170gsm A4 gloss double sided
    14  no_match (-)           no_match (-)           flyers under 60 a pack, 2 packs
    15  clarified (-)          clarified (-)          I need paper
    16  multi_line (3,221.02)  multi_line (3,221.02)  20 reams A4 copy paper plus 5 packs A4 m
-   17  quoted (384.13)        quoted (384.13)        4/4 A5 gloss 130
+   17  quoted (384.13)        no_match (-)           4/4 A5 gloss 130
    18  quoted (1,280.15)      quoted (1,280.15)      A4 copy paper 10 reams, budget 1500 incl
    19  clarified (-)          clarified (-)          letter-size, under 250 a pack
    20  quoted (290.51)        quoted (290.51)        A4 80gsm under 250 a pack, 1 pack
@@ -419,22 +428,33 @@ $ PAPERLANE_LLM_BASE_URL=... PAPERLANE_LLM_MODEL=9inference ./run.sh eval
    27  multi_line (4,666.91)  multi_line (4,666.91)  10 packs of the 100gsm A4 gloss flyers a
    28  quoted (4,237.20)      quoted (4,237.20)      letter flyers, one side, colour, under 2
 
-  24/24 requests reached the same outcome under both strategies
+  20/24 requests reached the same outcome under both strategies
 ```
 
-**What this does and does not show.** It shows that on this request set the model
-adds nothing and takes nothing away: identical outcomes and identical totals.
-That is the intended result, not a disappointment — the rules path is a full
-first-class interpreter, and the model's values are re-validated against the
-catalog's vocabulary before use, so agreement is what correct merging should
-produce.
+**What this shows.** The rules path is the more accurate interpreter on this
+catalog: **20 of 24** outcomes agree, and in all four disagreements the model is
+wrong and the rules are right. Three of the four are one error — the model reads
+the bare word "paper" as `category: Copy paper`, a value the request never
+states, which then filters out the item that should have matched (#12, #13, #17).
+The fourth is arithmetic vocabulary: "24 lb letter paper" becomes `LGL` + 170 gsm
+instead of `LTR` + 90 (#11).
 
-It does **not** show the model is useless. These 28 requests are the ones the
-rules were written for. The model earns its place on phrasing outside that set.
-It also does not show the model is safe to trust: during this run it returned
-`{"colour": "colour"}` for case 1 and `{"category": "letter flyers"}` for case
-28 — its own vocabulary, in both cases wrong for `Criteria` — and three cases
-degraded to clarification until the merge defect below was fixed.
+That is the evidence behind two design decisions, and it is stronger than the
+clean sweep it replaces:
+
+- **The rules path stays the default.** A model is a *decomposer*, and on this
+  catalog's vocabulary the alias tables beat a 4b model. The model earns its
+  place on phrasing the rules were never written for, not on the cases the
+  rules already handle.
+- **The reply is rendered from deterministic values.** The model's mistakes
+  change which products are *considered*; they cannot change a price, a total or
+  a discount, because no model output reaches the reply.
+
+**What it does not show.** The model is not safe to trust unvalidated: every
+value it returns is re-resolved through the alias tables before use, and a
+one-line prompt rule ("set the category only when the request names a product
+kind") was measured and rejected — it fixed #12 but made #17 drop `sides:
+double` and made #11 report 80 gsm instead of 75 (BUG.md A37).
 
 With no model configured the same command reports the rules column as the
 recorded result and marks the model column `not run`, rather than reporting an
