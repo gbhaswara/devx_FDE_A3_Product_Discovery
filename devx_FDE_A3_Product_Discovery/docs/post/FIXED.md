@@ -78,5 +78,6 @@ F-1 has its own commit, pushed separately from F-2. A19 does too.
 - A1–A32 — fixed, each with a guard that was seen to fail first. A1–A19 were on
   this list or found while closing it; A20–A32 were closed by the later brief
   audit and the refresh probe and are recorded only in `BUG.md`.
-- Anything in the held-out set's three retained failures — those are documented
-  limitations of rule interpretation, not defects with a known fix.
+- Anything in the held-out set's two retained failures — those are documented
+  limitations of rule interpretation, kept failing on purpose. The third, 30 lb,
+  turned out to be a defect with a known fix and was closed as `BUG.md` A34.

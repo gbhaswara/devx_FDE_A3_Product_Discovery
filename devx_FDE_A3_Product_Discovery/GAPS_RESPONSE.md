@@ -235,9 +235,8 @@ directly and applying the **documented** ranking chain — never by reading the
 engine's response, which would make the set a recording of current behaviour
 rather than a statement of what the request means.
 
-**It fails, and the failures are kept.** Three of eleven fail, all from one root
-cause: an unmappable noun is dropped rather than honoured, so the answer silently
-widens.
+**It fails, and the failures are kept.** Two of eleven fail, from one root cause:
+an unmappable noun is dropped rather than honoured, so the answer silently widens.
 
 - *"the pink A4 coloured paper, 2 packs"* — the shade reads as `None`, and the
   answer widens from the one pink product to all seven A4 coloured papers. The
@@ -245,8 +244,10 @@ widens.
   set.
 - *"pastel grey A4 paper"* — nothing grey is stocked, so no match is correct. The
   engine returns all 33 A4 papers.
-- *"30 lb letter paper"* — 30 lb is about 112 gsm and nothing matches. The engine
-  returns all 19 letter papers.
+
+A third, *"30 lb letter paper"*, was the same widening until the table's own 3.75
+factor made the conversion arithmetic rather than a guess; it is closed as
+`BUG.md` A34 and now returns no match.
 
 A test asserts at least one held-out failure **remains**, because a held-out set
 that passes completely is evidence about its author. Deleting these cases to get

@@ -122,7 +122,7 @@
         "outcome": "no_match",
         "skus": []
       },
-      "note": "30 lb is about 112 gsm. No such product exists, so the correct answer matches nothing rather than quietly matching every letter paper in the catalog."
+      "note": "30 lb is 30 x 3.75 = 112.5 gsm, rounded half-up to 113. No such product exists, so the correct answer matches nothing rather than quietly matching every letter paper in the catalog."
     },
     {
       "number": 6,

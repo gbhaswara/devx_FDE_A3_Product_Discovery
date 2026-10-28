@@ -71,12 +71,12 @@ python3 -m http.server 8000
 
 | Check | Result |
 |---|---|
-| Test suite, offline | 1,243 passed, 8 skipped (1,251 collected) |
-| Test suite, online | 1,248 passed, 3 skipped |
+| Test suite, offline | 1,244 passed, 8 skipped (1,252 collected) |
+| Test suite, online | 1,249 passed, 3 skipped |
 | Evaluation, v1 catalog | 24/24 runnable cases pass (4 not run by design) |
 | Evaluation, mutated v2 catalog | 21/21 |
 | Conversation set | 12/12 over 27 turns; both negative controls fail as designed |
-| Held-out set | 8/11, with the three failures retained |
+| Held-out set | 9/11, with two failures retained |
 | Refresh harness | 12/12 declared changes reported under the correct kind |
 
 The evaluation records live in

@@ -90,9 +90,15 @@ class TestWeightAliases:
         assert resolve_weight("20 lb") == (75, None, None)
         assert resolve_weight("24 lb bond") == (90, None, None)
 
-    def test_all_four_table_values(self):
+    def test_every_table_value_converts(self):
         for pounds, gsm in POUND_TO_GSM.items():
             assert resolve_weight(f"{pounds} lb") == (gsm, None, None)
+
+    def test_thirty_pounds_converts_by_the_table_factor(self):
+        # Every agreed row is the same factor: 75/20 = 90/24 = 105/28 = 120/32
+        # = 3.75. 30 lb is therefore 112.5 gsm by the table's own arithmetic,
+        # rounded half-up to 113 — the rule the money path already uses.
+        assert resolve_weight("30 lb") == (113, None, None)
 
     def test_unlisted_pounds_yield_nothing(self):
         # No defensible conversion exists, so the requirement is dropped rather

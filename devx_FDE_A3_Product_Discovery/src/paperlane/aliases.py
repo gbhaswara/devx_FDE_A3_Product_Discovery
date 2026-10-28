@@ -181,8 +181,19 @@ _MONEY_CONTEXT = re.compile(
     re.IGNORECASE,
 )
 
-#: The brief's agreed table.
-POUND_TO_GSM: dict[int, int] = {20: 75, 24: 90, 28: 105, 32: 120}
+#: The brief's agreed table, plus one derived entry.
+#:
+#: Every agreed row is the same factor — 75/20 = 90/24 = 105/28 = 120/32 =
+#: 3.75 — so 30 lb is 30 × 3.75 = 112.5 gsm, rounded half-up to 113 (the rule
+#: the money path already uses; BUG.md A34). The table stays closed otherwise:
+#: 3.75 is the *bond* factor, and cover or index stock weighs differently at
+#: the same pound rating, so an unlisted value is still refused rather than
+#: extrapolated.
+#:
+#: `normalize.POUND_TO_GSM` keeps the brief's four. That table cross-checks a
+#: page stating both forms, so "30 lb (112 gsm)" must raise a disagreement
+#: rather than be silently corrected to 113.
+POUND_TO_GSM: dict[int, int] = {20: 75, 24: 90, 28: 105, 30: 113, 32: 120}
 
 
 def resolve_weight(text: str) -> tuple[int | None, int | None, int | None]:

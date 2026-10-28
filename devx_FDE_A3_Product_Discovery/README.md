@@ -396,17 +396,21 @@ packs remain and a customer asks for 50, the quote is for 50 and fulfilment is
 the merchant's problem. Inventing a count would be the enrichment the brief
 forbids, and it would put a fabricated figure into the pricing path.
 
-**The held-out set fails, and that is the honest result.** Against 11 requests in
-phrasings the rules were never tuned on (`eval/held-out-cases.json`), 8 pass and 3
-fail, all from one cause: a noun the aliases cannot map — a shade, or a weight in
-pounds with no catalog equivalent — is dropped rather than surfaced, so the answer
-silently widens to every paper of that size. "The pink A4 coloured paper" quotes
-all seven A4 coloured papers instead of the one; "pastel grey A4 paper" returns all
-33 A4 papers when nothing grey is stocked; "30 lb letter paper" returns all 19
-letter papers. The failures are kept in the run, not pruned to get a clean sweep,
-and a test asserts at least one remains. The recorded set was written *while* the
-rules were built and used to fix them, so it cannot measure this; a held-out set is
-the only thing that can.
+**The held-out set still fails, and that is the honest result.** Against 11 requests
+in phrasings the rules were never tuned on (`eval/held-out-cases.json`), 9 pass and
+2 fail, from one cause: a shade the aliases cannot map is dropped rather than
+surfaced, so the answer silently widens to every paper of that size. "The pink A4
+coloured paper" quotes all seven A4 coloured papers instead of the one; "pastel
+grey A4 paper" returns all 33 A4 papers when nothing grey is stocked. Both are
+retained on purpose: `pink` is not `pastel pink`, and aliasing it would assume the
+customer meant the pastel stock; the general fix is a "stated but unmappable"
+channel that changes the interpreter contract. The third failure, "30 lb letter
+paper", had a defensible conversion — 30 × 3.75 = 112.5 gsm, rounded half-up to
+113 — and was fixed (`BUG.md` A34), which is why the score reads 9/11 rather than
+8/11. The failures are kept in the run, not pruned to get a clean sweep, and a
+test asserts at least one remains. The recorded set was written *while* the rules
+were built and used to fix them, so it cannot measure this; a held-out set is the
+only thing that can.
 
 **Freshness is reported, not enforced.** The catalog's age is on every surface
 (`./run.sh metrics`, `GET /api/health`, the `snapshot.freshness` block) with a
@@ -504,7 +508,7 @@ I used **OpenCode** with the **9router** endpoint (deepseek-v4.1-flash) as the
 primary coding agent, backed by a spec-driven workflow I built myself
 (**openspec**) that kept proposal, capability specs, design decisions and task
 lists in one place. The model drafted the site analysis, the eleven capability
-specs and most of the code across 89 commits; I reviewed and corrected every
+specs and most of the code across the full commit history; I reviewed and corrected every
 draft, and the scope decisions are mine. The model earned its place by finding
 defects: live-model evaluation exposed a clarification branch that unit tests had
 made unreachable, plus a colour ambiguity only the model's phrasing triggered. I
@@ -544,7 +548,7 @@ A33 is carried separately as an accepted risk.
 | The evaluation *can* fail | `./run.sh eval --cases eval/negative-control.json` — four deliberate corruptions, one per scoring axis |
 | The scoring detects what it claims | `./run.sh eval --self-check` |
 | A misread request is scored, not just a mis-ranked one | `./run.sh eval` — `interpretation` is the first axis; `tests/test_evaluate.py::TestInterpretationAxis` |
-| Behaviour on unseen phrasing, warts included | `./run.sh eval --cases eval/held-out-cases.json` — 11 requests the rules were never tuned against, 8 pass and 3 fail on purpose |
+| Behaviour on unseen phrasing, warts included | `./run.sh eval --cases eval/held-out-cases.json` — 11 requests the rules were never tuned against, 9 pass and 2 fail on purpose |
 | The catalog's age is visible | `./run.sh metrics` (prints `catalog age:`), `GET /api/health`, and the `snapshot.freshness` block in every API payload |
 | The crawler is faithful | `./run.sh diff`, `tests/test_extract.py`, `docs/ingestion.md` |
 | The documented API is real | `tests/test_api.py::TestDocumentedExamples` executes every example |
@@ -559,7 +563,7 @@ A33 is carried separately as an accepted risk.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The four conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1251) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1252) |
 
 ---
 

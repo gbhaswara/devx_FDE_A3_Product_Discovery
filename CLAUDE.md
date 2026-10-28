@@ -8,7 +8,7 @@ The **devx AI Labs AI Forward Deployed Engineer** take-home, **Option A3 — Pro
 
 A customer sends *"We need letter-size flyers, one side, colour, under 250 a pack, 20 packs."* The system reads the live catalog, finds matching products, explains why each matches, and returns a complete price breakdown — every figure computed in deterministic code.
 
-**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory, the gap-closure work and the two follow-up reviews (brief audit A20–A30, demo-round refresh hardening A31–A32). **239 tasks closed across the six archived changes and none open** (86 + 26 + 27 + 28 + 54 + 18). 1251 tests, 1243 passing offline under `unshare -rn` (8 skip) with no model configured. The version is `0.9.0`. Nothing is under construction.
+**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory, the gap-closure work and the two follow-up reviews (brief audit A20–A30, demo-round refresh hardening A31–A32). **239 tasks closed across the six archived changes and none open** (86 + 26 + 27 + 28 + 54 + 18). 1252 tests, 1244 passing offline under `unshare -rn` (8 skip) with no model configured. The version is `0.9.0`. Nothing is under construction.
 
 ## Read in this order
 
@@ -51,7 +51,7 @@ DEVXLABS/
     ├── paperlane/               READ-ONLY input — the site to crawl
     ├── run.sh                   the command surface (see below)
     ├── src/paperlane/           27 modules
-    ├── tests/                   29 modules, 1251 tests
+    ├── tests/                   29 modules, 1252 tests
     ├── eval/                    cases.json, held-out-cases.json, conversation-cases.json,
     │                            the three negative/control sets, results.md
     ├── docs/                    15 documents: the 11 layer/capability docs,
@@ -74,7 +74,7 @@ DEVXLABS/
 | `duckdb` (Python) | 2.0.0 |
 | `pdftotext` / `pdfinfo` | available |
 | `duckdb` CLI / `sqlite3` CLI | **not installed** — use the Python module |
-| `git` | 89 commits, remote `origin` set, history pushed |
+| `git` | full history, one commit per change, remote `origin` set |
 
 **Always use the project virtualenv's interpreter: `devx_FDE_A3_Product_Discovery/.venv/bin/python`.** Bare `python3` resolves the project-root `paperlane/` directory as a namespace package and shadows the real package — a confusing `ImportError` for `paperlane.cli`. `run.sh` already does this; prefer `./run.sh`.
 
@@ -107,7 +107,7 @@ uv sync                                        # install; no network beyond PyPI
 
 `./run.sh eval` also takes `--cases <path>` and `--self-check`. The conversation
 set is `eval/conversation-cases.json`; the held-out set is
-`eval/held-out-cases.json` (11 requests, unseen phrasing, 3 failures retained by
+`eval/held-out-cases.json` (11 requests, unseen phrasing, 2 failures retained by
 design — it is *not* a regression set). The two negative controls are
 `eval/negative-control.json` and `eval/conversation-negative-control.json`, and
 both are *expected* to exit 1.

@@ -1519,6 +1519,84 @@ suite 1251 collected / 1248 passed + 3 skipped; `./run.sh eval` 24/24;
 
 ---
 
+## Part 2e — Gaps found by the held-out set · A34 FIXED
+
+`eval/held-out-cases.json` was written after the rules path was finished and run
+once, with expectations derived by filtering the catalog and applying the
+documented ranking chain — never by reading the engine's response. It reported
+**8/11**, and all three failures share one mechanism: a noun the alias tables
+cannot map is set to `None`, `None` means *not stated*, and the search applies no
+filter. A stated requirement disappears and the answer widens.
+
+Two of the three are retained deliberately, and Part 3 carries them. The third was
+a closed-vocabulary gap with a defensible arithmetic answer, and is fixed here.
+
+### A34 — 30 lb is dropped although the table's own factor determines it
+
+```
+"30 lb letter paper"
+  resolve_weight -> (None, None, None)
+  criteria       -> {size: LTR}
+  reply          -> 19 letter papers, total 294.25
+  expected       -> no_match; nothing in the catalog is 112.5 gsm
+```
+
+**Root cause.** `_POUND_PATTERN` matches, `30` is absent from `POUND_TO_GSM`, and
+the unlisted branch returns `(None, None, None)` under the comment *"Unlisted
+pound value: no conversion is defensible."* The comment is right about a guess and
+wrong about this value: all four agreed rows share one factor —
+75/20 = 90/24 = 105/28 = 120/32 = **3.75** — so 30 lb is 30 × 3.75 = **112.5 gsm**
+by the table's own arithmetic.
+
+**Why it matters.** It is the fail-open the held-out set exists to find. The weight
+constraint vanishes, and the reply quotes 19 products with a full breakdown and a
+total that looks authoritative. Nothing errors and no review row appears; the only
+visible symptom is that the answer is wider than the request.
+
+**Decision, recorded before the change.** 112.5 is not an integer, so the
+conversion has to choose a rounding. Chosen: **half-up → 113**, the same rule the
+money path already uses (`pricing` rounds half-up to the satang), in preference to
+truncation (112) or snapping to the nearest stocked grammage, which would invent a
+match the catalog does not have. Consistency with the one rounding rule the project
+states is worth more than the 112 that paper tables commonly publish; the
+difference is carried as a risk below rather than hidden.
+
+**Falsification.** `tests/test_aliases.py::TestWeightAliases::test_thirty_pounds_converts_by_the_table_factor`
+asserts `resolve_weight("30 lb") == (113, None, None)`. Against the old table:
+
+```
+FAILED tests/test_aliases.py::TestWeightAliases::test_thirty_pounds_converts_by_the_table_factor
+E  assert (None, None, None) == (113, None, None)
+```
+
+**Fix.** `aliases.POUND_TO_GSM` gains `30: 113`, with the derivation in a comment.
+`normalize.POUND_TO_GSM` deliberately does **not** gain it: that table is the
+cross-check applied to a page stating both forms, and a page reading
+`30 lb (112 gsm)` must raise a disagreement (T7's guard) rather than be silently
+"corrected" to 113. The two tables therefore differ by one entry, and each says
+why — two tables that drift apart without saying so is the failure mode A19
+records.
+
+**Risk carried.** If the demo site publishes a 30 lb product, its stated grammage
+is the value that matters, and the common published value is 112. A page reading
+`30 lb (112 gsm)` raises a disagreement and becomes a review row: visible, not
+silent, but the product would be missing until the two are reconciled. That is the
+intended trade — a loud gap beats a stored guess — and the first thing to check on
+a new site is any 30 lb row.
+
+**Verification.** Offline suite 1244 passed + 8 skipped (one more test than before);
+online 1249 passed + 3 skipped. `./run.sh eval` 24/24 on v1 and `--catalog v2`
+21/21 — no recorded case states 30 lb, so the regression set does not move. The
+held-out set goes **8/11 → 9/11**: case 5 now reads `no_match` with
+`weight_gsm: 113`, and the two retained failures are byte-for-byte unchanged.
+
+**Status: FIXED.** One value closed, the class still open. 26 lb, 22 lb and every
+other unlisted pound weight still return `(None, None, None)` and still widen the
+search; that is the accepted risk in Part 3. The held-out set keeps two failures
+on purpose, so `TestHeldOutSet::test_it_records_at_least_one_failure` still holds.
+
+---
+
 ## Part 3 — Accepted risks in the design
 
 Carried deliberately. Each is stated as a limitation in the README, the customer summary, or the document cited in the row.
@@ -1534,6 +1612,7 @@ Carried deliberately. Each is stated as a limitation in the README, the customer
 | No auth, no rate limiting beyond the crawler | not production-hardened | Local demonstration service; the brief scores the assistant, not deployment hardening. |
 | One site, one layout family | cannot onboard another supplier without work | The ladder covers four shapes plus a structured fallback; a parser profile per site is the stated next step. |
 | **A33** — Card text is trusted only when its wording is known | a card/page contradiction phrased in an unrecognised way is not flagged | `ingest._card_stock_claim` recognises `out of stock` (`_CARD_OUT_RE`) and `discontinued` (`_CARD_DISCONTINUED_RE`). Measured across the seven category listing pages (35 cards) on 2026-10-28: every card's `div.muted` is the unit line except one, only the `PL-CL-A4-100-IVY` card adds `out of stock`, and no card ever claims `in stock`. The product page is authoritative, and A31 already sends unrecognised **page** wording to review. Revisit if a site revision moves stock claims onto cards. |
+| **Held-out 2 and 3** — a shade the alias table cannot map is dropped, so the search widens | *"the pink A4 coloured paper"* quotes 7 products instead of 1; *"pastel grey A4 paper"* quotes 33 instead of no match. A quote reads as complete while a stated constraint was ignored | Both need a synonym or a *stated-but-unmappable* channel, and neither was taken. `pink` is not `pastel pink`: aliasing it assumes the customer meant the pastel stock, and the case would then measure the alias rather than the system. The structural channel changes the interpreter contract, and it would consume the last unbiased evidence in the submission. Retained as failing on purpose; A34 is what the fixable member of the same class looks like. |
 
 ---
 
@@ -1547,6 +1626,7 @@ These are the conditions that indicate the system is degrading rather than faili
 | Rising zero-result share | parsing defect, or a genuine catalog gap | run a known-good request through `/quote` |
 | Review set grew after a refresh | the site changed markup shape | inspect the recorded excerpt for the failing page. A refresh that also collapsed the SKU count is now refused before the swap (A32) |
 | Every item reads as in stock and no review rows appeared after a refresh | availability wording the parser does not know | compare each row's availability cell with the stored `stock_status`; unknown wording is now flagged per row (A31) |
+| A named shade or weight is dropped and the answer widens to the whole size | the noun is outside the alias vocabulary | `resolve_colour` / `resolve_weight` return `None` for text that names one; the held-out set fails cases 2 and 3 on purpose, and A34 closed the one pound value that had a defensible conversion |
 | Catalog shrank between snapshots | a parser silently stopped matching | `/diff` — withdrawn items without a review entry. This path is now exercised: `./run.sh verify-refresh` withdraws `PL-CP-A4-75` and the diff reports exactly one withdrawal. A collapse to zero is refused before the swap by A32's gate |
 | p95 latency climbing | model latency, not pricing (pricing is local) | per-stage timings in the request record |
 | Stated total ≠ computed total | reply prose is paraphrasing a figure instead of inserting it | this should be structurally impossible; any occurrence is a code defect |

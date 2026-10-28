@@ -36,6 +36,11 @@ from decimal import Decimal
 #: Only 20 lb and 24 lb actually appear in the reference site (and both appear
 #: *with* their grammage stated, which cross-checks the table). 28 lb and 32 lb
 #: are implemented from the agreed table but are unexercised by v1 data.
+#:
+#: `aliases.POUND_TO_GSM` carries one extra entry — 30 lb → 113 gsm — for
+#: reading a customer request. This table does not, deliberately: it cross-checks
+#: a page that states both forms, so "30 lb (112 gsm)" must raise a disagreement
+#: rather than be corrected to a value the page did not state (BUG.md A34).
 POUND_TO_GSM: dict[int, int] = {
     20: 75,
     24: 90,

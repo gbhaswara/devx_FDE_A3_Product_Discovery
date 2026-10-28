@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`. The planning artefacts named below — `ANALYZE_01.md`, `ANALYZE_POST.md`, `FIXED.md` and `MVC_PLAN.md` — now live under `devx_FDE_A3_Product_Discovery/docs/pre/` and `docs/post/`; historical entries keep the names they were written with.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete; the brief audit and the refresh hardening after it are closed too.** **239 tasks closed across the six archived changes, none open** (86 + 26 + 27 + 28 + 54 + 18). **1251 tests** (offline 1243 passed + 8 skipped; online 1248 passed + 3 skipped), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 8/11 with its three failures retained. Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete; the brief audit and the refresh hardening after it are closed too.** **239 tasks closed across the six archived changes, none open** (86 + 26 + 27 + 28 + 54 + 18). **1252 tests** (offline 1244 passed + 8 skipped; online 1249 passed + 3 skipped), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 9/11 with two failures retained (`A34` closed the third). Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -74,6 +74,28 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 ---
 
 ## [Unreleased]
+
+### Fixed — 2026-10-28 · a pound weight the table's own factor determines
+
+The held-out set reported 8/11. Two failures are retained on purpose, because
+neither has a fix that does not first invent a synonym or change the interpreter
+contract. The third was fixable, and is closed here.
+
+- **A34 — `30 lb` was dropped.** `_POUND_PATTERN` matched, `30` was absent from
+  `POUND_TO_GSM`, and the unlisted branch returned `(None, None, None)` under the
+  comment *"no conversion is defensible"*. That comment was right about a guess
+  and wrong about this value: all four agreed rows share one factor — 75/20 =
+  90/24 = 105/28 = 120/32 = 3.75 — so 30 lb is 112.5 gsm by the table's own
+  arithmetic. `aliases.POUND_TO_GSM` now carries `30: 113`, rounded half-up, the
+  rule the money path already uses. `normalize.POUND_TO_GSM` deliberately keeps
+  the brief's four: it cross-checks a page stating both forms, so
+  `30 lb (112 gsm)` must raise rather than be corrected to a value the page did
+  not state. Unlisted pound values still return nothing, which stays an accepted
+  risk in `BUG.md` Part 3.
+
+Offline suite 1244 passed + 8 skipped; online 1249 passed + 3 skipped;
+`./run.sh eval` 24/24; `--catalog v2` 21/21; held-out **9/11**, with cases 2 and 3
+still failing on purpose.
 
 ### Fixed — 2026-10-27 · a refresh could replace a good catalog with a collapsed one
 

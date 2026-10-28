@@ -52,7 +52,7 @@ Planning and implementation are separate steps. Do not skip the boundary.
 1. Analyse      devx_FDE_A3_Product_Discovery/docs/pre/ANALYZE_01.md   (done)
 2. Propose      openspec/changes/archive/...            (done — the PRD, now archived)
 3. Apply        /opsx-apply                            (done — six archived changes, 239 tasks)
-4. Verify       tests + eval + clean-run               (done — 1251 tests, eval 24/24, v2 21/21)
+4. Verify       tests + eval + clean-run               (done — 1252 tests, eval 24/24, v2 21/21)
 5. Submit       repo link + README + customer summary + eval results   (ready)
 ```
 

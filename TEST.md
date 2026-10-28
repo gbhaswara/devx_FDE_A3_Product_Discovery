@@ -195,7 +195,7 @@ reply            would a salesperson send this?
 
 **Cases that cannot run are recorded as such.** Two conversion cases depend on products that do not exist in v1. They are marked *not applicable*, with the reason, rather than omitted or counted as passing.
 
-**A held-out set exists, and it fails.** `eval/held-out-cases.json` is 11 requests in phrasings that appear nowhere in `cases.json`, written after the rules path was finished and **not** used to develop it. Expectations were derived by filtering the catalog directly and applying the documented ranking chain, never by reading the engine's response. Three of eleven fail, all one root cause: an unmappable noun is dropped rather than honoured, so the answer silently widens — "the pink A4 coloured paper" widens from one product to all seven A4 coloured papers, "pastel grey A4 paper" returns all 33 A4 papers when no grey is stocked, and "30 lb letter paper" returns all 19 letter papers. A test asserts at least one held-out failure **remains**, because a held-out set that passes completely is evidence about its author. It is a separate file, not cases 29+, and a default `./run.sh eval` does not load it.
+**A held-out set exists, and it fails.** `eval/held-out-cases.json` is 11 requests in phrasings that appear nowhere in `cases.json`, written after the rules path was finished and **not** used to develop it. Expectations were derived by filtering the catalog directly and applying the documented ranking chain, never by reading the engine's response. Two of eleven fail, one root cause: an unmappable noun is dropped rather than honoured, so the answer silently widens — "the pink A4 coloured paper" widens from one product to all seven A4 coloured papers, and "pastel grey A4 paper" returns all 33 A4 papers when no grey is stocked. A third, "30 lb letter paper", was fixed once the table's own 3.75 factor made the conversion arithmetic rather than a guess (`BUG.md` A34). A test asserts at least one held-out failure **remains**, because a held-out set that passes completely is evidence about its author. It is a separate file, not cases 29+, and a default `./run.sh eval` does not load it.
 
 **Results format.** Expected against actual, per case, per axis. Failures stay in, with a cause.
 
@@ -317,7 +317,7 @@ carrying a total is checked structurally instead.
 
 | Module | Tests | Layer |
 |---|---|---|
-| `test_aliases.py` | 106 | 1 |
+| `test_aliases.py` | 107 | 1 |
 | `test_api.py` | 76 | 3 |
 | `test_ask_cli.py` | 32 | 3 |
 | `test_assistant.py` | 86 | 3 |
@@ -346,10 +346,10 @@ carrying a total is checked structurally instead.
 | `test_snapshot_path.py` | 26 | 7 |
 | `test_ui_catalog.py` | 26 | 3 |
 | `test_ui_offline.py` | 9 | 3 |
-| **Total** | **1251** | |
+| **Total** | **1252** | |
 
-Online: 1251 collected, 3 skip (provider-dependent) — 1248 passed.
-Offline (`unshare -rn`): 1251 collected, 8 skip — 1243 passed; the same three plus
+Online: 1252 collected, 3 skip (provider-dependent) — 1249 passed.
+Offline (`unshare -rn`): 1252 collected, 8 skip — 1244 passed; the same three plus
 the five loopback tests that legitimately cannot run without a network interface.
 
 One further skip is state-dependent, not environmental: `test_evaluate.py` skips
@@ -412,7 +412,7 @@ clone sees — the artefact directory is git-ignored.
 ./run.sh test             # 1240 tests: unit + extraction + integration + observability + conversation; offline, no model
 ./run.sh eval             # 28 recorded cases against the committed snapshot (24/24)
 ./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21, after verify-refresh --keep
-./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 8 pass 3 fail by design
+./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 9 pass 2 fail by design
 ./run.sh eval --cases eval/conversation-cases.json   # 12 conversations, 27 turns
 ./run.sh metrics          # the five operational measures, derived from request records
 ./run.sh metrics --eval   # the same measures over the most recent evaluation run
