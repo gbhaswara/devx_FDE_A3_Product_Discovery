@@ -392,8 +392,14 @@ Both strategies are applied to the same requests in one run. `rules` is
 `reasoning_effort=none`, whose values are re-resolved through the catalog's own
 alias functions rather than trusted.
 
-This table is **reproducible from the command shown**. Until 0.9.1 it was not:
-the CLI never built a model client, so the command printed `model: not
+This table is **reproducible from the command shown, with the model pinned to a
+digest**: `qwen3.5:4b` @ `sha256:d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04`
+(3.3 GB). An Ollama tag is a mutable pointer, not a version: after a later
+`ollama pull` moved `qwen3.5:4b`, the same requests produced different criteria
+with no code change (on #11 the model's read of `24 lb` went from `LGL` + 170 gsm
+to `LTR` + 170 gsm; the totals did not move). Quote the digest, or expect the
+table to drift with the registry. Until 0.9.1 the table was not reproducible at
+all: the CLI never built a model client, so the command printed `model: not
 configured` and the table above it came from a direct call during development
 (BUG.md A37).
 
@@ -436,8 +442,8 @@ catalog: **20 of 24** outcomes agree, and in all four disagreements the model is
 wrong and the rules are right. Three of the four are one error — the model reads
 the bare word "paper" as `category: Copy paper`, a value the request never
 states, which then filters out the item that should have matched (#12, #13, #17).
-The fourth is arithmetic vocabulary: "24 lb letter paper" becomes `LGL` + 170 gsm
-instead of `LTR` + 90 (#11).
+The fourth is arithmetic vocabulary: "24 lb letter paper" is read as 170 gsm
+instead of 90 (#11).
 
 That is the evidence behind two design decisions, and it is stronger than the
 clean sweep it replaces:
@@ -459,6 +465,14 @@ double` and made #11 report 80 gsm instead of 75 (BUG.md A37).
 With no model configured the same command reports the rules column as the
 recorded result and marks the model column `not run`, rather than reporting an
 agreement it never measured.
+
+**Same digest, bigger model.** `qwen3.5:9b` @ `sha256:56671c2ab938…` on the same
+24 cases reaches **22/24** at the outcome level — but only **20/24 identical
+totals**, because outcome agreement hides a wrong price: #10 returns 304.95
+instead of 319.93, and #28 returns 3,860.56 instead of 4,237.20. Its errors are #10 (`legal`→`LTR`), #12, #17 and #28 (`letter`→`A4`).
+The 24 calls take 38 s against 15 s for 4b, so 9b buys no accuracy on totals at
+2.5× the latency. Count identical totals, not "same outcome" — this is the one
+place where the flattering number is the smaller one.
 
 ---
 

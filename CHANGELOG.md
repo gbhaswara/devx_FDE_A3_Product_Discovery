@@ -102,12 +102,16 @@ three are registered in `BUG.md` Part 2f.
   constructs `ModelClient(ModelConfig.from_env())` when configured and passes
   `None` otherwise, so the model-free run is unchanged.
 
-**Measured, not assumed.** `qwen3.5:4b` with `reasoning_effort=none` answers in
-**0.5 s warm** (7.8 s on the first call while the model loads) and is the most accurate local model tested; the
-"big model is too slow" figure was the thinking path, not the size. Over the 24
-v1 cases the rules path and the model reach the **same outcome on 20**; all four
-disagreements are model vocabulary errors and the rules are right in each —
-three are the model inventing `category: Copy paper` from the bare word "paper".
+**Measured, not assumed.** `qwen3.5:4b` @ `sha256:d8b0f5e9760c…` with
+`reasoning_effort=none` answers in **0.5 s warm** (7.8 s on the first call while the model loads) and matches the best measured total accuracy: 20 of 24
+identical totals, the same as `qwen3.5:9b` at 2.5× the latency; the
+"big model is too slow" figure was the thinking path, not the size. The digest is
+quoted because an Ollama tag is a mutable pointer: a later `ollama pull` of the
+same tag changed the model's criteria on the same requests with no code change.
+Over the 24 v1 cases the rules path and the model reach the **same outcome on
+20**; all four disagreements are model vocabulary errors and the rules are right
+in each — three are the model inventing `category: Copy paper` from the bare word
+"paper".
 A one-line prompt rule was measured and rejected: it fixed one case and broke
 two. The rules path therefore stays the default, and the model remains a
 decomposer whose output is re-resolved through the alias tables before use.

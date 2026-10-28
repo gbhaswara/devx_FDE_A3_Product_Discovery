@@ -218,12 +218,18 @@ requests with no `Authorization` header, and the client sends one only when a
 key is set. A hosted OpenAI-compatible endpoint works the same way — add the key
 and change the URL and model name.
 
+Pin the model, not just the tag: the figures below are measured against
+`qwen3.5:4b` @ `sha256:d8b0f5e9760c…`. An Ollama tag is a mutable pointer — a
+later `ollama pull qwen3.5:4b` resolved to a different build and changed the
+model's criteria on the same requests, with no code change.
+
 `PAPERLANE_LLM_REASONING_EFFORT=none` is what makes a thinking model usable.
 Without it, `qwen3.5:2b` and `:0.8b` spend the whole output budget reasoning and
 return `content: ""` with HTTP 200, and `qwen3.5:4b` takes 41 s — inside the 45 s
 timeout by four seconds. With it, 4b answers in **0.5 s warm** (7.8 s on the
-first call, while the model loads) and is the most accurate local model tested.
-The parameter is opt-in because the first hosted
+first call, while the model loads) and matches the best measured total accuracy
+on the v1 set: 20 of 24 identical totals, the same as `qwen3.5:9b` at 2.5× the
+latency. The parameter is opt-in because the first hosted
 provider returned empty content whenever it received it (BUG.md A36).
 
 No credential is committed anywhere in this repository; configuration is by

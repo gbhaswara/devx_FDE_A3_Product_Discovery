@@ -1657,7 +1657,8 @@ qwen3.5:4b, same request
 qwen3.5:2b, reasoning_effort "none"
   -> content '{"category": "Flyer printing", ...}', 8.1s, no reasoning
 qwen3.5:4b, reasoning_effort "none"
-  -> content, 7.8s cold (model load) / 0.5s warm — and the most accurate
+  -> content, 7.8s cold (model load) / 0.5s warm — and the best measured total
+     accuracy of the local models (20/24, tying 9b at 2.5x less time)
 qwen3.5:2b, think:false or reasoning_effort "low"
   -> still reasons; content ""
 ```
@@ -1679,7 +1680,8 @@ Measured on the seven cases where 2b and the rules path disagree, 4b fixes
 (#10), budget not weight (#19), `colour paper`→Coloured paper (#25) — and one
 partially (#17: `4/4` becomes double-sided, but the invented category still
 filters the item out). It leaves #11 (`24 lb` → `LGL` + 170 gsm) and #12
-unchanged. That is a better model, not a solved problem, and the four remaining
+unchanged — measured before a later `ollama pull` moved the tag, so A37 carries
+the current reading of #11. That is a better model, not a solved problem, and the four remaining
 disagreements are recorded in A37 below.
 
 **Why it matters.** Empty content is indistinguishable from a model that had
@@ -1751,12 +1753,17 @@ old call with `KeyError: 'model_client'` and passes now. With
 `PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1 PAPERLANE_LLM_MODEL=qwen3.5:4b
 PAPERLANE_LLM_REASONING_EFFORT=none ./run.sh eval` the header reads
 `model: available` and the comparison table fills in: **20/24 requests reach the
-same outcome** under both strategies. The four disagreements are all model
+same outcome** under both strategies. That is measured against `qwen3.5:4b` @
+`sha256:d8b0f5e9760c…`. An Ollama tag is a mutable pointer: a later pull of the
+same tag changed the model's criteria on these requests with no code change (#11
+moved from `LGL` + 170 gsm to `LTR` + 170 gsm; still wrong, still `no_match`).
+The digest is quoted for that reason — a tag alone reproduces only until the
+registry moves. The four disagreements are all model
 errors on domain vocabulary, and the rules path is right in each:
 
 | # | request | rules | model | model's error |
 |---|---|---|---|---|
-| 11 | 24 lb letter paper | quoted 333.84 | no_match | `LGL` + 170 gsm instead of `LTR` + 90 |
+| 11 | 24 lb letter paper | quoted 333.84 | no_match | 170 gsm instead of 90 — the size is now right; the weight is the cover-grade value |
 | 12 | ivory A4 100gsm | refused | no_match | invents `category: Copy paper`, which excludes the ivory item |
 | 13 | 170gsm A4 gloss double sided | refused | no_match | the same invented category |
 | 17 | 4/4 A5 gloss 130 | quoted 384.13 | no_match | the same invented category, so the A5 130 flyer is filtered out |
