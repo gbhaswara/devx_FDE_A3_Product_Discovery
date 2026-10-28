@@ -20,3 +20,7 @@ venv/
 # Build output
 dist/
 build/
+
+# Local agent workspace — commands and skills for the author's tooling,
+# not part of the submission.
+.opencode/
