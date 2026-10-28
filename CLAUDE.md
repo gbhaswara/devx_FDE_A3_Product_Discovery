@@ -8,7 +8,7 @@ The **devx AI Labs AI Forward Deployed Engineer** take-home, **Option A3 — Pro
 
 A customer sends *"We need letter-size flyers, one side, colour, under 250 a pack, 20 packs."* The system reads the live catalog, finds matching products, explains why each matches, and returns a complete price breakdown — every figure computed in deterministic code.
 
-**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory, the gap-closure work and the two follow-up reviews (brief audit A20–A30, demo-round refresh hardening A31–A32). **239 tasks closed across the six archived changes and none open** (86 + 26 + 27 + 28 + 54 + 18). 1252 tests, 1244 passing offline under `unshare -rn` (8 skip) with no model configured. The version is `0.9.0`. Nothing is under construction.
+**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory, the gap-closure work and the two follow-up reviews (brief audit A20–A30, demo-round refresh hardening A31–A32). **239 tasks closed across the six archived changes and none open** (86 + 26 + 27 + 28 + 54 + 18). 1252 tests, 1249 passing under `./run.sh test-offline` (3 provider tests skip; one further case skips on a fresh clone until `verify-refresh --keep`) with no model configured; with a local Ollama embedding server the whole suite passes, 1252/1252. The version is `0.9.0`. Nothing is under construction.
 
 ## Read in this order
 
@@ -92,7 +92,8 @@ Everything is dispatched through `devx_FDE_A3_Product_Discovery/run.sh`. Run it 
 cd devx_FDE_A3_Product_Discovery
 
 uv sync                                        # install; no network beyond PyPI
-./run.sh test                                  # the suite: offline, no model, no network
+./run.sh test                                  # the suite: no model needed, 3 provider tests skip
+./run.sh test-offline                          # the same, in a network namespace with loopback up
 ./run.sh serve                                 # the app on http://127.0.0.1:8001
 ./run.sh eval                                  # the recorded cases against the loaded snapshot
 ./run.sh ask "A4 80gsm copy paper, 20 reams"   # one question, no server needed

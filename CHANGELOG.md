@@ -4,7 +4,7 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 This file records the project's own history. The planning entries are **artefacts of reasoning, not shipped code** — they are listed so the reasoning trail is auditable in the interview. The 0.5.0 entry below them is shipped code, and every claim in it is backed by a command whose output is recorded in `eval/results.md`. The planning artefacts named below — `ANALYZE_01.md`, `ANALYZE_POST.md`, `FIXED.md` and `MVC_PLAN.md` — now live under `devx_FDE_A3_Product_Discovery/docs/pre/` and `docs/post/`; historical entries keep the names they were written with.
 
-Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete; the brief audit and the refresh hardening after it are closed too.** **239 tasks closed across the six archived changes, none open** (86 + 26 + 27 + 28 + 54 + 18). **1252 tests** (offline 1244 passed + 8 skipped; online 1249 passed + 3 skipped), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 9/11 with two failures retained (`A34` closed the third). Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
+Current status: **0.9.0 — Tier 1, three Tier 2 extras, conversation memory, and the gap-closure change, all complete; the brief audit and the refresh hardening after it are closed too.** **239 tasks closed across the six archived changes, none open** (86 + 26 + 27 + 28 + 54 + 18). **1252 tests** (1,249 passing offline under `./run.sh test-offline`, 3 provider tests skipped; 1,252 passing with a local Ollama embedding server), the 24 v1-runnable evaluation cases pass (and 21 against the mutated second catalog), the conversation set passes 12/12 over 27 turns, both negative controls fail as designed, and the held-out set reports 9/11 with two failures retained (`A34` closed the third). Requirements now live in the **eleven** main specs under `openspec/specs/` — 86 requirements, 227 scenarios; the changes that produced them are under `openspec/changes/archive/`.
 
 ---
 
@@ -75,6 +75,32 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 
 ## [Unreleased]
 
+### Changed — 2026-10-28 · the offline suite exercises loopback, and the provider tests run against Ollama
+
+Two test-environment limitations were reported as skips, which made them look
+like coverage gaps rather than something fixable. Both are fixed in the harness;
+no test was weakened and no product code changed.
+
+- **Five loopback tests did not run offline.** `unshare -rn` starts with `lo` down,
+  so the two `test_ingest` collapse-gate tests and the three `test_mutate` `serve`
+  tests skipped, and their behaviour was covered only by
+  `./run.sh verify-refresh`. The namespace still has no route outside itself;
+  `./run.sh test-offline` now brings `lo` up inside it (`ip link set lo up`,
+  unprivileged in a user namespace), so the same five run while the offline
+  guarantee is unchanged. Offline moves from 1,244 passed + 8 skipped to
+  **1,249 passed + 3 skipped**.
+- **The three provider tests skip whenever no server answers.** With
+  `PAPERLANE_EMBED_BASE_URL=http://localhost:11434` and
+  `PAPERLANE_EMBED_MODEL=bge-m3:latest` (Ollama, 1024-dim), the full suite is
+  **1,252 passed, 0 skipped** in about 48s, with the mutated catalog present.
+  They still skip under `test-offline`: the provider is a host process and the
+  namespace's loopback is its own, so the only honest options are skip there or
+  claim a network the guarantee forbids.
+
+`run.sh` gained the `test-offline` subcommand, and its usage text now separates
+"needs no model" from "needs no network". The three remaining skips are reported
+in the summary, never counted as passes.
+
 ### Fixed — 2026-10-28 · a pound weight the table's own factor determines
 
 The held-out set reported 8/11. Two failures are retained on purpose, because
@@ -93,9 +119,10 @@ contract. The third was fixable, and is closed here.
   not state. Unlisted pound values still return nothing, which stays an accepted
   risk in `BUG.md` Part 3.
 
-Offline suite 1244 passed + 8 skipped; online 1249 passed + 3 skipped;
-`./run.sh eval` 24/24; `--catalog v2` 21/21; held-out **9/11**, with cases 2 and 3
-still failing on purpose.
+Offline suite 1244 passed + 8 skipped at this commit; online 1249 passed + 3
+skipped; `./run.sh eval` 24/24; `--catalog v2` 21/21; held-out **9/11**, with
+cases 2 and 3 still failing on purpose. (The harness entry above later turned the
+five loopback skips into passes, so the current offline figure is 1249 + 3.)
 
 ### Fixed — 2026-10-27 · a refresh could replace a good catalog with a collapsed one
 

@@ -14,7 +14,7 @@ From a clean checkout, in this directory:
 
 ```bash
 uv sync                                    # 1. install dependencies
-./run.sh test                              # 2. the full suite, offline, no model
+./run.sh test                              # 2. the full suite; no model needed
 ./run.sh serve                             # 3. the app on http://127.0.0.1:8001
 ./run.sh eval                              # 4. the recorded evaluation set
 ./run.sh ask "A4 80gsm copy paper, 20 reams" --conversation demo \
@@ -23,6 +23,12 @@ uv sync                                    # 1. install dependencies
 
 Step 5 is deliberately two turns: the second one is understood without repeating
 the product, and the reply says which requirements it remembered.
+
+`./run.sh test-offline` runs the same suite inside a fresh network namespace with
+loopback up: the five local-server tests run, and nothing outside the namespace
+is reachable. The three provider tests still skip there — the embedding server is
+a host process — and run when `PAPERLANE_EMBED_BASE_URL` and
+`PAPERLANE_EMBED_MODEL` name one.
 
 Those five are the demo path. Five further commands exist to *prove* something
 rather than demonstrate it, and none is needed to see the system work:

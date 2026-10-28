@@ -143,9 +143,12 @@ about the generator's own honesty.
 - "Page never crawled" produces a different failure from "page crawled but misreported"
 - The scratch directory is git-ignored, so derived HTML cannot be committed by accident
 
-The four loopback-bound tests skip when loopback is unreachable (they do not
-fail), so the suite still passes under `unshare -rn`. The behaviour they cover is
-exercised by `./run.sh verify-refresh`, which runs in the normal environment.
+The five loopback-bound tests need a local HTTP server. They are marked
+`needs_loopback` and skip when `127.0.0.1` cannot be reached, so a bare
+`unshare -rn` still passes — but `./run.sh test-offline` brings `lo` up inside
+the namespace, so they **run** there rather than being covered only by
+`./run.sh verify-refresh`. The namespace still has no route to anything outside
+itself, so the offline guarantee is unchanged: a call to the internet fails.
 
 ### Layer 5 — Evaluation harness
 
@@ -206,8 +209,8 @@ reply            would a salesperson send this?
 ### Layer 6 — Semantic tiebreak
 
 `tests/test_embeddings.py` and `tests/test_semantic_api.py`. **No network** unless
-a test is explicitly marked; the suite must pass under `unshare -rn`, where
-loopback is down.
+a test is explicitly marked; the suite must pass under `unshare -rn`, which has
+no route outside its own namespace.
 
 The capability's whole safety claim is that similarity reorders without changing
 membership, so that is what the layer is built around.
@@ -227,8 +230,9 @@ membership, so that is what the layer is built around.
 
 Provider-dependent tests are marked `needs_embedding` and **skip** when no
 provider answers — with a stated reason, reported in the summary, never counted
-as a pass. There are two distinct skip reasons: no loopback at all (offline run),
-and loopback present but nothing listening.
+as a pass. There are two distinct skip reasons: loopback is unreachable (a bare
+`unshare -rn`), and loopback is present but nothing is listening on the
+configured address.
 
 ### Layer 7 — Observability
 
@@ -348,15 +352,31 @@ carrying a total is checked structurally instead.
 | `test_ui_offline.py` | 9 | 3 |
 | **Total** | **1252** | |
 
-Online: 1252 collected, 3 skip (provider-dependent) — 1249 passed.
-Offline (`unshare -rn`): 1252 collected, 8 skip — 1244 passed; the same three plus
-the five loopback tests that legitimately cannot run without a network interface.
+With the mutated catalog present (after `./run.sh verify-refresh --keep`):
+`./run.sh test` and `./run.sh test-offline` both collect 1252 and skip 3
+(provider-dependent) — **1249 passed**.
+
+Offline, the five loopback tests run because the command brings `lo` up inside
+the namespace, which leaves the guarantee intact — there is still no route out.
+
+The three remaining skips are the provider tests, and they run when a local
+embedding server is named:
+
+```bash
+PAPERLANE_EMBED_BASE_URL=http://localhost:11434 \
+  PAPERLANE_EMBED_MODEL=bge-m3:latest ./run.sh test    # 1252 passed, 0 skipped
+```
+
+They still skip under `test-offline`: the provider is a process on the host, and
+the namespace's loopback is its own, so `localhost:11434` there has nothing
+listening. Running the suite with the provider named is the only way to exercise
+those three, and they are reported as skips — never as passes — when it is absent.
 
 One further skip is state-dependent, not environmental: `test_evaluate.py` skips
 its second-catalog case until `./run.sh verify-refresh --keep` has produced
-`.refresh-verification/mutated.duckdb`. With that artefact present that skip
-becomes a pass. The figures above are for a clean tree, which is what a fresh
-clone sees — the artefact directory is git-ignored.
+`.refresh-verification/mutated.duckdb`. On a fresh clone, which has no such
+artefact, the same command reports **1248 passed, 4 skipped**. The figures above
+are the ones this working tree produces with the artefact present.
 
 ## What is tested where
 
@@ -402,14 +422,15 @@ clone sees — the artefact directory is git-ignored.
 | The site's own HTML validity | Not our code. A malformed page becomes a review row. |
 | Model output quality | The model is not in the correctness path. Its fallback rate is measured instead. |
 | Load and concurrency beyond read-only serving | Single local user. One test asserts concurrent reads succeed against a consistent snapshot. |
-| Live network availability during unit tests | Tests must pass offline. Network is exercised only by a real ingest, and loopback-only by `verify-refresh` (whose loopback tests skip when loopback is down). |
+| Live network availability during unit tests | Tests must pass offline. Network is exercised only by a real ingest, and loopback-only by `verify-refresh` and by the five loopback tests, which run under `./run.sh test-offline`. |
 | Browser rendering | The reply is plain text by design (see `DESIGN.md`). |
 | A conversation's pricing axis from a case file | A fresh turn is compared against the standalone run of the same request, and both call the same pricing code, so the axis cannot disagree with itself. It is checked structurally instead — `quoted` must carry a total. Claiming a case file proves it would be false. |
 
 ## Running the tests
 
 ```
-./run.sh test             # 1240 tests: unit + extraction + integration + observability + conversation; offline, no model
+./run.sh test             # 1252 tests: unit + extraction + integration + observability + conversation; no model
+./run.sh test-offline     # the same, in a network namespace with loopback up: 1249 passed, 3 skipped
 ./run.sh eval             # 28 recorded cases against the committed snapshot (24/24)
 ./run.sh eval --catalog v2 --db .refresh-verification/mutated.duckdb   # 21/21, after verify-refresh --keep
 ./run.sh eval --cases eval/held-out-cases.json   # 11 held-out requests, 9 pass 2 fail by design

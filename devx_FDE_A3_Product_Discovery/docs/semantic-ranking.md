@@ -85,9 +85,12 @@ reason.
 
 ## Optional by construction
 
-The test suite runs under `unshare -rn`, where loopback is **down** and
-`connect()` to `127.0.0.1` fails `ENETUNREACH`. An unconditional embedding call
-would break the offline guarantee, so:
+The offline suite runs under `./run.sh test-offline`, a fresh network namespace
+with **loopback up but no route out** — a call to the internet fails. An
+unconditional embedding call would still break the offline guarantee, and the
+provider is a process on the host: the namespace's loopback is its own, so
+`localhost:11434` there has nothing listening. The capability is therefore
+optional by construction:
 
 | Provider state | Ranking | `semantic` in the response |
 |---|---|---|
@@ -186,11 +189,19 @@ reporting a zero that would look like a measured result.
 ## Tests
 
 ```bash
-./run.sh test              # 1252 tests; provider-dependent ones skip
-unshare -rn ./run.sh test  # the offline guarantee, 8 skips
+./run.sh test              # 1252 tests; 1249 pass, 3 provider tests skip
+./run.sh test-offline      # the offline guarantee: 1249 pass, the same 3 skip
+PAPERLANE_EMBED_BASE_URL=http://localhost:11434 \
+  PAPERLANE_EMBED_MODEL=bge-m3:latest ./run.sh test   # 1252 pass, 0 skip
 ```
+
+The figures assume `.refresh-verification/mutated.duckdb` exists; on a fresh
+clone one evaluation case skips until `./run.sh verify-refresh --keep` builds it.
 
 Provider-dependent tests are marked `needs_embedding` and **skip** when no
 provider answers — reported in the summary, never counted as a pass. There are
-two distinct skip reasons: no loopback at all (offline run), and loopback present
-but no Ollama listening.
+two distinct skip reasons: loopback unreachable (a bare `unshare -rn`), and
+loopback present but nothing listening on the configured address. The five
+loopback-only tests run under `test-offline`, which brings `lo` up inside the
+namespace; the provider tests still skip there, because the provider is on the
+host and the namespace cannot reach it.

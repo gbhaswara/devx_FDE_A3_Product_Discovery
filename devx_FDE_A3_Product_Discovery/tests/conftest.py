@@ -1,8 +1,8 @@
 """Shared test paths.
 
 Only path constants live here. Anything that touches the network belongs in a
-test that declares it needs a server, because the suite must run under
-``unshare -rn`` where loopback is down.
+test that declares it needs a server, because the suite must also pass under a
+bare ``unshare -rn``, where loopback starts down.
 """
 
 from __future__ import annotations
@@ -25,10 +25,11 @@ import pytest
 def loopback_available() -> bool:
     """Whether 127.0.0.1 can be bound and reached.
 
-    The suite must pass under ``unshare -rn``, where the network namespace has
-    only a down loopback: binding succeeds but ``connect()`` fails ENETUNREACH.
-    Tests that need a local HTTP server are skipped there rather than failing,
-    because the behaviour they cover is exercised by ``./run.sh verify-refresh``.
+    The suite must also pass under a bare ``unshare -rn``, where the network
+    namespace starts with only a down loopback: binding succeeds but
+    ``connect()`` fails ENETUNREACH. ``./run.sh test-offline`` brings ``lo`` up
+    inside the namespace, so the tests marked :data:`needs_loopback` run there;
+    a bare namespace skips them rather than failing.
     """
     import socket
 
@@ -47,7 +48,7 @@ def loopback_available() -> bool:
 #: Skip marker for tests that need a reachable loopback interface.
 needs_loopback = pytest.mark.skipif(
     not loopback_available(),
-    reason="loopback is unreachable (offline run); covered by ./run.sh verify-refresh",
+    reason="loopback is unreachable (no local interface); ./run.sh test-offline runs these",
 )
 
 

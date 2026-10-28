@@ -52,7 +52,7 @@ Planning and implementation are separate steps. Do not skip the boundary.
 1. Analyse      devx_FDE_A3_Product_Discovery/docs/pre/ANALYZE_01.md   (done)
 2. Propose      openspec/changes/archive/...            (done — the PRD, now archived)
 3. Apply        /opsx-apply                            (done — six archived changes, 239 tasks)
-4. Verify       tests + eval + clean-run               (done — 1252 tests, eval 24/24, v2 21/21)
+4. Verify       tests + eval + clean-run               (done — 1252 tests, 1,249 offline, eval 24/24, v2 21/21)
 5. Submit       repo link + README + customer summary + eval results   (ready)
 ```
 
@@ -84,7 +84,7 @@ Before every commit, confirm `git status` shows no `.env`, no credential file, a
 - No task is complete without running its stated verification.
 - A recorded expectation must be **recomputed from source data**, never transcribed. A wrong expectation is worse than no test, because it causes correct code to be "fixed".
 - Failing evaluation cases stay in the results. The brief asks for *"cases where your system fails"*; a clean sweep is less credible than a documented failure.
-- Tests must run with no network access and no model configured.
+- Tests must run with no network access and no model configured: `./run.sh test-offline` is that run (1,249 passed, 3 provider tests skipped).
 
 ## Memory tooling — local-memory and hindsight
 
