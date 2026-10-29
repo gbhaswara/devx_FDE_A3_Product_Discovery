@@ -913,7 +913,18 @@ def run_eval(
 
     # --- the interpretation-strategy comparison (8.6) ------------------
     strategy_rows: list[dict[str, Any]] = []
+    model_probe_error: str | None = None
     if compare_strategies:
+        # A configured client is not a working one. Probing once turns "the
+        # strategies agree on 24/24" into an honest statement: without this, an
+        # unreachable endpoint falls back to rules on every request and the two
+        # columns are the same run compared with itself (BUG.md A38).
+        if model_client is not None:
+            try:
+                model_client.extract_criteria("probe")
+            except Exception as exc:  # noqa: BLE001 - unreachable is reportable
+                model_probe_error = f"{type(exc).__name__}: {exc}".split("\n")[0][:200]
+                model_client = None
         strategy_rows = _compare_strategies(
             cases, products, facts, model_client, catalog_name=catalog_name
         )
@@ -925,7 +936,8 @@ def run_eval(
             "products": len(products),
             "price_tiers": sum(len(f.tiers) for f in facts.values()),
         },
-        "model_available": model_client is not None,
+        "model_available": model_client is not None or model_probe_error is not None,
+        "model_probe_error": model_probe_error,
         "cases": [_result_dict(r) for r in results],
         "summary": _summary(results),
         "strategies": strategy_rows,
@@ -1050,7 +1062,13 @@ def _render_text(payload: dict[str, Any], *, out: Any = None) -> None:
     snap = payload["snapshot"]
     print(f"Evaluation against {payload.get('catalog', V1)} ({snap['path']})", file=out)
     print(f"  {snap['products']} products, {snap['price_tiers']} price tiers", file=out)
-    if payload["model_available"]:
+    if payload["model_available"] and payload.get("model_probe_error"):
+        print("  model: configured, unreachable — strategies not compared", file=out)
+        print(f"         {payload['model_probe_error']}", file=out)
+        print("         The rules column above is the recorded result; a model "
+              "that cannot answer does not make the two strategies agree.",
+              file=out)
+    elif payload["model_available"]:
         print("  model: available", file=out)
     else:
         print("  model: not configured", file=out)
@@ -1127,11 +1145,17 @@ def _render_text(payload: dict[str, Any], *, out: Any = None) -> None:
             print(f"  {agree}/{comparable} requests reached the same outcome under "
                   f"both strategies", file=out)
         else:
-            print("  No model was configured, so the two strategies could not be "
-                  "compared on any request.", file=out)
-            print("  The comparison is implemented and will populate when a model "
-                  "is available; the rules column above is the recorded result.",
-                  file=out)
+            if payload.get("model_probe_error"):
+                print("  The model did not answer, so the two strategies could "
+                      "not be compared on any request.", file=out)
+                print("  The rules column above is the recorded result — it is "
+                      "not evidence about the model.", file=out)
+            else:
+                print("  No model was configured, so the two strategies could not be "
+                      "compared on any request.", file=out)
+                print("  The comparison is implemented and will populate when a model "
+                      "is available; the rules column above is the recorded result.",
+                      file=out)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

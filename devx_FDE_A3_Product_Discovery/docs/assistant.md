@@ -268,10 +268,10 @@ can refuse to send a reply with errors rather than trusting it.
 
 Every one of these was observed on a live endpoint and each has a named remedy
 with a regression test in `tests/test_model.py`. F1, F2, F4 and F5 were observed
-on the original hosted provider (`9router`, `9inference`, resolving to
+on the deployment provider (`9router`, `9inference`, resolving to
 `deepseek-v4.1-flash`); F3's remedy changed when the same client was pointed at a
-local Ollama, and both behaviours are recorded because the parameter is now
-opt-in for exactly that reason.
+local Ollama, and both behaviours are recorded because the parameter is opt-in
+for exactly that reason.
 
 ### F1 — A stray terminator, on the **envelope**
 

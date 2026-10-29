@@ -388,26 +388,19 @@ The honest statement is: implemented, unit-tested, not demonstrated end to end.
 ## Interpretation strategies, side by side
 
 Both strategies are applied to the same requests in one run. `rules` is
-`interpret_rules()`; `model` is a local Ollama `qwen3.5:4b` with
-`reasoning_effort=none`, whose values are re-resolved through the catalog's own
-alias functions rather than trusted.
+`interpret_rules()`; `model` is the deployment provider — 9router's `9inference`
+at `http://127.0.0.1:20128/v1`, an OpenAI-compatible gateway — whose values are
+re-resolved through the catalog's own alias functions rather than trusted.
 
-This table is **reproducible from the command shown, with the model pinned to a
-digest**: `qwen3.5:4b` @ `sha256:d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04`
-(3.3 GB). An Ollama tag is a mutable pointer, not a version: after a later
-`ollama pull` moved `qwen3.5:4b`, the same requests produced different criteria
-with no code change (on #11 the model's read of `24 lb` went from `LGL` + 170 gsm
-to `LTR` + 170 gsm; the totals did not move). Quote the digest, or expect the
-table to drift with the registry. Until 0.9.1 the table was not reproducible at
-all: the CLI never built a model client, so the command printed `model: not
-configured` and the table above it came from a direct call during development
-(BUG.md A37).
+The credential comes from `PAPERLANE_LLM_API_KEY` in the environment and is never
+in the repository, so the command below reproduces the table only where that key
+and gateway exist. The **evaluation** is reproducible; the endpoint is
+configuration.
 
 ```
-$ ollama pull qwen3.5:4b
-$ PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1 \
-  PAPERLANE_LLM_MODEL=qwen3.5:4b \
-  PAPERLANE_LLM_REASONING_EFFORT=none ./run.sh eval
+$ export PAPERLANE_LLM_API_KEY=...            # from the environment, never a file
+$ PAPERLANE_LLM_BASE_URL=http://127.0.0.1:20128/v1 \
+  PAPERLANE_LLM_MODEL=9inference ./run.sh eval
     #  rules                  model                  request
     1  quoted (4,237.20)      quoted (4,237.20)      letter-size flyers, one side, colour, un
     2  quoted (1,123.50)      quoted (1,123.50)      letter-size flyers, one side, colour, un
@@ -419,13 +412,13 @@ $ PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1 \
     8  quoted (416.23)        quoted (416.23)        glossy photo A4 230gsm
     9  quoted (426.93)        quoted (426.93)        card 250gsm black A4
    10  quoted (319.93)        quoted (319.93)        legal size paper 20 lb
-   11  quoted (333.84)        no_match (-)           24 lb letter paper
+   11  quoted (333.84)        quoted (333.84)        24 lb letter paper
    12  refused (-)            no_match (-)           ivory A4 100gsm
-   13  refused (-)            no_match (-)           170gsm A4 gloss double sided
+   13  refused (-)            refused (-)            170gsm A4 gloss double sided
    14  no_match (-)           no_match (-)           flyers under 60 a pack, 2 packs
    15  clarified (-)          clarified (-)          I need paper
    16  multi_line (3,221.02)  multi_line (3,221.02)  20 reams A4 copy paper plus 5 packs A4 m
-   17  quoted (384.13)        no_match (-)           4/4 A5 gloss 130
+   17  quoted (384.13)        quoted (384.13)        4/4 A5 gloss 130
    18  quoted (1,280.15)      quoted (1,280.15)      A4 copy paper 10 reams, budget 1500 incl
    19  clarified (-)          clarified (-)          letter-size, under 250 a pack
    20  quoted (290.51)        quoted (290.51)        A4 80gsm under 250 a pack, 1 pack
@@ -434,45 +427,50 @@ $ PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1 \
    27  multi_line (4,666.91)  multi_line (4,666.91)  10 packs of the 100gsm A4 gloss flyers a
    28  quoted (4,237.20)      quoted (4,237.20)      letter flyers, one side, colour, under 2
 
-  20/24 requests reached the same outcome under both strategies
+  23/24 requests reached the same outcome under both strategies
 ```
 
-**What this shows.** The rules path is the more accurate interpreter on this
-catalog: **20 of 24** outcomes agree, and in all four disagreements the model is
-wrong and the rules are right. Three of the four are one error — the model reads
-the bare word "paper" as `category: Copy paper`, a value the request never
-states, which then filters out the item that should have matched (#12, #13, #17).
-The fourth is arithmetic vocabulary: "24 lb letter paper" is read as 170 gsm
-instead of 90 (#11).
+**What this shows.** On this catalog the hosted model is close to the rules path
+but not identical: **23 of 24** outcomes agree, every total matches, and the one
+disagreement is #12 — the rules path `refused` an unstocked item, the model
+returned `no_match`. Both are honest non-answers; they are counted as a
+disagreement because the harness compares outcomes, not prose. All 24 verdicts
+pass. Latency is 1.2–2.4 s per call.
 
-That is the evidence behind two design decisions, and it is stronger than the
-clean sweep it replaces:
+The rules path therefore stays the **default** rather than the fallback, for a
+reason the table does not show: it costs microseconds, needs no credential, and
+cannot be rate-limited. The model earns its place on phrasing the rules were
+never written for, and it is measured here rather than assumed.
 
-- **The rules path stays the default.** A model is a *decomposer*, and on this
-  catalog's vocabulary the alias tables beat a 4b model. The model earns its
-  place on phrasing the rules were never written for, not on the cases the
-  rules already handle.
+Two design decisions this evidence supports:
+
 - **The reply is rendered from deterministic values.** The model's mistakes
   change which products are *considered*; they cannot change a price, a total or
   a discount, because no model output reaches the reply.
+- **A model is a decomposer, not an authority.** Every value it returns is
+  re-resolved through the alias tables before use.
 
-**What it does not show.** The model is not safe to trust unvalidated: every
-value it returns is re-resolved through the alias tables before use, and a
-one-line prompt rule ("set the category only when the request names a product
-kind") was measured and rejected — it fixed #12 but made #17 drop `sides:
-double` and made #11 report 80 gsm instead of 75 (BUG.md A37).
+**Local fallback, measured the same way.** With no hosted key, Ollama serves the
+same interface. `qwen3.5:4b` @ `sha256:d8b0f5e9760c…` with
+`PAPERLANE_LLM_REASONING_EFFORT=none` agrees with the rules path on **20/24**
+outcomes — four vocabulary errors, all the model's: it reads the bare word
+"paper" as `category: Copy paper` (#12, #13, #17), which filters out the item
+that should have matched, and it reads `24 lb` as 170 gsm instead of 90 (#11).
+`qwen3.5:9b` @ `sha256:56671c2ab938…` reaches **22/24** at the outcome level but
+only **20/24 identical totals** — #10 returns 304.95 instead of 319.93 and #28
+returns 3,860.56 instead of 4,237.20 — in 38 s against 15 s for 4b. Count
+identical totals, not "same outcome": the flattering number is the smaller one.
+
+An Ollama tag is a mutable pointer, not a version: a later `ollama pull` moved
+`qwen3.5:4b` and changed the model's criteria on these requests with no code
+change, which is why the digest is quoted. Until 0.9.1 the table was not
+reproducible at all — the CLI never built a model client, so the command printed
+`model: not configured` and the table came from a direct call during development
+(BUG.md A37).
 
 With no model configured the same command reports the rules column as the
 recorded result and marks the model column `not run`, rather than reporting an
 agreement it never measured.
-
-**Same digest, bigger model.** `qwen3.5:9b` @ `sha256:56671c2ab938…` on the same
-24 cases reaches **22/24** at the outcome level — but only **20/24 identical
-totals**, because outcome agreement hides a wrong price: #10 returns 304.95
-instead of 319.93, and #28 returns 3,860.56 instead of 4,237.20. Its errors are #10 (`legal`→`LTR`), #12, #17 and #28 (`letter`→`A4`).
-The 24 calls take 38 s against 15 s for 4b, so 9b buys no accuracy on totals at
-2.5× the latency. Count identical totals, not "same outcome" — this is the one
-place where the flattering number is the smaller one.
 
 ---
 

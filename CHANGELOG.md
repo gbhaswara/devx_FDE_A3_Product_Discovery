@@ -75,6 +75,39 @@ Superseded by the 0.5.0 entry below; kept because the delta is the history.
 
 ## [Unreleased]
 
+### Changed — 2026-10-29 · chat back on the hosted provider, embeddings stay local
+
+The deployment configuration is the original split, which is also the one the
+brief's constraints imply: **criteria extraction runs on 9router's `9inference`**
+(`http://127.0.0.1:20128/v1`, key from `PAPERLANE_LLM_API_KEY`), and **embeddings
+run on local Ollama** (`bge-m3:latest`, 1024-dim, `PAPERLANE_EMBED_*`). The two
+namespaces were already separate, so this is configuration and documentation —
+no code change.
+
+Measured with `./run.sh eval` against the hosted provider: **23/24** requests
+reach the same outcome under both strategies, every total identical, and all 24
+verdicts pass. The single disagreement is #12, where the rules path `refused` an
+unstocked item and the model answered `no_match`; both are honest non-answers.
+Latency 1.2–2.4 s per criteria extraction over five calls.
+
+The local fallback stays documented and measured, because it is what makes the
+system runnable offline: `qwen3.5:4b` @ `sha256:d8b0f5e9760c…` agrees on 20/24,
+`qwen3.5:9b` on 22/24 outcomes but only 20/24 identical totals at 2.5× the
+latency. Those are the numbers from the previous entry, unchanged.
+
+- **A38 — a configured model that cannot answer reported perfect agreement.**
+  `./run.sh eval` with a model configured but no key printed `model: available`
+  and `24/24 requests reached the same outcome`. Both columns were the rules run:
+  every model call raised `HTTP 401`, interpretation fell back to rules, and the
+  harness compared the rules path with itself. It now probes the client once
+  before comparing, reports `model: configured, unreachable` with the reason, and
+  leaves the model column `not run`. Found by running the documented command in a
+  shell that had no key — the exact way a reader would meet it.
+
+Verification: `./run.sh test-offline` **1,260 passed + 3 skipped**;
+`./run.sh test` with Ollama `bge-m3` **1,263 passed, 0 skipped**; `./run.sh eval`
+with the hosted model **24/24 verdicts, 23/24 outcome agreement**.
+
 ### Changed — 2026-10-28 · the model path runs against a local Ollama
 
 The assistant's model-assisted path now works end to end against a local
@@ -116,8 +149,8 @@ A one-line prompt rule was measured and rejected: it fixed one case and broke
 two. The rules path therefore stays the default, and the model remains a
 decomposer whose output is re-resolved through the alias tables before use.
 
-Verification: `./run.sh test-offline` **1,257 passed + 3 skipped**;
-`./run.sh test` with the Ollama embedding provider **1,260 passed, 0 skipped**;
+Verification: `./run.sh test-offline` **1,260 passed + 3 skipped**;
+`./run.sh test` with the Ollama embedding provider **1,263 passed, 0 skipped**;
 `./run.sh eval` 24/24 with `model: available` and a populated comparison column;
 `--catalog v2` 21/21; held-out still 9/11 with two failures retained. Six new
 model tests and two new CLI-wiring tests; the configured wiring test fails

@@ -1639,7 +1639,7 @@ and `::test_no_authorization_header_is_sent` fail against the old contract.
 the headers and adds `Authorization` only when `api_key` is non-empty.
 
 **Status: FIXED.** Verified: `TestKeylessLocalServer` (3 tests) fails against the
-old contract and passes now; the full suite is 1260 passed. End to end,
+old contract and passes now; the full suite is 1263 passed. End to end,
 `PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1 PAPERLANE_LLM_MODEL=qwen3.5:4b
 ./run.sh ask "A4 80gsm copy paper, 20 reams" --json` reports
 `"interpretation": "mixed"` with the expected criteria and no credential set
@@ -1782,6 +1782,52 @@ the default: a model is a *decomposer*, and on this catalog's vocabulary the
 alias tables are more accurate than a 4b model. It is also the strongest
 argument for the reply being rendered from deterministic values — the model's
 mistakes change which products are *considered*, never a price.
+
+**Where each figure applies.** The deployment provider is 9router's `9inference`,
+and on it the same run gives **23/24** with every total identical — the single
+disagreement, #12, is `refused` (rules) against `no_match` (model), two honest
+non-answers. The four-disagreement table above is the *local fallback*:
+`qwen3.5:4b` @ `sha256:d8b0f5e9760c…`, which is what makes the system runnable
+with no key and is measured by the same command. Both numbers are recorded
+because they support different decisions: the hosted model is better at this
+vocabulary, and the rules path is still the default because it costs
+microseconds and no credential.
+
+---
+
+## Part 2g — A38 FIXED · a configured model that cannot answer reported agreement
+
+The deployment provider needs a key. Running the documented command in a shell
+without one produced:
+
+```
+  model: available
+  ...
+  24/24 requests reached the same outcome under both strategies
+```
+
+Nothing was wrong with the rules path — it answered every request. The model
+column was the same run. Every `extract_criteria` call raised
+`ModelUnavailable: model returned HTTP 401`, `interpret()` fell back to rules by
+design, and the comparison then reported the rules path agreeing with itself.
+
+**Why it matters.** This is the A35 failure one layer up: a silent fallback
+turned a missing credential into the best possible score. The number is not just
+uninformative, it is the most flattering number the harness can print.
+
+**Fix.** `run_eval` probes the client once before comparing. On failure it nulls
+the client, records `model_probe_error`, prints `model: configured, unreachable`
+with the reason, leaves the model column `not run`, and says plainly that the
+rules column is not evidence about the model. One extra call per run.
+
+**Falsification.** `tests/test_evaluate.py::TestUnreachableModel` (3 tests) —
+against the old code the first two fail with `KeyError: 'model_probe_error'`; the
+third asserts a working stub still compares, so the probe cannot pass by
+suppressing the comparison.
+
+**Status: FIXED.** Verified: `./run.sh eval` with no key prints
+`model: configured, unreachable`; with the key it prints `model: available` and
+`23/24`; `./run.sh test-offline` 1,260 passed + 3 skipped.
 
 ---
 

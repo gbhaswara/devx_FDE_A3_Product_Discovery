@@ -8,7 +8,7 @@ The **devx AI Labs AI Forward Deployed Engineer** take-home, **Option A3 — Pro
 
 A customer sends *"We need letter-size flyers, one side, colour, under 250 a pack, 20 packs."* The system reads the live catalog, finds matching products, explains why each matches, and returns a complete price breakdown — every figure computed in deterministic code.
 
-**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory, the gap-closure work and the two follow-up reviews (brief audit A20–A30, demo-round refresh hardening A31–A32). **239 tasks closed across the six archived changes and none open** (86 + 26 + 27 + 28 + 54 + 18). 1260 tests, 1257 passing under `./run.sh test-offline` (3 provider tests skip; one further case skips on a fresh clone until `verify-refresh --keep`) with no model configured; with a local Ollama embedding server the whole suite passes, 1260/1260. The version is `0.9.0`. Nothing is under construction.
+**Status: complete.** Tier 1 and every Tier 2 extra are shipped and archived, along with conversation memory, the gap-closure work and the two follow-up reviews (brief audit A20–A30, demo-round refresh hardening A31–A32). **239 tasks closed across the six archived changes and none open** (86 + 26 + 27 + 28 + 54 + 18). 1263 tests, 1260 passing under `./run.sh test-offline` (3 provider tests skip; one further case skips on a fresh clone until `verify-refresh --keep`) with no model configured; with a local Ollama embedding server the whole suite passes, 1263/1263. The version is `0.9.0`. Nothing is under construction.
 
 ## Read in this order
 
@@ -51,7 +51,7 @@ DEVXLABS/
     ├── paperlane/               READ-ONLY input — the site to crawl
     ├── run.sh                   the command surface (see below)
     ├── src/paperlane/           27 modules
-    ├── tests/                   29 modules, 1260 tests
+    ├── tests/                   29 modules, 1263 tests
     ├── eval/                    cases.json, held-out-cases.json, conversation-cases.json,
     │                            the three negative/control sets, results.md
     ├── docs/                    15 documents: the 11 layer/capability docs,
@@ -206,23 +206,55 @@ The brief's five nice-to-haves all landed: hybrid search (as a tiebreak that can
 
 ## Working with the LLM
 
-The model path runs against **Ollama** at `http://localhost:11434/v1`, model **`qwen3.5:4b`**, via environment variables only. `PAPERLANE_LLM_API_KEY` is optional — Ollama needs no credential and the header is sent only when a key is set. The first provider was 9router's `9inference`; its failures are kept below because they explain why the client is shaped the way it is, and they are the reason every remedy is a test rather than a comment.
+Two servers, two namespaces, on purpose.
+
+- **Chat (criteria extraction):** the deployment provider — 9router at
+  `http://127.0.0.1:20128/v1`, model **`9inference`**, an OpenAI-compatible
+  gateway. Configured by `PAPERLANE_LLM_BASE_URL`, `PAPERLANE_LLM_MODEL` and
+  `PAPERLANE_LLM_API_KEY`. The key is read from the environment and never
+  committed; `.env` is git-ignored.
+- **Embeddings (similarity tiebreak):** local **Ollama** with `bge-m3:latest`,
+  1024 dimensions, configured by `PAPERLANE_EMBED_BASE_URL` and
+  `PAPERLANE_EMBED_MODEL`.
+
+```bash
+export PAPERLANE_LLM_BASE_URL=http://127.0.0.1:20128/v1
+export PAPERLANE_LLM_MODEL=9inference
+export PAPERLANE_LLM_API_KEY=...          # environment only
+
+export PAPERLANE_EMBED_BASE_URL=http://localhost:11434
+export PAPERLANE_EMBED_MODEL=bge-m3:latest
+```
+
+Local chat fallback (no hosted key), if you need a fully offline run:
 
 ```bash
 export PAPERLANE_LLM_BASE_URL=http://localhost:11434/v1
-export PAPERLANE_LLM_MODEL=qwen3.5:4b
-export PAPERLANE_LLM_REASONING_EFFORT=none
+export PAPERLANE_LLM_MODEL=qwen3.5:4b            # pin by digest: sha256:d8b0f5e9760c…
+export PAPERLANE_LLM_REASONING_EFFORT=none       # required for a thinking model
 ```
 
-- **`reasoning_effort=none` is required for a thinking model.** Without it `qwen3.5:0.8b` and `:2b` return HTTP 200 with `content: ""` after spending the whole budget reasoning, and `:4b` takes 41 s — four seconds inside the 45 s timeout. With it, 4b answers in 0.5 s warm. `think: false` is ignored by Ollama's OpenAI-compatible endpoint and `"low"` still thinks.
-- The parameter is **opt-in** because `9inference` returned empty content whenever it received it at all. Do not send it unconditionally.
-- The response body from `9inference` appended a stray `data: [DONE]`; the client strips it. Ollama does not, but the strip is harmless and the regression test remains.
-- **The user message carries the format instruction**; the system message alone did not take effect on either provider.
+- **`PAPERLANE_LLM_API_KEY` is optional.** A local server needs no credential and
+  the header is sent only when a key is set (BUG.md A35).
+- **`reasoning_effort` is opt-in.** The hosted provider returns empty content
+  whenever it receives the parameter (BUG.md A36). On Ollama it is the only
+  switch that stops a thinking model spending the budget: `think: false` is
+  ignored by the OpenAI-compatible endpoint and `"low"` still thinks.
+- The hosted provider appends a stray `data: [DONE]`; the client strips it.
+- **The user message carries the format instruction**; the system message alone
+  did not take effect on either provider.
 - Do not use `response_format={"type": "json_object"}`. The JSON is recovered from prose and then validated against `ALLOWED_CRITERIA_KEYS`.
 
 The model emits **criteria only**. Products and prices come from the filter and the pricing layer. A model outage is a quality dip, not an outage: interpretation falls back to rules and anything unparseable becomes a `clarified` outcome, which is a normal state.
 
-**Measured accuracy, and why the rules path is the default.** Over the 24 v1 cases, rules and `qwen3.5:4b` reach the same outcome on **20**; all four disagreements are model vocabulary errors and the rules are right in each. Three are the model inventing `category: Copy paper` from the bare word "paper"; the fourth is `24 lb letter paper` becoming `LGL` + 170 gsm instead of `LTR` + 90. A one-line prompt rule was measured and rejected — it fixed one case and broke two (`BUG.md` A37). The model is a decomposer, not an authority.
+**Measured accuracy, and why the rules path is the default.** Over the 24 v1
+cases, rules and `9inference` reach the same outcome on **23**, with every total
+identical; the one disagreement is #12, where rules `refused` an unstocked item
+and the model returned `no_match` — both honest non-answers. Latency 1.2–2.4 s
+per call. The local fallback `qwen3.5:4b` @ `sha256:d8b0f5e9760c…` reaches 20, all
+four disagreements being model vocabulary errors where the rules are right
+(BUG.md A37). The rules path stays the default anyway: microseconds, no
+credential, no rate limit.
 
 ## When unsure
 

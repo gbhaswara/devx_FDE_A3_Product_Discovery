@@ -71,8 +71,8 @@ python3 -m http.server 8000
 
 | Check | Result |
 |---|---|
-| Test suite, offline (`./run.sh test-offline`) | 1,257 passed, 3 skipped (1,260 collected); one further case skips on a fresh clone until `verify-refresh --keep` |
-| Test suite, with `bge-m3` on a local Ollama | 1,260 passed, 0 skipped |
+| Test suite, offline (`./run.sh test-offline`) | 1,260 passed, 3 skipped (1,263 collected); one further case skips on a fresh clone until `verify-refresh --keep` |
+| Test suite, with `bge-m3` on a local Ollama | 1,263 passed, 0 skipped |
 | Evaluation, v1 catalog | 24/24 runnable cases pass (4 not run by design) |
 | Evaluation, mutated v2 catalog | 21/21 |
 | Conversation set | 12/12 over 27 turns; both negative controls fail as designed |

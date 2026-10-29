@@ -641,6 +641,57 @@ class TestStrategyComparison:
 
 
 # ---------------------------------------------------------------------------
+# 8.6b A configured model that cannot answer is not an agreeing model
+# ---------------------------------------------------------------------------
+
+class _UnreachableModel(ModelClient):
+    """Configured, and every call raises — what a missing key looks like."""
+
+    def __init__(self) -> None:
+        super().__init__(ModelConfig(
+            base_url="http://127.0.0.1:20128/v1", model="9inference",
+        ))
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def extract_criteria(self, request_text: str) -> ModelResult:
+        from paperlane.model import ModelUnavailable
+
+        raise ModelUnavailable("model returned HTTP 401: Missing API key")
+
+class TestUnreachableModel:
+    """A38: an unreachable model must not manufacture a 24/24 agreement.
+
+    Before the probe, every request fell back to the rules interpretation, so
+    both columns were the same run and the harness reported perfect agreement
+    between them.
+    """
+
+    def test_it_reports_unreachable_rather_than_agreeing(self):
+        buffer = io.StringIO()
+        assert run_eval(out=buffer, model_client=_UnreachableModel()) == 0
+        text = buffer.getvalue()
+        assert "configured, unreachable" in text
+        assert "Missing API key" in text
+        assert "reached the same outcome" not in text
+
+    def test_the_json_payload_carries_the_reason(self):
+        buffer = io.StringIO()
+        run_eval(out=buffer, model_client=_UnreachableModel(), as_json=True)
+        payload = json.loads(buffer.getvalue())
+        assert payload["model_probe_error"].startswith("ModelUnavailable")
+        assert all(row["model"]["outcome"] == "not run" for row in payload["strategies"])
+
+    def test_a_working_model_still_compares(self):
+        buffer = io.StringIO()
+        run_eval(out=buffer, model_client=StubModel())
+        text = buffer.getvalue()
+        assert "reached the same outcome" in text
+        assert "unreachable" not in text
+
+# ---------------------------------------------------------------------------
 # 8.7 Running with no model
 # ---------------------------------------------------------------------------
 

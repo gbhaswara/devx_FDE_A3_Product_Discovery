@@ -200,10 +200,33 @@ DuckDB is opened read-only per request, so concurrent reads are fine, but do not
 put multiple workers behind a load balancer while a re-ingest may swap the
 snapshot file underneath them.
 
-**The model is optional.** With no environment variables set, every structured
-case still runs and every request is still answered — by the rule-based
-interpreter, which is a complete first-class path, not a stub. To enable the
-model against a local [Ollama](https://ollama.com):
+**The model is optional, and the embedding server is separate.** With no
+environment variables set, every structured case still runs and every request is
+still answered — by the rule-based interpreter, which is a complete first-class
+path, not a stub.
+
+Chat and embeddings are two independent settings, deliberately, because they are
+usually two different servers. Chat is any OpenAI-compatible endpoint:
+
+```bash
+export PAPERLANE_LLM_BASE_URL=http://127.0.0.1:20128/v1   # 9router gateway
+export PAPERLANE_LLM_MODEL=9inference
+export PAPERLANE_LLM_API_KEY=...        # from your environment; never a file in this repo
+```
+
+Embeddings stay on a local [Ollama](https://ollama.com), which is what the
+similarity tiebreak was measured against (1024 dimensions):
+
+```bash
+ollama pull bge-m3:latest
+
+export PAPERLANE_EMBED_BASE_URL=http://localhost:11434
+export PAPERLANE_EMBED_MODEL=bge-m3:latest
+```
+
+`PAPERLANE_LLM_API_KEY` is **optional** for chat: Ollama, llama.cpp and vLLM
+accept requests with no `Authorization` header, and the client sends one only
+when a key is set (BUG.md A35). That is also how a fully local fallback works:
 
 ```bash
 ollama pull qwen3.5:4b
@@ -213,24 +236,18 @@ export PAPERLANE_LLM_MODEL=qwen3.5:4b
 export PAPERLANE_LLM_REASONING_EFFORT=none   # required for a thinking model
 ```
 
-`PAPERLANE_LLM_API_KEY` is **optional**: Ollama, llama.cpp and vLLM accept
-requests with no `Authorization` header, and the client sends one only when a
-key is set. A hosted OpenAI-compatible endpoint works the same way — add the key
-and change the URL and model name.
+Pin a local model by digest, not just by tag: the local figures below are
+measured against `qwen3.5:4b` @ `sha256:d8b0f5e9760c…`. An Ollama tag is a
+mutable pointer — a later `ollama pull qwen3.5:4b` resolved to a different build
+and changed the model's criteria on the same requests, with no code change.
 
-Pin the model, not just the tag: the figures below are measured against
-`qwen3.5:4b` @ `sha256:d8b0f5e9760c…`. An Ollama tag is a mutable pointer — a
-later `ollama pull qwen3.5:4b` resolved to a different build and changed the
-model's criteria on the same requests, with no code change.
-
-`PAPERLANE_LLM_REASONING_EFFORT=none` is what makes a thinking model usable.
-Without it, `qwen3.5:2b` and `:0.8b` spend the whole output budget reasoning and
-return `content: ""` with HTTP 200, and `qwen3.5:4b` takes 41 s — inside the 45 s
-timeout by four seconds. With it, 4b answers in **0.5 s warm** (7.8 s on the
-first call, while the model loads) and matches the best measured total accuracy
-on the v1 set: 20 of 24 identical totals, the same as `qwen3.5:9b` at 2.5× the
-latency. The parameter is opt-in because the first hosted
-provider returned empty content whenever it received it (BUG.md A36).
+`PAPERLANE_LLM_REASONING_EFFORT=none` is what makes a local thinking model
+usable. Without it, `qwen3.5:2b` and `:0.8b` spend the whole output budget
+reasoning and return `content: ""` with HTTP 200, and `qwen3.5:4b` takes 41 s —
+inside the 45 s timeout by four seconds. With it, 4b answers in **0.5 s warm**
+(7.8 s on the first call, while the model loads). The parameter is opt-in because
+the hosted provider returns empty content when it receives it at all (BUG.md
+A36), so it is never sent unless you set it.
 
 No credential is committed anywhere in this repository; configuration is by
 environment variable only.
@@ -238,10 +255,12 @@ environment variable only.
 **What the model does and does not decide.** It decomposes a sentence into
 search criteria and nothing else. Every price, total, discount and SKU is
 computed by `pricing.py` from the catalog; the reply is rendered from those
-values. Measured over the 24 v1 cases, the rules path and `qwen3.5:4b` reach the
-same outcome on 20; all four disagreements are model vocabulary errors and the
-rules path is right in each (BUG.md A37). That is why the rules path stays the
-default and the model is an optional decomposer.
+values. Measured over the 24 v1 cases, the rules path and `9inference` reach the
+same outcome on 23, with every total identical and one honest non-answer
+differing in kind (`refused` vs `no_match`, #12). The local 4b fallback reaches
+20, and all four of its disagreements are model vocabulary errors where the
+rules path is right (BUG.md A37). Either way the rules path stays the default and
+the model is an optional decomposer.
 
 ---
 
@@ -598,7 +617,7 @@ A33 is carried separately as an accepted risk.
 | That harness *can* fail | `./run.sh eval --cases eval/conversation-negative-control.json` exits 1 |
 | Memory did not change single-turn replies | `tests/test_single_turn_unchanged.py` — a SHA-256 of every case's `{outcome, text}`, recorded from the commit *before* the feature existed |
 | The four conversation defects are fixed | `BUG.md` Part 2b; each fix was reverted to confirm the new test fails |
-| The test inventory | `TEST.md` — eight layers and a per-module count (1260) |
+| The test inventory | `TEST.md` — eight layers and a per-module count (1263) |
 
 ---
 
