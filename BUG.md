@@ -1784,9 +1784,10 @@ argument for the reply being rendered from deterministic values — the model's
 mistakes change which products are *considered*, never a price.
 
 **Where each figure applies.** The deployment provider is 9router's `9inference`,
-and on it the same run gives **23/24** with every total identical — the single
-disagreement, #12, is `refused` (rules) against `no_match` (model), two honest
-non-answers. The four-disagreement table above is the *local fallback*:
+and on it the same run gives **22–24/24** across repeated runs (three runs: 22,
+23, 24) with every quoted total identical. The model is not deterministic; the
+variance is only in whether it answers or declines — #12 (`refused` vs
+`no_match`) and #17 (`4/4` resolving or not). The four-disagreement table above is the *local fallback*:
 `qwen3.5:4b` @ `sha256:d8b0f5e9760c…`, which is what makes the system runnable
 with no key and is measured by the same command. Both numbers are recorded
 because they support different decisions: the hosted model is better at this
@@ -1827,7 +1828,7 @@ suppressing the comparison.
 
 **Status: FIXED.** Verified: `./run.sh eval` with no key prints
 `model: configured, unreachable`; with the key it prints `model: available` and
-`23/24`; `./run.sh test-offline` 1,260 passed + 3 skipped.
+22–24/24 across repeated runs; `./run.sh test-offline` 1,260 passed + 3 skipped.
 
 ---
 

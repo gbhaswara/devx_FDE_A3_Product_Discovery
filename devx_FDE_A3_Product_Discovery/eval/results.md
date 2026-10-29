@@ -418,7 +418,7 @@ $ PAPERLANE_LLM_BASE_URL=http://127.0.0.1:20128/v1 \
    14  no_match (-)           no_match (-)           flyers under 60 a pack, 2 packs
    15  clarified (-)          clarified (-)          I need paper
    16  multi_line (3,221.02)  multi_line (3,221.02)  20 reams A4 copy paper plus 5 packs A4 m
-   17  quoted (384.13)        quoted (384.13)        4/4 A5 gloss 130
+   17  quoted (384.13)        no_match (-)           4/4 A5 gloss 130
    18  quoted (1,280.15)      quoted (1,280.15)      A4 copy paper 10 reams, budget 1500 incl
    19  clarified (-)          clarified (-)          letter-size, under 250 a pack
    20  quoted (290.51)        quoted (290.51)        A4 80gsm under 250 a pack, 1 pack
@@ -427,15 +427,25 @@ $ PAPERLANE_LLM_BASE_URL=http://127.0.0.1:20128/v1 \
    27  multi_line (4,666.91)  multi_line (4,666.91)  10 packs of the 100gsm A4 gloss flyers a
    28  quoted (4,237.20)      quoted (4,237.20)      letter flyers, one side, colour, under 2
 
-  23/24 requests reached the same outcome under both strategies
+  22/24 requests reached the same outcome under both strategies
 ```
 
 **What this shows.** On this catalog the hosted model is close to the rules path
-but not identical: **23 of 24** outcomes agree, every total matches, and the one
-disagreement is #12 — the rules path `refused` an unstocked item, the model
-returned `no_match`. Both are honest non-answers; they are counted as a
-disagreement because the harness compares outcomes, not prose. All 24 verdicts
-pass. Latency is 1.2–2.4 s per call.
+but not identical, and **it is not deterministic**: three consecutive runs of the
+command above gave **22, 23 and 24 of 24** agreements. The rules path never
+moves. Whenever both strategies quote, the totals are identical — the variance is
+only in whether the model answers or declines:
+
+| # | rules | model | what varies |
+|---|---|---|---|
+| 12 | `refused` | `no_match` or `refused` | whether the model names a category for an unstocked item |
+| 17 | quoted 384.13 | `no_match` or quoted 384.13 | whether `4/4` resolves to double-sided |
+
+Both outcomes are honest non-answers, counted as disagreements because the
+harness compares outcomes, not prose. All 24 verdicts pass in every run. Latency
+is 1.2–2.4 s per call, and sustained use hits the gateway's upstream rate limit —
+which now surfaces as `model: configured, unreachable` rather than a fabricated
+agreement (BUG.md A38).
 
 The rules path therefore stays the **default** rather than the fallback, for a
 reason the table does not show: it costs microseconds, needs no credential, and

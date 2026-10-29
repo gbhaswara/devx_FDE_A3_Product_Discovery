@@ -84,11 +84,13 @@ run on local Ollama** (`bge-m3:latest`, 1024-dim, `PAPERLANE_EMBED_*`). The two
 namespaces were already separate, so this is configuration and documentation —
 no code change.
 
-Measured with `./run.sh eval` against the hosted provider: **23/24** requests
-reach the same outcome under both strategies, every total identical, and all 24
-verdicts pass. The single disagreement is #12, where the rules path `refused` an
-unstocked item and the model answered `no_match`; both are honest non-answers.
-Latency 1.2–2.4 s per criteria extraction over five calls.
+Measured with `./run.sh eval` against the hosted provider: **22–24/24** requests
+reach the same outcome under both strategies across three consecutive runs (22,
+23, 24), every quoted total identical, and all 24 verdicts pass. The variance is
+the model answering or declining (#12 `refused` vs `no_match`; #17 `4/4`), not a
+wrong price — the hosted model is not deterministic. Latency 1.2–2.4 s per
+criteria extraction over five calls, and sustained runs hit the gateway's
+upstream rate limit.
 
 The local fallback stays documented and measured, because it is what makes the
 system runnable offline: `qwen3.5:4b` @ `sha256:d8b0f5e9760c…` agrees on 20/24,
@@ -104,9 +106,16 @@ latency. Those are the numbers from the previous entry, unchanged.
   leaves the model column `not run`. Found by running the documented command in a
   shell that had no key — the exact way a reader would meet it.
 
+- **`.env` is loaded, and the offline run does not read it.** `run.sh` sources
+  `.env` for `serve`, `ask` and `eval`; `test` and `test-offline` skip it so the
+  provider-free guarantee still means what it says. `.env` stays git-ignored, and
+  `.env.example` carries the shape with no key.
+
 Verification: `./run.sh test-offline` **1,260 passed + 3 skipped**;
 `./run.sh test` with Ollama `bge-m3` **1,263 passed, 0 skipped**; `./run.sh eval`
-with the hosted model **24/24 verdicts, 23/24 outcome agreement**.
+with the hosted model **24/24 verdicts, 22–24/24 outcome agreement across three
+runs**, and once rate-limited at 503 with the harness reporting it as
+unreachable rather than agreement.
 
 ### Changed — 2026-10-28 · the model path runs against a local Ollama
 

@@ -4,6 +4,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Local configuration, if present. `.env` is git-ignored and holds the model
+# endpoint and key, so it is never committed. The test commands deliberately do
+# not read it: `./run.sh test-offline` is the run that proves the suite works
+# with no model and no embedding server, and a .env would quietly break that.
+case "${1:-}" in
+    test|test-offline) ;;
+    *) if [ -f .env ]; then set -a; . ./.env; set +a; fi ;;
+esac
+
 # Use the project's virtualenv. Bare `python3` cannot work here: the project root
 # contains the crawled site under `paperlane/`, which Python picks up as a
 # namespace package and which has no `cli` submodule. The venv has the editable

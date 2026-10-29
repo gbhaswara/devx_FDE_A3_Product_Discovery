@@ -248,10 +248,11 @@ export PAPERLANE_LLM_REASONING_EFFORT=none       # required for a thinking model
 The model emits **criteria only**. Products and prices come from the filter and the pricing layer. A model outage is a quality dip, not an outage: interpretation falls back to rules and anything unparseable becomes a `clarified` outcome, which is a normal state.
 
 **Measured accuracy, and why the rules path is the default.** Over the 24 v1
-cases, rules and `9inference` reach the same outcome on **23**, with every total
-identical; the one disagreement is #12, where rules `refused` an unstocked item
-and the model returned `no_match` — both honest non-answers. Latency 1.2–2.4 s
-per call. The local fallback `qwen3.5:4b` @ `sha256:d8b0f5e9760c…` reaches 20, all
+cases, rules and `9inference` reach the same outcome on **22–24** across repeated
+runs (three runs: 22, 23, 24), with every quoted total identical. The hosted model
+is not deterministic; the variance is only in whether it answers or declines
+(#12 `refused` vs `no_match`, #17 `4/4` resolving or not). Latency 1.2–2.4 s per
+call, and sustained runs hit the gateway's upstream rate limit. The local fallback `qwen3.5:4b` @ `sha256:d8b0f5e9760c…` reaches 20, all
 four disagreements being model vocabulary errors where the rules are right
 (BUG.md A37). The rules path stays the default anyway: microseconds, no
 credential, no rate limit.

@@ -224,6 +224,11 @@ export PAPERLANE_EMBED_BASE_URL=http://localhost:11434
 export PAPERLANE_EMBED_MODEL=bge-m3:latest
 ```
 
+The same settings can live in a `.env` file beside `run.sh` — git-ignored, and
+`.env.example` shows the shape. `./run.sh` loads it for `serve`, `ask` and `eval`;
+`test` and `test-offline` deliberately ignore it, because the offline run is the
+proof that the suite needs no model and no embedding server.
+
 `PAPERLANE_LLM_API_KEY` is **optional** for chat: Ollama, llama.cpp and vLLM
 accept requests with no `Authorization` header, and the client sends one only
 when a key is set (BUG.md A35). That is also how a fully local fallback works:
@@ -256,11 +261,11 @@ environment variable only.
 search criteria and nothing else. Every price, total, discount and SKU is
 computed by `pricing.py` from the catalog; the reply is rendered from those
 values. Measured over the 24 v1 cases, the rules path and `9inference` reach the
-same outcome on 23, with every total identical and one honest non-answer
-differing in kind (`refused` vs `no_match`, #12). The local 4b fallback reaches
-20, and all four of its disagreements are model vocabulary errors where the
-rules path is right (BUG.md A37). Either way the rules path stays the default and
-the model is an optional decomposer.
+same outcome on 22 to 24, with every quoted total identical — the hosted model
+is not deterministic, and its variance is only in whether it answers or declines
+(#12, #17). The local 4b fallback reaches 20, and all four of its disagreements
+are model vocabulary errors where the rules path is right (BUG.md A37). Either
+way the rules path stays the default and the model is an optional decomposer.
 
 ---
 
