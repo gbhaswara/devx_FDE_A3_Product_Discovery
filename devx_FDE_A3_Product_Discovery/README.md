@@ -267,6 +267,13 @@ is not deterministic, and its variance is only in whether it answers or declines
 are model vocabulary errors where the rules path is right (BUG.md A37). Either
 way the rules path stays the default and the model is an optional decomposer.
 
+Sustained runs hit the gateway's upstream rate limit. `./run.sh eval` says so
+rather than reporting a score: `model: configured, unreachable — strategies not
+compared`, with the HTTP error beneath it, and the model column left `not run`.
+An earlier version printed a perfect agreement in exactly that situation, because
+every model call fell back to rules and the two columns were the same run
+(BUG.md A38). `configured` means configured, not reachable.
+
 ---
 
 ## 2. Architecture overview
